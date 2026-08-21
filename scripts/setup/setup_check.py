@@ -81,7 +81,7 @@ from scripts.setup.vllm_install import (
     vllm_runtime_import_error,
 )
 from scripts.app.interface_mode import select_interface_mode
-from scripts.release.qualification_targets import qualification_target
+from scripts.release.qualification_targets import qualification_host_error, qualification_target
 
 
 def accessible_file(path: Path) -> bool:
@@ -182,6 +182,9 @@ def main() -> None:  # pragma: no cover - real interactive installer
         print(f"  RAM:      {total_ram_gb:.0f} GB")
 
     if _qualification_target:
+        if _host_error := qualification_host_error(_qualification_target):
+            fail(_host_error)
+            sys.exit(1)
         _initial_rocm = discover_rocm()
         try:
             _install_wsl_rocm = qualification_needs_wsl_rocm(

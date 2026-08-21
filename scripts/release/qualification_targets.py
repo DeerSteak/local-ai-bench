@@ -1,5 +1,11 @@
 """Explicit platform targets for ordinary benchmark qualification runs."""
 
+import os
+from pathlib import Path
+
+
+SMART_APP_CONTROL_POLICY_ID = "{0283ac0f-fff1-49ae-ada1-8a933130cad6}"
+
 
 TARGETS = (
     {"id": "macos-m5-pro-llamacpp-metal", "platform": "macos", "architecture": "arm64", "runtime": "llamacpp", "backend": "metal", "accelerator": "M5 Pro"},
@@ -32,6 +38,25 @@ def qualification_target(target_id: str) -> dict:
 
 def target_engine(target_id: str) -> str:
     return qualification_target(target_id)["runtime"]
+
+
+def qualification_host_error(target: dict, *, windows_dir: Path | None = None) -> str | None:
+    if target["id"] != "intel-arc-windows-llamacpp-sycl":
+        return None
+    root = windows_dir or (Path(value) if (value := os.environ.get("WINDIR")) else None)
+    if root is None:
+        return None
+    policy = (
+        root / "System32" / "CodeIntegrity" / "CiPolicies" / "Active"
+        / f"{SMART_APP_CONTROL_POLICY_ID}.cip"
+    )
+    if not policy.is_file():
+        return None
+    return (
+        f"target {target['id']} is not supported while Windows Smart App Control policy "
+        f"{SMART_APP_CONTROL_POLICY_ID} is enforced; the official llama.cpp SYCL, Vulkan, "
+        "and CPU DLLs were blocked. Use the native Linux Intel Arc targets instead"
+    )
 
 
 def qualification_target_errors(target: dict, profile: dict) -> list[str]:

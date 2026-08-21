@@ -32,7 +32,7 @@ Support is derived from the recorded qualification results below. Runtime suppor
 
 | Platform | Architecture | Runtime | Backend | Accelerator | Status | Reason |
 | --- | --- | --- | --- | --- | --- | --- |
-| windows | x86_64 | llamacpp | vulkan | Intel Arc Pro B65 | Not supported | Windows Application Control blocked the official runtime's `ggml-vulkan.dll` because its signing level could not be verified. Local AI Bench does not bypass that policy; Intel Windows qualification uses SYCL instead. |
+| windows with Smart App Control | x86_64 | llamacpp | vulkan / xpu | Intel Arc Pro B65 | Not supported | Enforced policy `{0283ac0f-fff1-49ae-ada1-8a933130cad6}` blocked the official runtime's SYCL, Vulkan, and CPU DLLs. Qualification stops before downloads and does not bypass the policy. |
 
 **Contents**
 - [Why an interface](#why-an-interface)

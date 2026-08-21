@@ -7,7 +7,8 @@ from scripts.release.qualification_run import (
     benchmark_wrapper, default_result_path, qualification_failure_summary,
 )
 from scripts.release.qualification_targets import (
-    TARGET_ENGINES, TARGETS, qualification_target, qualification_target_errors, target_engine,
+    SMART_APP_CONTROL_POLICY_ID, TARGET_ENGINES, TARGETS, qualification_host_error,
+    qualification_target, qualification_target_errors, target_engine,
 )
 
 
@@ -84,6 +85,37 @@ def test_intel_windows_target_accepts_decorated_b65_name_and_requires_xpu():
     assert qualification_target_errors(target, profile) == [
         "requires backend xpu; detected vulkan",
     ]
+
+
+def test_intel_windows_target_stops_when_smart_app_control_is_enforced(tmp_path):
+    target = qualification_target("intel-arc-windows-llamacpp-sycl")
+    active = tmp_path / "System32" / "CodeIntegrity" / "CiPolicies" / "Active"
+    active.mkdir(parents=True)
+    (active / f"{SMART_APP_CONTROL_POLICY_ID}.cip").touch()
+
+    error = qualification_host_error(target, windows_dir=tmp_path)
+
+    assert error is not None
+    assert "not supported while Windows Smart App Control" in error
+    assert SMART_APP_CONTROL_POLICY_ID in error
+    assert "native Linux Intel Arc targets" in error
+
+
+def test_smart_app_control_does_not_block_other_targets_or_an_unenforced_host(tmp_path):
+    active = tmp_path / "System32" / "CodeIntegrity" / "CiPolicies" / "Active"
+    active.mkdir(parents=True)
+    (active / f"{SMART_APP_CONTROL_POLICY_ID}.cip").touch()
+
+    assert qualification_host_error(
+        qualification_target("geforce-windows-llamacpp-cuda"), windows_dir=tmp_path,
+    ) is None
+    assert qualification_host_error(
+        qualification_target("intel-arc-linux-llamacpp-sycl"), windows_dir=tmp_path,
+    ) is None
+    assert qualification_host_error(
+        qualification_target("intel-arc-windows-llamacpp-sycl"),
+        windows_dir=tmp_path / "no-policy",
+    ) is None
 
 
 def test_vulkan_target_uses_accelerator_identity_instead_of_compute_backend_probe():

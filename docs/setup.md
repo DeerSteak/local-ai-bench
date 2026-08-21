@@ -32,7 +32,7 @@ This generated matrix reports the current evidence-backed runtime and ComfyUI im
 
 | Platform | Architecture | Runtime | Backend | Accelerator | Status | Reason |
 | --- | --- | --- | --- | --- | --- | --- |
-| windows | x86_64 | llamacpp | vulkan | Intel Arc Pro B65 | Not supported | Windows Application Control blocked the official runtime's `ggml-vulkan.dll` because its signing level could not be verified. Local AI Bench does not bypass that policy; Intel Windows qualification uses SYCL instead. |
+| windows with Smart App Control | x86_64 | llamacpp | vulkan / xpu | Intel Arc Pro B65 | Not supported | Enforced policy `{0283ac0f-fff1-49ae-ada1-8a933130cad6}` blocked the official runtime's SYCL, Vulkan, and CPU DLLs. Qualification stops before downloads and does not bypass the policy. |
 
 **Contents**
 - [What the setup scripts do](#what-the-setup-scripts-do)
@@ -48,7 +48,7 @@ This generated matrix reports the current evidence-backed runtime and ComfyUI im
 |---|---|---|
 | macOS | `bash setup.sh` | Python, a project-managed official llama.cpp release (includes llama-bench and llama-batched-bench), ComfyUI (vLLM is not offered — see the platform table below) |
 | Linux / WSL2 / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench and llama-batched-bench), ComfyUI, verified ROCm-enabled PyTorch on AMD, Intel oneAPI/SYCL llama.cpp plus XPU PyTorch on native Linux Arc, and optional vLLM on native Linux CUDA, ROCm, or Intel XPU and NVIDIA WSL2; explicit Radeon WSL2 qualification also installs and verifies the pinned ROCm WSL stack |
-| Windows | `setup.bat` | Python, llama.cpp (CUDA on NVIDIA, Vulkan otherwise; includes llama-bench and llama-batched-bench), ComfyUI portable |
+| Windows | `setup.bat` | Python, llama.cpp (CUDA on NVIDIA, SYCL on Intel, Vulkan otherwise; includes llama-bench and llama-batched-bench), ComfyUI portable |
 
 On macOS, double-click `Setup Local AI Bench.command` in Finder to open Terminal and launch the graphical wizard directly. The launcher switches to the repository directory automatically and leaves Terminal open when setup fails so the error can be reviewed. Local AI Bench does not automate or close Terminal windows; what happens after the command exits follows the user's Terminal profile settings. macOS may require Control-click → **Open** the first time when the repository was downloaded rather than cloned.
 
@@ -297,7 +297,7 @@ An older preinstalled `vllm-launch` remains discoverable as an external platform
 
 **Windows (AMD)** — The setup script downloads the latest official ComfyUI AMD portable build. No manual ROCm install required.
 
-**Windows (Intel Arc) — qualification pending** — Setup downloads ComfyUI's Intel portable build and llama.cpp's official self-contained Windows SYCL package, which includes its required runtime DLLs and does not require a separate oneAPI installation. Results report `backend: "xpu"`. The prior Vulkan candidate is explicitly unsupported because Windows Application Control rejected `ggml-vulkan.dll`; setup does not download it for Intel or weaken the host policy. Intel Arc Pro B65 has the explicit `intel-arc-windows-llamacpp-sycl` qualification target, which remains unverified until the hardware produces a complete passing record.
+**Windows (Intel Arc)** — Setup can download ComfyUI's Intel portable build and llama.cpp's official self-contained Windows SYCL package, which includes its required runtime DLLs and does not require a separate oneAPI installation. Results report `backend: "xpu"`. Intel Arc Pro B65 qualification is not supported when Smart App Control policy `{0283ac0f-fff1-49ae-ada1-8a933130cad6}` is enforced: real attempts blocked the official SYCL, Vulkan, and CPU DLLs with Code Integrity event 3077. Qualification detects that policy and stops before runtime or model downloads without weakening the host security configuration. The target remains unverified on Windows without that policy; native Linux Intel Arc qualification is the supported next path.
 
 **Windows (vLLM)** — Not available natively; run the benchmark inside WSL2, where the ordinary Linux CUDA path applies. See [vLLM on Windows via WSL2](#vllm-on-windows-via-wsl2). llama.cpp and image generation are unaffected and run natively.
 

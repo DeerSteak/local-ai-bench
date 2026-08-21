@@ -12,7 +12,8 @@ from scripts.release.qualification_coverage import (
     workload_coverage_errors, workload_failure_details,
 )
 from scripts.release.qualification_targets import (
-    TARGET_ENGINES, qualification_target, qualification_target_errors, target_engine,
+    TARGET_ENGINES, qualification_host_error, qualification_target,
+    qualification_target_errors, target_engine,
 )
 from scripts.runtime.shared import Shared
 from scripts.workloads.models import qualification_llm_model
@@ -42,6 +43,8 @@ def qualification_failure_summary(result: dict, engine: str) -> str:
 
 def run_qualification(target_id: str, root: Path, result: Path) -> None:  # pragma: no cover
     target = qualification_target(target_id)
+    if host_error := qualification_host_error(target):
+        raise ValueError(host_error)
     identity_errors = qualification_target_errors(target, Shared.build_profile())
     if identity_errors:
         raise ValueError(f"target {target_id} " + "; ".join(identity_errors))
