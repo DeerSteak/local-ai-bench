@@ -446,7 +446,13 @@ def test_xpu_source_steps_pin_upstream_tag_torch_stack_and_bench_extra(tmp_path)
     )
     assert any(str(source / "requirements" / "xpu.txt") in step.command for step in steps)
     assert any(f"triton-xpu=={TRITON_XPU_VERSION}" in step.command for step in steps)
-    assert any(PYTORCH_XPU_INDEX in step.command for step in steps)
+    triton_step = next(
+        step.command for step in steps if f"triton-xpu=={TRITON_XPU_VERSION}" in step.command
+    )
+    assert ("--force-reinstall", "--no-cache-dir") == (
+        triton_step[4], triton_step[5],
+    )
+    assert triton_step[-2:] == ("--index-url", PYTORCH_XPU_INDEX)
     assert all(package in steps[3].command for package in (
         "pandas", "matplotlib", "seaborn", "datasets", "scipy", "plotly",
     ))
@@ -533,6 +539,7 @@ def test_xpu_runtime_probe_requires_vllm_and_torch_to_select_xpu():
     assert "current_platform.device_type == 'xpu'" in code
     assert "torch.xpu.is_available()" in code
     assert "import triton" in code
+    assert "from triton._C.libtriton import intel" in code
     assert "has_triton()" in code
 
 

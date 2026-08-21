@@ -309,8 +309,8 @@ def vllm_xpu_install_steps(python_exe: str, source_dir: Path,
             python_exe, "-m", "pip", "uninstall", "-y", "triton", "triton-xpu",
         )),
         VllmSourceInstallStep((
-            python_exe, "-m", "pip", "install", f"triton-xpu=={TRITON_XPU_VERSION}",
-            "--extra-index-url", PYTORCH_XPU_INDEX,
+            python_exe, "-m", "pip", "install", "--force-reinstall", "--no-cache-dir",
+            f"triton-xpu=={TRITON_XPU_VERSION}", "--index-url", PYTORCH_XPU_INDEX,
         )),
         VllmSourceInstallStep((
             python_exe, "-m", "pip", "install", "--no-build-isolation", "--no-deps", "-v",
@@ -535,6 +535,7 @@ def vllm_runtime_probe_code(expected_device_type: str | None = None) -> str:
         statements.extend([
             "assert torch.xpu.is_available(), 'PyTorch cannot access Intel XPU'",
             "import triton",
+            "from triton._C.libtriton import intel",
             "from torch.utils._triton import has_triton",
             "assert has_triton(), 'TorchInductor cannot use Intel XPU Triton'",
         ])
