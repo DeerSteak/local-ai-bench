@@ -904,12 +904,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             t for t in ("llm", "conv", "llamabench", "llamabenchconc", "emb", "mcq", "math", "reasoning", "code", "tool",
                         "conc_tool", "conc_chat", "sustained") if t in tests
         ]
-        runtime_version = (
-            engine_runtime_version(engine_name, engine) if engine_version_applies(tests) else None
-        )
         profile = build_execution_profile(
             engine, tests, cpu_only=args.cpu_only, engine_name=engine_name,
-            hardware_profile=hardware_profile, runtime_version=runtime_version,
+            hardware_profile=hardware_profile,
+        )
+        runtime_version = (
+            engine_runtime_version(engine_name, engine) if engine_version_applies(tests) else None
         )
         hardware_backend = profile["hardware_backend"]
         if (engine_backed_tests

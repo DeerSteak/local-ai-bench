@@ -7,7 +7,7 @@ from scripts.release.qualification_coverage import (
 
 
 def complete_result(workloads):
-    result: dict = {"run": {"status": "complete"}}
+    result: dict = {"engine_version": "10488", "run": {"status": "complete"}}
     for workload in workloads:
         marker = next(iter({
             "sustained": {"series"}, "llamabench": {"completed_cases"},
@@ -33,7 +33,7 @@ def test_every_required_workload_must_produce_evidence(engine):
 
 
 def test_nonempty_skipped_or_error_record_is_not_measurement_evidence():
-    result = {"run": {"status": "complete"}, "llm": {
+    result = {"engine_version": "10488", "run": {"status": "complete"}, "llm": {
         "smallest-model": {"skipped": True, "error": "model unavailable"},
     }}
     assert workload_coverage_errors(result, ["llm"]) == [
@@ -41,9 +41,18 @@ def test_nonempty_skipped_or_error_record_is_not_measurement_evidence():
     ]
 
 
+def test_missing_engine_version_never_satisfies_qualification():
+    result = complete_result(["llm"])
+    result["engine_version"] = None
+
+    assert workload_coverage_errors(result, ["llm"]) == [
+        "qualification result does not identify the engine version",
+    ]
+
+
 def test_real_native_and_server_concurrency_shapes_count_as_evidence():
     result = {
-        "run": {"status": "complete"},
+        "engine_version": "10488", "run": {"status": "complete"},
         "concurrency_tool": {"model": {"1": {"valid_runs": 1}}},
         "concurrency_chat": {"model": {"1": {"valid_runs": 1}}},
         "llamabench": {"model": {
@@ -71,7 +80,10 @@ def test_partial_measurements_do_not_satisfy_qualification(workload, section):
         "llamabench": {"completed_cases"}, "vllmbench": {"completed_cases"},
     }[workload]))
     assert _has_marker(section, marker)
-    result = {"run": {"status": "complete"}, RESULT_SECTIONS[workload]: section}
+    result = {
+        "engine_version": "10488", "run": {"status": "complete"},
+        RESULT_SECTIONS[workload]: section,
+    }
     assert workload_coverage_errors(result, [workload]) == [
         f"{workload} did not complete all requested qualification evidence",
     ]
@@ -84,7 +96,7 @@ def _has_marker(value, marker):
 
 
 def test_measurement_with_model_error_does_not_satisfy_qualification():
-    result = {"run": {"status": "complete"}, "llamabench": {"model": {
+    result = {"engine_version": "10488", "run": {"status": "complete"}, "llamabench": {"model": {
         "requested_cases": 6, "completed_cases": 1, "error": "context creation failed",
     }}}
     assert workload_coverage_errors(result, ["llamabench"]) == [
@@ -93,7 +105,7 @@ def test_measurement_with_model_error_does_not_satisfy_qualification():
 
 
 def test_wrong_code_answer_error_is_scoring_evidence_not_runtime_failure():
-    result = {"run": {"status": "complete"}, "code": {"model": {
+    result = {"engine_version": "10488", "run": {"status": "complete"}, "code": {"model": {
         "total": 1, "answered": 1,
         "incorrect": [{"id": "code_052", "error": "SyntaxError: invalid syntax"}],
     }}}
@@ -102,7 +114,7 @@ def test_wrong_code_answer_error_is_scoring_evidence_not_runtime_failure():
 
 
 def test_vllm_bench_native_result_lists_are_measurement_evidence():
-    result = {"run": {"status": "complete"}, "vllmbench": {"model": {
+    result = {"engine_version": "0.27.1", "run": {"status": "complete"}, "vllmbench": {"model": {
         "latency_entries": [{"avg_latency_sec": 1.2}],
         "throughput_entries": [{"requests_per_sec": 2.3}],
         "requested_cases": 2, "completed_cases": 2,

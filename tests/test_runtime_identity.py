@@ -61,14 +61,22 @@ def test_inspect_runtime_does_not_execute_external_server(tmp_path):
 
 
 def test_engine_runtime_version_uses_the_engine_runtime_descriptor():
-    engine = type("Engine", (), {"runtime_location": lambda self: "/runtime/llama-server"})()
+    environment = {"LD_LIBRARY_PATH": "/opt/intel/oneapi/compiler/lib"}
+    engine = type("Engine", (), {
+        "runtime_location": lambda self: "/runtime/llama-server",
+        "process_environment": lambda self: environment,
+    })()
+    calls = []
+
+    def run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(stdout="version: 7000 (abcdef)", stderr="", returncode=0)
+
     version = engine_runtime_version(
-        "llamacpp", engine,
-        run=lambda *args, **kwargs: SimpleNamespace(
-            stdout="version: 7000 (abcdef)", stderr="", returncode=0,
-        ),
+        "llamacpp", engine, run=run,
     )
     assert version == "7000"
+    assert calls[0][1]["env"] is environment
 
 
 def test_source_build_version_uses_utc_commit_date_and_short_hash(tmp_path):

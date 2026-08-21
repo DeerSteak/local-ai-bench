@@ -128,6 +128,8 @@ def workload_coverage_errors(result: dict, workloads: list[str]) -> list[str]:
     errors = []
     if result.get("run", {}).get("status") != "complete":
         errors.append("qualification result run is not complete")
+    if not isinstance(result.get("engine_version"), str) or not result["engine_version"].strip():
+        errors.append("qualification result does not identify the engine version")
     for workload in workloads:
         section = RESULT_SECTIONS[workload]
         value = result.get(section)

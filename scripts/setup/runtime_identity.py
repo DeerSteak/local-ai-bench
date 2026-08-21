@@ -87,13 +87,14 @@ def source_commit_version(identity: RuntimeIdentity, managed_root: Path, *,
 
 
 def inspect_runtime(engine: str, location: str | Path | None, managed_root: Path,
-                    *, run=subprocess.run) -> RuntimeIdentity:
+                    *, run=subprocess.run, env=None) -> RuntimeIdentity:
     ownership = runtime_ownership(location, managed_root)
     if ownership in {"missing", "external_server"}:
         return RuntimeIdentity(engine, ownership, str(location or ""), None, "")
     try:
         result = run(
             [str(location), "--version"], capture_output=True, text=True, timeout=15,
+            env=env,
         )
         output = "\n".join(part.strip() for part in (result.stdout, result.stderr) if part.strip())
     except (OSError, subprocess.SubprocessError) as exc:
@@ -110,7 +111,8 @@ def engine_runtime_version(engine_name: str, engine, *, run=subprocess.run) -> s
             return probe_vllm_server_version(server_url)
     location = getattr(engine, "runtime_location", lambda: None)()
     managed_root = config.LLAMACPP_DIR if engine_name == "llamacpp" else config.VLLM_VENV
-    identity = inspect_runtime(engine_name, location, managed_root, run=run)
+    process_env = getattr(engine, "process_environment", lambda: None)()
+    identity = inspect_runtime(engine_name, location, managed_root, run=run, env=process_env)
     if engine_name == "llamacpp":
         return source_commit_version(identity, managed_root, run=run)
     return identity.version
