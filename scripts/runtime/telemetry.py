@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import threading
 import time
-from typing import Any, Callable, Mapping, Protocol, Sequence
+from typing import Any, Callable, Iterator, Mapping, Protocol, Sequence
 
 import psutil
 
@@ -159,6 +159,19 @@ def _finite_nonnegative(value: object) -> float | None:
     return number if math.isfinite(number) and number >= 0 else None
 
 
+def _nvidia_scalar_values(output: str, unit: str,
+                          validator: Callable[[object], float | None]) -> list[float]:
+    values = []
+    for line in output.splitlines():
+        match = re.fullmatch(
+            rf"\s*([0-9.]+)\s*(?:{re.escape(unit)})?\s*", line, flags=re.IGNORECASE,
+        )
+        value = validator(match.group(1)) if match else None
+        if value is not None:
+            values.append(value)
+    return values
+
+
 def parse_powermetrics_power(output: str) -> PowerReading | None:
     patterns = (
         r"Combined Power \(CPU \+ GPU \+ ANE\):\s*([0-9.]+)\s*(m?W)\b",
@@ -177,12 +190,7 @@ def parse_powermetrics_power(output: str) -> PowerReading | None:
 
 
 def parse_nvidia_power(output: str) -> PowerReading | None:
-    values = []
-    for line in output.splitlines():
-        match = re.fullmatch(r"\s*([0-9.]+)\s*(?:W)?\s*", line, flags=re.IGNORECASE)
-        value = _finite_nonnegative(match.group(1)) if match else None
-        if value is not None:
-            values.append(value)
+    values = _nvidia_scalar_values(output, "W", _finite_nonnegative)
     return PowerReading(sum(values), "nvidia-smi", "accelerator") if values else None
 
 
@@ -217,12 +225,7 @@ def _valid_millicelsius(value: object) -> float | None:
 
 
 def parse_nvidia_temperatures(output: str) -> TemperatureReading | None:
-    values = []
-    for line in output.splitlines():
-        match = re.fullmatch(r"\s*([0-9.]+)\s*(?:C)?\s*", line, flags=re.IGNORECASE)
-        value = _valid_temperature(match.group(1)) if match else None
-        if value is not None:
-            values.append(value)
+    values = _nvidia_scalar_values(output, "C", _valid_temperature)
     return TemperatureReading(gpu_die_c=max(values)) if values else None
 
 
@@ -1453,75 +1456,60 @@ def memory_ceiling_gb(sources: Mapping[str, str], run_fn=subprocess.run,
     return max(0.0, total - hardware.RAM_RESERVE_GB)
 
 
+def _nested_blocks(value: object, key: str,
+                   path: tuple[str, ...] = ()) -> Iterator[tuple[dict[str, Any], str]]:
+    if isinstance(value, list):
+        for index, child in enumerate(value):
+            yield from _nested_blocks(child, key, (*path, str(index)))
+        return
+    if not isinstance(value, dict):
+        return
+    block = value.get(key)
+    if isinstance(block, dict):
+        yield block, "/".join(path)
+    for child_key, child in value.items():
+        if child_key != key:
+            yield from _nested_blocks(child, key, (*path, str(child_key)))
+
+
 def derive_run_memory_summary(sections: Mapping[str, object]) -> dict[str, Any] | None:
     channels: dict[str, dict[str, Any]] = {}
     tightest = None
-
-    def visit(value: object, path: tuple[str, ...]) -> None:
-        nonlocal tightest
-        if isinstance(value, list):
-            for index, child in enumerate(value):
-                visit(child, (*path, str(index)))
-            return
-        if not isinstance(value, dict):
-            return
-        memory = value.get("memory")
-        if isinstance(memory, dict):
-            summary = memory.get("summary", {})
-            if isinstance(summary, dict):
-                for channel, values in summary.items():
-                    peak = values.get("peak_gb") if isinstance(values, dict) else None
-                    if not isinstance(peak, (int, float)):
-                        continue
-                    current = channels.setdefault(channel, {"peak_gb": peak})
-                    current["peak_gb"] = max(current["peak_gb"], peak)
-            headroom = memory.get("headroom", {})
-            absolute = headroom.get("absolute_gb") if isinstance(headroom, dict) else None
-            if isinstance(absolute, (int, float)) and (
-                    tightest is None or absolute < tightest["absolute_gb"]):
-                tightest = {
-                    "absolute_gb": absolute,
-                    "fraction": headroom.get("fraction"),
-                    "state": headroom.get("state"),
-                    "case_id": memory.get("case_id"),
-                    "case_path": "/".join(path),
-                }
-                if isinstance(headroom.get("basis_channel"), str):
-                    tightest["basis_channel"] = headroom["basis_channel"]
-        for key, child in value.items():
-            if key != "memory":
-                visit(child, (*path, str(key)))
-
-    visit(dict(sections), ())
+    for memory, case_path in _nested_blocks(dict(sections), "memory"):
+        summary = memory.get("summary", {})
+        if isinstance(summary, dict):
+            for channel, values in summary.items():
+                peak = values.get("peak_gb") if isinstance(values, dict) else None
+                if not isinstance(peak, (int, float)):
+                    continue
+                current = channels.setdefault(channel, {"peak_gb": peak})
+                current["peak_gb"] = max(current["peak_gb"], peak)
+        headroom = memory.get("headroom", {})
+        absolute = headroom.get("absolute_gb") if isinstance(headroom, dict) else None
+        if isinstance(absolute, (int, float)) and (
+                tightest is None or absolute < tightest["absolute_gb"]):
+            tightest = {
+                "absolute_gb": absolute,
+                "fraction": headroom.get("fraction"),
+                "state": headroom.get("state"),
+                "case_id": memory.get("case_id"),
+                "case_path": case_path,
+            }
+            if isinstance(headroom.get("basis_channel"), str):
+                tightest["basis_channel"] = headroom["basis_channel"]
     if not channels and tightest is None:
         return None
     return {"channels": channels, "tightest_headroom": tightest}
 
 
 def derive_run_power_summary(sections: Mapping[str, object]) -> dict[str, Any] | None:
-    cases = []
-
-    def visit(value: object, path: tuple[str, ...]) -> None:
-        if isinstance(value, list):
-            for index, child in enumerate(value):
-                visit(child, (*path, str(index)))
-            return
-        if not isinstance(value, dict):
-            return
-        power = value.get("power")
-        if isinstance(power, dict):
-            cases.append((power, "/".join(path)))
-        for key, child in value.items():
-            if key != "power":
-                visit(child, (*path, str(key)))
-
-    visit(dict(sections), ())
+    cases = list(_nested_blocks(dict(sections), "power"))
     if not cases:
         return None
-    scopes = sorted({power.get("scope") for power, _ in cases
-                     if isinstance(power.get("scope"), str)})
-    sources = sorted({power.get("source") for power, _ in cases
-                      if isinstance(power.get("source"), str)})
+    scopes = sorted({scope for power, _ in cases
+                     if isinstance((scope := power.get("scope")), str)})
+    sources = sorted({source for power, _ in cases
+                      if isinstance((source := power.get("source")), str)})
     energies = [value for power, _ in cases
                 if (value := _finite_nonnegative(power.get("energy_joules"))) is not None]
     idle = [value for power, _ in cases

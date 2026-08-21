@@ -555,6 +555,16 @@ def test_run_power_summary_sums_only_same_scope_case_energy():
     }
 
 
+def test_run_power_summary_finds_cases_nested_in_native_entry_lists():
+    sections = {"native": {"entries": [{"power": {
+        "scope": "accelerator", "source": "nvidia-smi", "energy_joules": 12,
+    }}]}}
+    summary = derive_run_power_summary(sections)
+    assert summary is not None
+    assert summary["energy_joules"] == 12
+    assert summary["recorded_cases"] == 1
+
+
 def test_run_power_summary_refuses_mixed_scope_total_and_preserves_unavailable():
     mixed = derive_run_power_summary({
         "llm": {"a": {"power": {"scope": "accelerator", "source": "nvidia-smi",
