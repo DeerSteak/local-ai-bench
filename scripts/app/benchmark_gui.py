@@ -769,7 +769,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     current_log = run_log_actions.current_log
     review_outbound_metadata = run_log_actions.review_outbound_metadata
 
-    def launch_history_process(
+    def launch_process(
             command, kind, result_paths, status, stages, entries, engines, error_title):
         nonlocal process, active_process_kind, active_result_paths
         creationflags = (
@@ -799,7 +799,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     history_process = HistoryProcessActions(
         root=root, filedialog=filedialog, messagebox=messagebox,
         process_active=lambda: process is not None and process.poll() is None,
-        launch=launch_history_process,
+        launch=launch_process,
     )
     history_actions = HistoryActions(
         history_screen, root=root, tk=tk, ttk=ttk, filedialog=filedialog,
@@ -1002,7 +1002,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     configuration_files.bind()
 
     def start_run():
-        nonlocal process, active_process_kind, active_result_paths
         tests = expand_selected_tests(
             name for name, variable in test_vars.items() if variable.get())
         entries = custom_models
@@ -1045,27 +1044,12 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         if not save_frontend_state(preparation.state, FRONTEND_STATE_PATH):
             if not messagebox.askyesno("Settings not saved", "The configuration could not be saved. Run it anyway?", parent=root):
                 return
-        command = preparation.command
-        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if platform.system() == "Windows" else 0
-        try:
-            process, control_path = launch_controlled_process(
-                command, creationflags=creationflags,
-            )
-        except OSError as exc:
-            messagebox.showerror("Benchmark could not start", str(exc), parent=root)
-            return
-        begin_process_control(control_path)
-        active_process_kind = "benchmark"
-        active_result_paths = []
-        log_text.configure(state="normal")
-        log_text.delete("1.0", "end")
-        log_text.configure(state="disabled")
-        run_status.set("Benchmark is running. Results are checkpointed throughout the run.")
-        start_button.configure(state="disabled")
-        stop_button.configure(state="normal")
-        notebook.select(log_tab)
-        show_progress_window(tests, entries, engines=parse_engine_selection(engine_var.get()))
-        threading.Thread(target=read_process, args=(process,), daemon=True).start()
+        launch_process(
+            preparation.command, "benchmark", [],
+            "Benchmark is running. Results are checkpointed throughout the run.",
+            tests, entries, parse_engine_selection(engine_var.get()),
+            "Benchmark could not start",
+        )
 
     def stop_run():
         if process is None or process.poll() is not None:
