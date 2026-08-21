@@ -6,7 +6,7 @@ from scripts.release.qualification_targets import qualification_target
 from scripts.setup.rocm_install import (
     native_rocm_install_plan, qualification_needs_native_rocm,
     qualification_needs_wsl_rocm, run_rocm_install, ryzen_ai_halo_oem_kernel_ready,
-    wsl_rocm_install_plan,
+    ryzen_ai_halo_dkms_packages, wsl_rocm_install_plan,
 )
 
 
@@ -64,7 +64,8 @@ def test_halo_rocm_plan_installs_oem_kernel_and_uses_inbox_driver(tmp_path):
     )
     assert plan.reboot_required
     assert plan.commands == (
-        ("dpkg", "--purge", "amdgpu-dkms"),
+        ("dpkg", "--purge", "amdgpu-dkms", "amdgpu-dkms-firmware"),
+        ("update-initramfs", "-u"),
         ("apt-get", "update"),
         (
             "apt-get", "install", "-y", "linux-oem-24.04", "python3-setuptools",
@@ -80,9 +81,9 @@ def test_halo_rocm_plan_reuses_supported_oem_kernel(tmp_path):
         'ID=ubuntu\nVERSION_ID="24.04"\n', "6.14.0-1018-oem",
         target_id="ryzen-ai-halo-vllm-rocm", user="ben", temp_dir=tmp_path,
     )
-    assert not plan.reboot_required
-    assert "linux-oem-24.04" not in plan.commands[0]
-    assert plan.commands[3] == (
+    assert plan.reboot_required
+    assert "linux-oem-24.04" not in plan.commands[3]
+    assert plan.commands[4] == (
         "amdgpu-install", "-y", "--usecase=rocm", "--no-dkms",
     )
 
@@ -103,6 +104,36 @@ def test_halo_accepts_newer_oem_kernel_and_other_targets_ignore_flavor():
     assert ryzen_ai_halo_oem_kernel_ready(
         "radeon-linux-vllm-rocm", "6.17.0-14-generic",
     )
+
+
+def test_halo_detects_installed_or_half_configured_dkms_packages():
+    statuses = {
+        "amdgpu-dkms": SimpleNamespace(returncode=0, stdout="ii "),
+        "amdgpu-dkms-firmware": SimpleNamespace(returncode=0, stdout="iF "),
+    }
+    calls = []
+
+    def run(command, **_kwargs):
+        calls.append(command)
+        return statuses[command[-1]]
+
+    assert ryzen_ai_halo_dkms_packages(
+        "ryzen-ai-halo-llamacpp-rocm", run=run,
+    ) == ("amdgpu-dkms", "amdgpu-dkms-firmware")
+    assert [command[-1] for command in calls] == [
+        "amdgpu-dkms", "amdgpu-dkms-firmware",
+    ]
+
+
+def test_halo_dkms_detection_ignores_absent_packages_and_non_halo_targets():
+    absent = lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stdout="")
+    assert ryzen_ai_halo_dkms_packages(
+        "ryzen-ai-halo-vllm-rocm", run=absent,
+    ) == ()
+    assert ryzen_ai_halo_dkms_packages(
+        "radeon-linux-llamacpp-rocm",
+        run=lambda *_args, **_kwargs: pytest.fail("should not query dpkg"),
+    ) == ()
 
 
 @pytest.mark.parametrize("release", [

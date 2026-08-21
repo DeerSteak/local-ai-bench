@@ -22,6 +22,7 @@ NATIVE_KERNELS = {(6, 8), (6, 17)}
 RYZEN_AI_HALO_TARGET_PREFIX = "ryzen-ai-halo-"
 RYZEN_AI_HALO_OEM_PACKAGE = "linux-oem-24.04"
 RYZEN_AI_HALO_MIN_OEM_KERNEL = (6, 14, 0, 1018)
+RYZEN_AI_HALO_FORBIDDEN_DKMS_PACKAGES = ("amdgpu-dkms", "amdgpu-dkms-firmware")
 GET_EFFECTIVE_UID = getattr(os, "geteuid", lambda: 1)
 
 
@@ -73,6 +74,21 @@ def ryzen_ai_halo_oem_kernel_ready(target_id: str, kernel_release: str) -> bool:
     return bool(match and tuple(map(int, match.groups())) >= RYZEN_AI_HALO_MIN_OEM_KERNEL)
 
 
+def ryzen_ai_halo_dkms_packages(target_id: str, *,
+                                run=subprocess.run) -> tuple[str, ...]:
+    if not target_id.startswith(RYZEN_AI_HALO_TARGET_PREFIX):
+        return ()
+    installed = []
+    for package in RYZEN_AI_HALO_FORBIDDEN_DKMS_PACKAGES:
+        result = run(
+            ["dpkg-query", "-W", "-f=${db:Status-Abbrev}", package],
+            capture_output=True, text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip().startswith("i"):
+            installed.append(package)
+    return tuple(installed)
+
+
 def native_rocm_install_plan(os_release: str, kernel_release: str, *, target_id: str,
                              user: str | None, temp_dir: Path | None = None) -> RocmInstallPlan:
     release = parse_os_release(os_release)
@@ -102,12 +118,16 @@ def native_rocm_install_plan(os_release: str, kernel_release: str, *, target_id:
     )
     package_path = (temp_dir or Path(tempfile.gettempdir())) / package
     packages = ["python3-setuptools", "python3-wheel", str(package_path)]
-    reboot_required = halo and not ryzen_ai_halo_oem_kernel_ready(target_id, kernel_release)
-    if reboot_required:
+    oem_kernel_ready = ryzen_ai_halo_oem_kernel_ready(target_id, kernel_release)
+    reboot_required = halo
+    if halo and not oem_kernel_ready:
         packages.insert(0, RYZEN_AI_HALO_OEM_PACKAGE)
     commands = []
     if halo:
-        commands.append(("dpkg", "--purge", "amdgpu-dkms"))
+        commands.extend((
+            ("dpkg", "--purge", *RYZEN_AI_HALO_FORBIDDEN_DKMS_PACKAGES),
+            ("update-initramfs", "-u"),
+        ))
     commands.extend((
         ("apt-get", "update"),
         ("apt-get", "install", "-y", *packages),

@@ -43,16 +43,65 @@ def test_prepare_installs_missing_requirements(monkeypatch, tmp_path):
 def test_torch_backend_probe_uses_selected_comfyui_python():
     calls = []
 
-    def run(command, **_kwargs):
-        calls.append(command)
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
         return SimpleNamespace(returncode=0, stdout="6.4.43482\n")
 
     assert comfyui_runtime.torch_backend_available("comfy-python", "ROCm", run=run)
-    assert calls == [[
-        "comfy-python", "-c",
-        "import torch; assert torch.version.hip; torch.zeros(1, device='cuda'); "
-        "print(torch.version.hip)",
-    ]]
+    assert calls == [(
+        [
+            "comfy-python", "-c",
+            "import torch; assert torch.version.hip; torch.zeros(1, device='cuda'); "
+            "print(torch.version.hip)",
+        ],
+        {
+            "capture_output": True, "text": True,
+            "timeout": comfyui_runtime.TORCH_BACKEND_PROBE_TIMEOUT_SEC,
+        },
+    )]
+
+
+def test_torch_backend_probe_reports_timeout_without_reinstalling(monkeypatch):
+    def run(command, **kwargs):
+        raise comfyui_runtime.subprocess.TimeoutExpired(
+            command, kwargs["timeout"],
+        )
+
+    assert comfyui_runtime.torch_backend_available(
+        "comfy-python", "ROCm", run=run,
+    ) is None
+    installs = []
+    failures = []
+    monkeypatch.setattr(comfyui_runtime, "torch_backend_available", lambda *_args: None)
+    monkeypatch.setattr(
+        comfyui_runtime.subprocess, "run",
+        lambda command: installs.append(command) or SimpleNamespace(returncode=0),
+    )
+    issues = []
+    comfyui_runtime._ensure_rocm_torch_backend(
+        "comfy-python", (7, 2), wsl=False, issues=issues,
+        info=_log, fail=failures.append, ok=_log,
+    )
+    assert installs == []
+    assert issues == failures
+    assert issues == ["ROCm-enabled PyTorch GPU probe timed out after 120 seconds"]
+
+
+def test_backend_probe_message_explains_rocm_cuda_device_name_and_timeout():
+    messages = []
+    comfyui_runtime._announce_backend_probe("ROCm", messages.append)
+    assert messages == [
+        "Testing ROCm-enabled PyTorch with a HIP GPU allocation through PyTorch's "
+        "logical 'cuda' device API (timeout 120s) ...",
+    ]
+
+
+def test_backend_probe_message_names_xpu_allocation():
+    messages = []
+    comfyui_runtime._announce_backend_probe("XPU", messages.append)
+    assert messages == [
+        "Testing XPU-enabled PyTorch with a real XPU GPU allocation (timeout 120s) ...",
+    ]
 
 
 def test_wrong_torch_backend_is_force_reinstalled_and_verified(monkeypatch):

@@ -35,7 +35,7 @@ from scripts.setup.intel_xpu_install import (
 from scripts.setup.rocm_install import (
     NATIVE_ROCM_VERSION, WINDOWS_DRIVER, native_rocm_install_plan,
     qualification_needs_native_rocm, qualification_needs_wsl_rocm, run_rocm_install,
-    ryzen_ai_halo_oem_kernel_ready, wsl_rocm_install_plan,
+    ryzen_ai_halo_dkms_packages, ryzen_ai_halo_oem_kernel_ready, wsl_rocm_install_plan,
 )
 from scripts.setup.model_inventory import (
     delete_non_catalog_model_dirs, delete_non_catalog_vllm_repos,
@@ -199,6 +199,13 @@ def main() -> None:  # pragma: no cover - real interactive installer
             _install_native_rocm = _install_native_rocm or not ryzen_ai_halo_oem_kernel_ready(
                 _qualification_target["id"], platform.release(),
             )
+            _halo_dkms_packages = ryzen_ai_halo_dkms_packages(_qualification_target["id"])
+            if _halo_dkms_packages:
+                info(
+                    "Ryzen AI Halo requires inbox drivers; removing "
+                    f"{', '.join(_halo_dkms_packages)}"
+                )
+                _install_native_rocm = True
         except ValueError as exc:
             _arg_parser.error(str(exc))
         if _install_wsl_rocm or _install_native_rocm:
@@ -230,7 +237,10 @@ def main() -> None:  # pragma: no cover - real interactive installer
                 fail(f"ROCm installation failed: {exc}")
                 sys.exit(1)
             if _rocm_plan.reboot_required:
-                fail("Ryzen AI Halo OEM kernel installed; reboot, then rerun qualification")
+                fail(
+                    "Ryzen AI Halo inbox driver prepared; reboot to load its kernel and "
+                    "firmware, then rerun qualification"
+                )
                 sys.exit(1)
             if not discover_rocm().available:
                 fail("ROCm installed but rocminfo cannot see an AMD GPU")

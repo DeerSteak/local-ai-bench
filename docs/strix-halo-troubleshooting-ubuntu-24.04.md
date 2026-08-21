@@ -59,7 +59,8 @@ Use commit `cd21b58` or newer and run the normal target:
 The managed recovery performs the equivalent of:
 
 ```bash
-sudo dpkg --purge amdgpu-dkms
+sudo dpkg --purge amdgpu-dkms amdgpu-dkms-firmware
+sudo update-initramfs -u
 sudo apt update
 sudo apt install python3-setuptools python3-wheel
 sudo amdgpu-install -y --usecase=rocm --no-dkms
@@ -68,7 +69,7 @@ sudo usermod -aG render,video "$USER"
 
 Prefer the qualification launcher so the exact managed path and its output are retained. Do not run `apt autoremove` while recovering; review its proposed removals only after the GPU works, because the previous driver installation may have marked firmware and kernel-support packages as automatically installed.
 
-Purging `amdgpu-dkms` removes the active module from the running kernel. The setup attempt can therefore finish package recovery and still report that `rocminfo` cannot see a GPU. That is an expected reboot boundary, not evidence that the corrected installation failed:
+Purging `amdgpu-dkms` removes the active module from the running kernel. The related `amdgpu-dkms-firmware` package can also leave incompatible MES firmware in the initramfs after the driver package is gone; AMD documents this failure and removal in [ROCm issue 5991](https://github.com/ROCm/ROCm/issues/5991). The managed recovery removes both packages and rebuilds the initramfs. The setup attempt therefore stops at a mandatory reboot boundary before testing PyTorch:
 
 ```bash
 sudo reboot
@@ -102,6 +103,8 @@ If the inbox driver still does not bind after reboot, collect the first kernel-l
 sudo modprobe amdgpu
 sudo dmesg | grep -iE 'amdgpu|firmware|gfx1151' | tail -n 150
 ```
+
+Setup verifies the ComfyUI environment with a real one-element ROCm tensor allocation. A process whose command contains `import torch; assert torch.version.hip; torch.zeros(1, device='cuda')` is this probe, not a model download. The probe may use one CPU while PyTorch initializes, but it must finish within 120 seconds; setup records a specific timeout and stops without reinstalling the already-present wheel set if initialization does not complete. If a pre-fix machine still hangs, `dpkg -S /lib/firmware/amdgpu/gc_11_5_1_mes1.bin.zst` identifies whether the residual `amdgpu-dkms-firmware` package still owns the Strix Halo MES firmware.
 
 For Ethernet that remains unavailable after the OEM boot, collect its device and driver identity separately:
 
