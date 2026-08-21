@@ -16,7 +16,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts\release\qualifi
 set "ENGINE=llamacpp"
 echo %TARGET% | findstr /c:"-vllm-" >nul && set "ENGINE=vllm"
 
-call setup.bat --qualification %ENGINE% --qualification-target "%TARGET%" || exit /b 1
+for %%D in ("%RESULT%") do set "EVIDENCE_DIR=%%~dpD"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts\release\qualification_setup.ps1" -Target "%TARGET%" -Engine "%ENGINE%" -EvidenceDir "%EVIDENCE_DIR%" -SetupPath "%CD%\setup.bat"
+if errorlevel 1 exit /b %ERRORLEVEL%
 bench-env\Scripts\python.exe -m scripts.release.qualification_run "%TARGET%" --root "%CD%" --result "%RESULT%"
 exit /b %ERRORLEVEL%
 

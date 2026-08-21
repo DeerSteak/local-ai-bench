@@ -13,11 +13,14 @@ def test_unix_launcher_runs_normal_setup_then_normal_benchmark_wrapper():
     assert "qualification-env" not in text
     assert "qualification_automation" not in text
     assert '$ROOT/qualification-evidence/$TARGET/results_qualification_${TARGET}.json' in text
+    assert 'tee -a "$SETUP_LOG"' in text
+    assert '"schema": "qualification-setup-v1"' in text
+    assert 'chmod 0644 "$SETUP_LOG" "$SETUP_STATUS"' in text
 
 
 def test_windows_launcher_runs_normal_setup_then_normal_benchmark_wrapper():
     text = (ROOT / "run_qualification.bat").read_text()
-    assert 'call setup.bat --qualification %ENGINE% --qualification-target "%TARGET%"' in text
+    assert "qualification_setup.ps1" in text
     assert "scripts.release.qualification_run" in text
     assert "qualification-env" not in text
     assert "qualification_automation" not in text
@@ -28,6 +31,15 @@ def test_windows_launcher_runs_normal_setup_then_normal_benchmark_wrapper():
                if line.startswith("powershell.exe"))
     assert "for /f" not in text
     assert "%CD%\\qualification-evidence\\%TARGET%\\results_qualification_%TARGET%.json" in text
+
+
+def test_windows_setup_capture_retains_log_and_machine_readable_status():
+    text = (ROOT / "scripts" / "release" / "qualification_setup.ps1").read_text()
+    assert "Tee-Object -FilePath $log -Append" in text
+    assert 'schema = "qualification-setup-v1"' in text
+    assert 'status = "running"' in text
+    assert 'log = "setup.log"' in text
+    assert "exit $setupExit" in text
 
 
 def test_windows_target_helper_lists_and_validates_the_shared_target_registry():
