@@ -28,11 +28,12 @@ def llamacpp_backend_from_device_listing(output: str) -> str:
     return "cpu"
 
 
-def probe_llamacpp_backend(binary: str | Path, *, run=None) -> str | None:
+def probe_llamacpp_backend(binary: str | Path, *, env=None, run=None) -> str | None:
     run = run or subprocess.run
     try:
         completed = run(
             [str(binary), "--list-devices"], capture_output=True, text=True, timeout=10,
+            env=env,
         )
     except (OSError, subprocess.SubprocessError):
         return None

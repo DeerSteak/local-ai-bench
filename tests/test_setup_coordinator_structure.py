@@ -27,6 +27,13 @@ def test_intel_prerequisite_failure_stops_before_llamacpp_install():
     assert "issues.append" not in install_block
 
 
+def test_post_install_xpu_probe_uses_oneapi_environment():
+    source = SETUP_CHECK.read_text(encoding="utf-8")
+
+    assert '_llamacpp_probe_env = oneapi_environment() if _required_llamacpp_backend == "xpu"' in source
+    assert source.count("env=_llamacpp_probe_env") == 2
+
+
 def test_setup_coordinator_import_is_safe():
     sys.modules.pop("scripts.setup.setup_check", None)
     module = importlib.import_module("scripts.setup.setup_check")

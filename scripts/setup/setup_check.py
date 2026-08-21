@@ -371,8 +371,9 @@ def main() -> None:  # pragma: no cover - real interactive installer
         _qualification_target["backend"] if _qualification_target
         and _qualification_target["runtime"] == LLAMACPP else None
     )
+    _llamacpp_probe_env = oneapi_environment() if _required_llamacpp_backend == "xpu" else None
     _installed_llamacpp_backend = (
-        probe_llamacpp_backend(LLAMACPP_BIN) if LLAMACPP_BIN else None
+        probe_llamacpp_backend(LLAMACPP_BIN, env=_llamacpp_probe_env) if LLAMACPP_BIN else None
     )
     _llamacpp_backend_mismatch = llamacpp_install.qualification_backend_mismatch(
         LLAMACPP_BIN, _installed_llamacpp_backend, _required_llamacpp_backend,
@@ -781,7 +782,8 @@ def main() -> None:  # pragma: no cover - real interactive installer
             llamacpp_found = True
             LLAMACPP_BIN = find_llamacpp_binary()
             _post_install_backend_error = llamacpp_install.qualification_backend_error(
-                LLAMACPP_BIN, _required_llamacpp_backend, probe=probe_llamacpp_backend,
+                LLAMACPP_BIN, _required_llamacpp_backend,
+                probe=lambda binary: probe_llamacpp_backend(binary, env=_llamacpp_probe_env),
             )
             if _post_install_backend_error:
                 fail(_post_install_backend_error)

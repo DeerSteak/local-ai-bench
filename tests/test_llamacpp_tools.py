@@ -25,8 +25,11 @@ def test_llamacpp_backend_probe_uses_the_explicit_binary_and_both_output_streams
         calls.append((command, kwargs))
         return SimpleNamespace(returncode=0, stdout="Available devices:\n", stderr="HIP0: AMD")
 
-    assert probe_llamacpp_backend("/managed/llama-server", run=run) == "rocm"
+    assert probe_llamacpp_backend(
+        "/managed/llama-server", env={"RUNTIME": "ready"}, run=run,
+    ) == "rocm"
     assert calls[0][0] == ["/managed/llama-server", "--list-devices"]
+    assert calls[0][1]["env"] == {"RUNTIME": "ready"}
 
 
 def test_llamacpp_backend_probe_does_not_guess_after_a_failed_command():

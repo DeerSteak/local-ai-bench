@@ -186,6 +186,20 @@ def test_run_one_parses_jsonl_on_success(monkeypatch):
     assert entries == fake_entries
 
 
+def test_run_one_passes_runtime_environment_to_process(monkeypatch):
+    captured = {}
+
+    def popen(cmd, stdout, stderr, text, env):
+        captured["env"] = env
+        return _FakePopen(0)
+
+    monkeypatch.setattr(
+        "scripts.workloads.llamabench_benchmark.subprocess.Popen", popen,
+    )
+    LlamaBenchBenchmark.run_one(["llama-bench"], 60, env={"ONEAPI": "ready"})
+    assert captured["env"] == {"ONEAPI": "ready"}
+
+
 def test_run_one_streams_each_jsonl_result(monkeypatch):
     rows = [
         {"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0},
@@ -405,14 +419,18 @@ def test_run_records_entries_on_success(fake_engine, monkeypatch, small_matrix):
 
 def test_run_passes_on_progress_to_run_one(fake_engine, monkeypatch, small_matrix):
     captured = []
+    fake_engine._process_env = {"ONEAPI": "ready"}
 
-    def fake_run_one(cls, *a, on_progress=None, **kw):
-        captured.append(on_progress)
+    def fake_run_one(cls, *a, on_progress=None, env=None, **kw):
+        captured.append((on_progress, env))
         return [{"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0}]
 
     monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(fake_run_one))
     LlamaBenchBenchmark().run(fake_engine, _MODELS, reps=1)
-    assert captured == [Shared.log, Shared.log]
+    assert captured == [
+        (Shared.log, {"ONEAPI": "ready"}),
+        (Shared.log, {"ONEAPI": "ready"}),
+    ]
 
 
 def test_run_calls_save_fn_after_each_streamed_case(fake_engine, monkeypatch, small_matrix):

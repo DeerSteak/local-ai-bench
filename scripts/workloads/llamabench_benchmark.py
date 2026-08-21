@@ -89,10 +89,14 @@ class LlamaBenchBenchmark:
         ]
 
     @classmethod
-    def run_one(cls, cmd: list[str], timeout: int | float, on_progress=None, on_result=None) -> list[dict]:
+    def run_one(cls, cmd: list[str], timeout: int | float, on_progress=None, on_result=None,
+                env=None) -> list[dict]:
         """Streams progress and parses one llama-bench JSONL pass; timeout measures idle output,
         not total wall-clock duration."""
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        popen_kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE, "text": True}
+        if env is not None:
+            popen_kwargs["env"] = env
+        proc = subprocess.Popen(cmd, **popen_kwargs)
         Shared._managed_procs.append(proc)
 
         rows: list[dict] = []
@@ -301,10 +305,10 @@ class LlamaBenchBenchmark:
                     try:
                         if journal and (begin_measured := getattr(journal, "begin_measured", None)):
                             begin_measured("measured:native-sweep-includes-load")
-                        self.run_one(
-                            command, config.LLAMABENCH_TIMEOUT,
-                            on_progress=Shared.log, on_result=record_row,
-                        )
+                        run_kwargs = {"on_progress": Shared.log, "on_result": record_row}
+                        if process_env := engine.process_environment():
+                            run_kwargs["env"] = process_env
+                        self.run_one(command, config.LLAMABENCH_TIMEOUT, **run_kwargs)
                     except subprocess.TimeoutExpired:
                         model_result.update(
                             timed_out=True,
