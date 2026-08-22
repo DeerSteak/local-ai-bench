@@ -17,7 +17,6 @@ from typing import Any, Protocol, Sequence
 
 from scripts.runtime import config, hardware
 from scripts.runtime.shared import RUN_LOG_UTC_OFFSET_ENV
-from scripts.runtime.execution_profile import build_execution_profile
 import psutil
 from scripts.app.benchmark_frontend import (
     merge_model_inventories, models_runnable_by,
@@ -47,7 +46,9 @@ from scripts.app.benchmark_frontend import (
     validate_gui_options,
 )
 from scripts.runtime.comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
-from scripts.runtime.engines import engine_names, get_engine, installed_engine_names
+from scripts.runtime.engines import (
+    engine_display_name, engine_names, get_engine, installed_engine_names,
+)
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.setup.model_inventory import build_model_inventory
 from scripts.app.engine_management import collect_engine_management
@@ -59,9 +60,6 @@ from scripts.runtime.pause_control import PAUSE_CONTROL_ENV, create_pause_contro
 from scripts.runtime.progress_events import PROGRESS_PREFIX
 from scripts.runtime.crash_cache import clear_crash_caches, crash_cache_paths
 from scripts.runtime.shared import Shared
-from scripts.release.qualification import (
-    engine_selection_label, experimental_acknowledgement_required,
-)
 from scripts.setup.setup_config import (
     available_gpu_split_modes, configured_comfyui_dir, configured_gpu_devices,
     load_setup_config,
@@ -241,37 +239,17 @@ def restored_tg_tokens(state: dict[str, Any] | None) -> set[int]:
     return set(state["tg_tokens"])
 
 
-def runtime_profiles_for_engines(engines: dict, hardware_profile: dict,
-                                 profile_builder=build_execution_profile) -> dict[str, dict]:
-    profiles = {}
-    for name, engine in engines.items():
-        accelerated = profile_builder(
-            engine, ["llm"], cpu_only=False, engine_name=name,
-            hardware_profile=hardware_profile,
-        )
-        runtime_version = accelerated["engine_support"]["runtime_version"]
-        cpu = profile_builder(
-            engine, ["llm"], cpu_only=True, engine_name=name,
-            hardware_profile=hardware_profile, runtime_version=runtime_version,
-        )
-        profiles[name] = {
-            "accelerated": accelerated["engine_support"],
-            "cpu": cpu["engine_support"],
-            "runtime_backend": accelerated["backend"],
-        }
-    return profiles
-
-
-def pending_qualification_profiles(engine_names: Sequence[str], *, failed: bool = False
-                                   ) -> dict[str, dict]:
-    caveat = ("Exact qualification status could not be determined."
-              if failed else "Checking exact runtime qualification status.")
+def runtime_profiles_for_engines(engines: dict, hardware_profile: dict) -> dict[str, dict]:
+    hardware_backend = hardware_profile["backend"]
     return {
-        name: {
-            "accelerated": {"support_level": "unverified", "caveat": caveat},
-            "cpu": {"support_level": "unverified", "caveat": caveat},
-            "runtime_backend": None,
-        }
+        name: {"runtime_backend": engine.runtime_backend(hardware_backend, cpu_only=False)}
+        for name, engine in engines.items()
+    }
+
+
+def pending_runtime_profiles(engine_names: Sequence[str]) -> dict[str, dict]:
+    return {
+        name: {"runtime_backend": None}
         for name in engine_names
     }
 
@@ -319,22 +297,15 @@ def gpu_split_mode_availability_error(requested: str, available: Sequence[str], 
     )
 
 
-def qualification_profiles_for_selection(profiles: dict[str, dict],
-                                         selected_engines: Sequence[str], *,
-                                         cpu_only: bool) -> dict[str, dict]:
-    key = "cpu" if cpu_only else "accelerated"
-    return {name: profiles[name][key] for name in selected_engines}
-
-
-def start_qualification_profile_load(engines: dict, hardware_profile: dict,
-                                     output_queue: queue.Queue,
-                                     loader=runtime_profiles_for_engines,
-                                     thread_factory: Any = threading.Thread) -> None:
+def start_runtime_profile_load(engines: dict, hardware_profile: dict,
+                               output_queue: queue.Queue,
+                               loader=runtime_profiles_for_engines,
+                               thread_factory: Any = threading.Thread) -> None:
     def load() -> None:
         try:
             profiles = loader(engines, hardware_profile)
         except Exception:
-            profiles = pending_qualification_profiles(tuple(engines), failed=True)
+            profiles = pending_runtime_profiles(tuple(engines))
         output_queue.put(profiles)
 
     thread_factory(target=load, daemon=True).start()
@@ -420,9 +391,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     hardware_profile = Shared.build_profile()
     system_ram_gb = hardware_profile["ram_gb"]
     hardware_backend = hardware_profile["backend"]
-    runtime_profiles = pending_qualification_profiles(available_engines)
+    runtime_profiles = pending_runtime_profiles(available_engines)
     runtime_profiles_ready = [False]
-    qualification_profile_queue = queue.Queue()
+    runtime_profile_queue = queue.Queue()
     gpu_split_modes = ["layer"]
     discovery = build_discovery_report(
         platform_name=platform.system(), architecture=platform.machine(),
@@ -590,9 +561,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             refresh_split_modes()
 
     engine_label_vars = {
-        name: tk.StringVar(value=engine_selection_label(
-            name, runtime_profiles[name]["accelerated"],
-        ))
+        name: tk.StringVar(value=engine_display_name(name))
         for name in available_engines
     }
     for index, name in enumerate(available_engines):
@@ -1110,11 +1079,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     def refresh_split_modes(*_):
         selected = parse_engine_selection(engine_var.get())
-        qualification_key = "cpu" if option_vars["cpu_only"].get() else "accelerated"
-        for name in available_engines:
-            engine_label_vars[name].set(engine_selection_label(
-                name, runtime_profiles[name][qualification_key],
-            ))
         resolved = split_modes_for_runtime_profiles(
             setup, selected, runtime_profiles,
             cpu_only=bool(option_vars["cpu_only"].get()),
@@ -1163,22 +1127,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             return
         if not show_plan_preview(root, tk, ttk, preparation.preview):
             return
-        selected_engines = parse_engine_selection(engine_var.get())
-        qualification_profiles = qualification_profiles_for_selection(
-            runtime_profiles, selected_engines, cpu_only=gui_options["cpu_only"],
-        )
-        acknowledge_experimental = experimental_acknowledgement_required(
-            selected_engines, qualification_profiles,
-        )
-        if acknowledge_experimental:
-            if not messagebox.askyesno(
-                    "Experimental engine",
-                    "vLLM has not passed this suite's complete qualification on this "
-                    "exact platform and runtime. Continue with an experimental run whose "
-                    "result will retain that caveat?",
-                    parent=root):
-                return
-            preparation.command.append("--ack-experimental-engine")
         authorization_error = authorize_macos_power_telemetry(
             gui_options["power_telemetry"],
         )
@@ -1249,21 +1197,21 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     root.protocol("WM_DELETE_WINDOW", close_window)
     update_advanced()
 
-    def poll_qualification_profiles():
+    def poll_runtime_profiles():
         try:
-            profiles = qualification_profile_queue.get_nowait()
+            profiles = runtime_profile_queue.get_nowait()
         except queue.Empty:
-            root.after(100, poll_qualification_profiles)
+            root.after(100, poll_runtime_profiles)
             return
         runtime_profiles.clear()
         runtime_profiles.update(profiles)
         runtime_profiles_ready[0] = True
         refresh_split_modes()
 
-    start_qualification_profile_load(
-        engine_instances, hardware_profile, qualification_profile_queue,
+    start_runtime_profile_load(
+        engine_instances, hardware_profile, runtime_profile_queue,
     )
-    root.after(50, poll_qualification_profiles)
+    root.after(50, poll_runtime_profiles)
     root.after(100, poll_output)
     root.after(150, lambda: (root.lift(), root.attributes("-topmost", True), root.focus_force(),
                              root.after(400, lambda: root.attributes("-topmost", False))))

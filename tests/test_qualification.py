@@ -1,9 +1,8 @@
 import pytest
 
 from scripts.release.qualification import (
-    QUALIFICATION_MATRIX, derive_image_support_level, derive_support_level, engine_selection_label,
-    engine_support_profile, experimental_acknowledgement_required,
-    experimental_engine_ack_error, platform_name,
+    QUALIFICATION_MATRIX, derive_image_support_level, derive_support_level,
+    engine_support_profile, platform_name,
     qualification_entry, qualification_is_stale, qualification_rows,
     validate_qualification_entry,
     validate_qualification_matrix,
@@ -350,23 +349,3 @@ def test_execution_support_profile_requires_exact_runtime_evidence():
     assert supported["support_level"] == "supported"
     assert supported["qualification_id"] == evidence["id"]
     assert unverified["support_level"] == "unverified"
-
-
-def test_engine_selection_labels_and_vllm_acknowledgement_follow_derived_support():
-    unverified = {"support_level": "unverified"}
-    supported = {"support_level": "supported"}
-    assert engine_selection_label("llamacpp", unverified) == "llama.cpp — Unverified"
-    assert engine_selection_label("vllm", unverified) == (
-        "vllm — Experimental · Unverified qualification"
-    )
-    assert experimental_acknowledgement_required(
-        ["llamacpp", "vllm"], {"llamacpp": unverified, "vllm": unverified},
-    ) is True
-    assert experimental_acknowledgement_required(
-        ["vllm"], {"vllm": supported},
-    ) is False
-    error = experimental_engine_ack_error(["vllm"], {"vllm": unverified}, False)
-    assert error is not None and "--ack-experimental-engine" in error
-    assert experimental_engine_ack_error(["vllm"], {"vllm": unverified}, True) is None
-    assert experimental_engine_ack_error(["vllm"], {"vllm": supported}, False) is None
-    assert experimental_engine_ack_error(["llamacpp"], {"llamacpp": unverified}, False) is None

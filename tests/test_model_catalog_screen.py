@@ -85,7 +85,7 @@ def test_candidate_lookup_and_screen_plan_are_exact_and_side_effect_free(tmp_pat
     vllm = build_screen_spec(record, "vllm", tmp_path, python_executable="python")
     assert vllm.repo == "owner/model"
     assert vllm.files == ("model.safetensors",)
-    assert vllm.command[-1] == "--ack-experimental-engine"
+    assert "--ack-experimental-engine" not in vllm.command
 
     publisher = build_screen_spec(
         record, "llamacpp", tmp_path, python_executable="python",

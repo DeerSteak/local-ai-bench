@@ -140,8 +140,6 @@ def build_screen_spec(candidate: dict, engine: str, output_root: Path,
             "--audit-image-model", str(output_path.with_name("image-model.json")),
             "--runs", "1", "--warmup", "1", "--out", str(output_path),
         ]
-    if engine == "vllm":
-        command.append("--ack-experimental-engine")
     if publisher_sampling:
         command.extend((
             "--publisher-sampling-profile",

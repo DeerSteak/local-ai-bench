@@ -14,7 +14,6 @@ run_bench.bat [options]   # Windows
 
 --tests TESTS           Tests to run (default: all nine — see Flag details below)
 --engine ENGINE         Inference engine to benchmark, or 'all' (default: llamacpp)
---ack-experimental-engine  Acknowledge an unqualified vLLM run
 --publisher-sampling-profile FILE  Opt in to a pinned non-baseline sampler profile
 --audit-image-model FILE  Run a validated internal catalog-audit image specification
 --cpu-only              Force CPU-only inference for every engine-backed test
@@ -41,7 +40,7 @@ run_bench.bat [options]   # Windows
 
 See [Flag details](#flag-details) below for what each flag actually does.
 
-When `--engine` includes vLLM, direct CLI runs require `--ack-experimental-engine` until that exact platform and runtime have passed complete smallest-model qualification. The graphical and terminal launchers resolve the installed runtime's exact qualification status and add the flag only after displaying an experimental-engine confirmation when one is required; CPU-only selection is evaluated as a distinct unqualified backend. The graphical launcher performs runtime probes in the background so its window remains responsive and Start remains usable; until a probe finishes, GPU split mode stays at the universally safe layer setting and vLLM requires the experimental confirmation. The terminal launcher prints a status line before probing. The resulting support caveat remains recorded in the run profile.
+The launchers do not infer or display qualification status. Consult the [qualified-platform matrix](../README.md#qualified-platforms) before choosing an engine; run artifacts still retain execution identity and qualification provenance for later validation. The graphical launcher probes the installed runtime backend in the background to populate only the GPU split modes that runtime supports.
 
 ## Launch modes
 

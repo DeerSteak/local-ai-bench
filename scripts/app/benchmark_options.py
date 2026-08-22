@@ -37,10 +37,6 @@ PUBLIC_OPTION_SCHEMA = {
     "--dry-run": _spec("boolean", "contextual", "equivalent", "Final plan preview", default=False),
     "--tests": _spec("string-list", "guided", "exposed", "Test selection screen", choices=TEST_CHOICES),
     "--engine": _spec("choice", "guided", "exposed", "Engine selection screen"),
-    "--ack-experimental-engine": _spec(
-        "boolean", "contextual", "equivalent", "Experimental-engine confirmation dialog",
-        default=False,
-    ),
     "--publisher-sampling-profile": _spec(
         "path", "developer-only", "excluded", "Catalog-audit methodology control",
     ),

@@ -857,17 +857,6 @@ def test_build_command_omits_comfyui_when_no_image_test_is_selected():
         )
 
 
-def test_build_command_only_acknowledges_vllm_after_frontend_authorization():
-    entry = MenuEntry("model", "Model", "llm", "LLM", True)
-    ordinary = build_benchmark_command("vllm", Path("/comfy"), ["llm"], [entry])
-    acknowledged = build_benchmark_command(
-        "vllm", Path("/comfy"), ["llm"], [entry],
-        acknowledge_experimental_engine=True,
-    )
-    assert "--ack-experimental-engine" not in ordinary
-    assert "--ack-experimental-engine" in acknowledged
-
-
 def test_build_command_keeps_an_explicit_gui_comfyui_path_only_for_image_runs():
     options = dict(GUI_OPTION_DEFAULTS, comfyui="/chosen/ComfyUI")
     entries = [MenuEntry("sdxl", "SDXL", "image", "Images", True)]
@@ -1432,65 +1421,18 @@ def test_run_frontend_explicit_no_cancels_final_confirmation():
     assert messages[-1] == "Benchmark selection cancelled."
 
 
-def test_run_frontend_requires_explicit_experimental_vllm_acknowledgement():
+def test_run_frontend_launches_vllm_without_qualification_messaging():
     commands = []
     messages, output = output_collector()
-    profile = {
-        "engine_support": {
-            "support_level": "unverified",
-            "caveat": "No matching qualification.",
-        },
-    }
-    result = run_frontend(
-        input_fn=InputSequence(["", "", "", "n"]), output_fn=output,
-        process_runner=lambda command: commands.append(command),
-        engine_names_fn=lambda: ["vllm"], engine_factory=FakeEngine,
-        inventory_builder=lambda _engine, _path: sample_inventory(),
-        support_profile_builder=lambda *_args, **_kwargs: profile,
-    )
-    assert result == 0
-    assert not commands
-    assert "Acknowledge this experimental vLLM run? [y/N]" in messages
-
-
-def test_run_frontend_passes_ack_only_after_vllm_is_authorized():
-    commands = []
-    profile = {
-        "engine_support": {
-            "support_level": "unverified",
-            "caveat": "No matching qualification.",
-        },
-    }
-    result = run_frontend(
-        input_fn=InputSequence(["", "", "", "y", ""]), output_fn=lambda _message: None,
-        process_runner=lambda command: commands.append(command) or 0,
-        engine_names_fn=lambda: ["vllm"], engine_factory=FakeEngine,
-        inventory_builder=lambda _engine, _path: sample_inventory(),
-        support_profile_builder=lambda *_args, **_kwargs: profile,
-    )
-    assert result == 0
-    assert "--ack-experimental-engine" in commands[0]
-
-
-def test_run_frontend_does_not_prompt_for_qualified_vllm():
-    commands = []
-    messages, output = output_collector()
-    profile = {
-        "engine_support": {
-            "support_level": "supported",
-            "caveat": "Qualified.",
-        },
-    }
     result = run_frontend(
         input_fn=InputSequence(["", "", "", ""]), output_fn=output,
         process_runner=lambda command: commands.append(command) or 0,
         engine_names_fn=lambda: ["vllm"], engine_factory=FakeEngine,
         inventory_builder=lambda _engine, _path: sample_inventory(),
-        support_profile_builder=lambda *_args, **_kwargs: profile,
     )
     assert result == 0
     assert "--ack-experimental-engine" not in commands[0]
-    assert "Acknowledge this experimental vLLM run? [y/N]" not in messages
+    assert not any("qualification" in message.lower() for message in messages)
 
 
 def test_run_frontend_q_eof_or_interrupt_cancels_without_process():

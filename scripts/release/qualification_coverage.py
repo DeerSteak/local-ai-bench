@@ -152,6 +152,4 @@ def qualification_arguments(engine: str, model: str, result: Path) -> list[str]:
     ]
     if engine == "llamacpp":
         command += ["--image-models", SMALLEST_IMAGE_MODEL]
-    else:
-        command.append("--ack-experimental-engine")
     return command

@@ -16,7 +16,6 @@ from pathlib import Path
 
 from scripts.runtime import config
 from scripts.runtime.execution_profile import build_execution_profile
-from scripts.release.qualification import experimental_engine_ack_error
 from scripts.app.benchmark_options import TEST_CHOICES, TG_TOKEN_CHOICES, TIER_CHOICES, option_value_errors
 from scripts.runtime.progress_events import emit_result_saved, set_progress_engine
 from scripts.runtime.comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
@@ -802,10 +801,6 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "docs referencing --engine don't need to change when one is.",
     )
     parser.add_argument(
-        "--ack-experimental-engine", action="store_true",
-        help="Acknowledge that selected experimental engines lack complete qualification.",
-    )
-    parser.add_argument(
         "--publisher-sampling-profile", type=Path,
         help="Opt in to a source-pinned publisher sampling profile JSON. Results use a distinct "
              "methodology identity and are not baseline-comparable.",
@@ -944,21 +939,6 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         engine_scopes, args.tests, cpu_only=args.cpu_only,
         hardware_profile=hardware_profile,
     )
-    acknowledged_runtimes = [
-        scope["name"] for index, scope in enumerate(engine_scopes)
-        if engine_version_applies(engine_pass_tests(
-            args.tests, scope["name"], include_images=index == 0,
-        ))
-    ]
-    support_profiles = {
-        name: profile["engine_support"] for name, profile in execution_profiles.items()
-    }
-    acknowledgement_error = experimental_engine_ack_error(
-        acknowledged_runtimes, support_profiles, args.ack_experimental_engine,
-    )
-    if acknowledgement_error:
-        parser.error(acknowledgement_error)
-
     _safe = re.sub(r'[\\/:*?"<>|\s]+', '_', hardware_profile['hostname']).strip('_')
     _start_stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     config.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -1026,10 +1006,6 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         Shared.output(f"  Engine:    {engine_name}")
         if runtime_version:
             Shared.output(f"  Runtime:   {runtime_version}")
-        Shared.output(
-            f"  Support:   {profile['engine_support']['support_level']} — "
-            f"{profile['engine_support']['caveat']}"
-        )
         Shared.output(f"  Runs:      {config.N_RUNS} measured + {args.warmup} warmup")
         Shared.output(
             f"  Timeout:   {config.RUN_TIMEOUT}s per run, "
