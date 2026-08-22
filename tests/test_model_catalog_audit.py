@@ -67,6 +67,13 @@ def test_candidate_register_rejects_duplicate_ids_and_missing_sources(tmp_path):
     with pytest.raises(ValueError, match="pipeline"):
         load_candidate_register(path)
 
+    path.write_text(json.dumps({"schema_version": 1, "candidates": [{
+        "id": "embed", "family": "embedding", "gguf_provenance": "assumed",
+        "sources": {"upstream": "a/b", "gguf": "a/b-GGUF"},
+    }]}))
+    with pytest.raises(ValueError, match="GGUF provenance"):
+        load_candidate_register(path)
+
 
 def test_repository_audit_records_exact_revision_and_artifact_identity():
     api = FakeApi({"owner/model": info(files=(("model.safetensors", 10),))})
@@ -140,6 +147,27 @@ def test_source_status_surfaces_access_license_and_artifact_gates():
         "GGUF provenance does not identify the selected upstream repository",
         "GGUF artifact could not be resolved",
     ]
+
+
+def test_source_status_accepts_explicit_exact_variant_from_same_publisher():
+    candidate = {
+        "id": "embed", "family": "embedding",
+        "gguf_provenance": "publisher_exact_variant",
+    }
+    sources = {
+        "upstream": {
+            "repo": "Qwen/Qwen3-Embedding-0.6B", "private": False, "gated": False,
+            "license": "apache-2.0", "artifact": {"files": ["model.safetensors"]},
+            "configuration": {}, "custom_code": False,
+        },
+        "gguf": {
+            "repo": "Qwen/Qwen3-Embedding-0.6B-GGUF", "private": False,
+            "gated": False, "license": "apache-2.0",
+            "base_models": ["Qwen/Qwen3-0.6B-Base"],
+            "artifact": {"files": ["model.gguf"]},
+        },
+    }
+    assert source_status(candidate, sources) == ("source_ready", [])
 
 
 def test_full_audit_preserves_candidate_order_and_derives_status():

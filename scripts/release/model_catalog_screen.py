@@ -190,7 +190,7 @@ def interrupt_ready(result: dict, spec: ScreenSpec) -> bool:
         ) if isinstance(model, dict) else False
     model = result.get(section_name, {}).get(spec.tag, {})
     if spec.family == "embedding":
-        return result.get("run", {}).get("stages", {}).get("emb", {}).get("status") == "running"
+        return isinstance(model, dict) and model.get("valid_runs", 0) > 0
     return any(
         isinstance(case, dict) and case.get("valid_runs", 0) > 0
         for case in model.values()

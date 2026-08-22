@@ -85,8 +85,8 @@ The metadata-only source audit was refreshed on August 21, 2026 with `bench-env/
 | Gemma 4 26B-A4B | `4d7ae4984b7d` | `gemma4`, 262,144 context, standalone chat template; publisher `temp=1`, `top-k=64`, `top-p=.95` | `gemma-4-26B-A4B-it-Q4_0.gguf` (13.61 GiB) | Source ready |
 | NVIDIA Nemotron Nano 9B v2 | `6533e8de2c68` | `nemotron_h`, 131,072 context, tokenizer chat template; custom code | `nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q4_K_M.gguf` (6.08 GiB) | Blocked: custom code and license review plus undeclared GGUF license |
 | EmbeddingGemma 300M | `57c266a740f5` | Configuration inaccessible without approved credentials | `embeddinggemma-300m-iq4_xs.gguf` (0.28 GiB) | Blocked: manual upstream access and Gemma license review |
-| Qwen3 Embedding 0.6B | `97b0c614be4d` | `qwen3`, 32,768 context | `Qwen3-Embedding-0.6B-Q8_0.gguf` (0.60 GiB) | Blocked: GGUF card identifies the generic base model, not the selected embedding upstream |
-| Qwen3 Embedding 4B | `5cf2132abc99` | `qwen3`, 40,960 context | `Qwen3-Embedding-4B-Q4_K_M.gguf` (2.33 GiB) | Blocked: GGUF card identifies the generic base model, not the selected embedding upstream |
+| Qwen3 Embedding 0.6B | `97b0c614be4d` | `qwen3`, 32,768 context | `Qwen3-Embedding-0.6B-Q8_0.gguf` (0.60 GiB) | Source ready: exact same-publisher GGUF variant explicitly identifies the embedding series and selected 0.6B model |
+| Qwen3 Embedding 4B | `5cf2132abc99` | `qwen3`, 40,960 context | `Qwen3-Embedding-4B-Q4_K_M.gguf` (2.33 GiB) | Source ready: exact same-publisher GGUF variant explicitly identifies the embedding series and selected 4B model |
 | FLUX.2 Klein 4B | `e7b7dc27f91d` | `Flux2KleinPipeline` | Pinned 15.02 GiB ComfyUI diffusion, Qwen text encoder, and VAE set | Blocked: the authoritative VAE dependency carries a custom license requiring review |
 | Z-Image Turbo | `f332072aa78b` | `ZImagePipeline` | Pinned 19.27 GiB ComfyUI diffusion, Qwen text encoder, and VAE set | Source ready |
 

@@ -568,11 +568,10 @@
     },
     {
       "family": "embedding",
+      "gguf_provenance": "publisher_exact_variant",
       "id": "qwen3-embedding-0.6b",
       "name": "Qwen3 Embedding 0.6B",
-      "reasons": [
-        "GGUF provenance does not identify the selected upstream repository"
-      ],
+      "reasons": [],
       "sources": {
         "gguf": {
           "artifact": {
@@ -652,15 +651,14 @@
           "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3"
         }
       },
-      "status": "blocked"
+      "status": "source_ready"
     },
     {
       "family": "embedding",
+      "gguf_provenance": "publisher_exact_variant",
       "id": "qwen3-embedding-4b",
       "name": "Qwen3 Embedding 4B",
-      "reasons": [
-        "GGUF provenance does not identify the selected upstream repository"
-      ],
+      "reasons": [],
       "sources": {
         "gguf": {
           "artifact": {
@@ -742,7 +740,7 @@
           "revision": "5cf2132abc99cad020ac570b19d031efec650f2b"
         }
       },
-      "status": "blocked"
+      "status": "source_ready"
     },
     {
       "family": "image",

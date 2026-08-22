@@ -29,6 +29,8 @@ def load_candidate_register(path: Path = DEFAULT_CANDIDATES) -> list[dict]:
             raise ValueError(f"candidate requires an upstream source: {candidate.get('id')}")
         if candidate["family"] != "image" and not isinstance(sources.get("gguf"), str):
             raise ValueError(f"candidate requires a GGUF source: {candidate.get('id')}")
+        if candidate.get("gguf_provenance") not in {None, "publisher_exact_variant"}:
+            raise ValueError(f"invalid GGUF provenance: {candidate.get('id')}")
         pipeline = sources.get("pipeline")
         if pipeline is not None and (
                 not isinstance(pipeline, list) or not pipeline
@@ -234,7 +236,12 @@ def source_status(candidate: dict, sources: dict) -> tuple[str, list[str]]:
             reasons.append("GGUF license is not declared")
         elif upstream["license"] and gguf["license"] != upstream["license"]:
             reasons.append("GGUF and upstream licenses do not match")
-        if upstream["repo"] not in gguf["base_models"]:
+        publisher_exact = (
+            candidate.get("gguf_provenance") == "publisher_exact_variant"
+            and gguf["repo"] == f"{upstream['repo']}-GGUF"
+            and gguf["repo"].split("/", 1)[0] == upstream["repo"].split("/", 1)[0]
+        )
+        if upstream["repo"] not in gguf["base_models"] and not publisher_exact:
             reasons.append("GGUF provenance does not identify the selected upstream repository")
         if gguf["artifact"] is None:
             reasons.append("GGUF artifact could not be resolved")

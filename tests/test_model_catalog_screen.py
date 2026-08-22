@@ -173,15 +173,13 @@ def test_existing_import_identity_handles_llamacpp_files_and_vllm_cache_registry
     }, vllm)
 
 
-def test_interrupt_waits_for_durable_llm_evidence_and_embedding_stage_start():
+def test_interrupt_waits_for_durable_llm_and_embedding_evidence():
     llm = spec()
     assert not interrupt_ready({"llm": {llm.tag: {"2K": {"valid_runs": 0}}}}, llm)
     assert interrupt_ready({"llm": {llm.tag: {"2K": {"valid_runs": 1}}}}, llm)
     embedding = spec("embedding")
-    assert not interrupt_ready({"run": {"stages": {}}}, embedding)
-    assert interrupt_ready(
-        {"run": {"stages": {"emb": {"status": "running"}}}}, embedding,
-    )
+    assert not interrupt_ready({"embeddings": {embedding.tag: {"valid_runs": 0}}}, embedding)
+    assert interrupt_ready({"embeddings": {embedding.tag: {"valid_runs": 1}}}, embedding)
 
 
 def test_complete_screen_requires_recovery_preflight_sampling_and_both_context_paths():
