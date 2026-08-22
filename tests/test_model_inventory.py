@@ -29,6 +29,8 @@ EMBED_CATALOG = [
 IMAGE_CATALOG = [
     {"short": "image-one", "label": "Image One", "checkpoint": "one.safetensors"},
     {"short": "image-two", "label": "Image Two", "checkpoint": "two.safetensors"},
+    {"short": "image-three", "label": "Image Three", "checkpoint": "three.safetensors",
+     "checkpoint_folder": "diffusion_models"},
 ]
 
 
@@ -106,6 +108,19 @@ def test_installed_images_use_explicit_comfyui_path(tmp_path):
     assert [model["short"] for model in installed] == ["image-two"]
     assert installed[0]["path"] == checkpoint
     assert installed[0]["size"] == 5
+
+
+def test_installed_images_resolve_catalog_checkpoint_folder(tmp_path):
+    diffusion_models = tmp_path / "diffusion_models"
+    diffusion_models.mkdir(parents=True)
+    checkpoint = diffusion_models / "three.safetensors"
+    checkpoint.write_bytes(b"z-image")
+
+    installed = installed_image_models(tmp_path, IMAGE_CATALOG)
+
+    assert [model["short"] for model in installed] == ["image-three"]
+    assert installed[0]["path"] == checkpoint
+    assert installed[0]["size"] == 7
 
 
 def test_installed_images_empty_when_checkpoint_directory_missing(tmp_path):

@@ -6,7 +6,9 @@ from pathlib import Path
 
 from scripts.runtime import config, hardware
 from scripts.setup.custom_models import forget_custom_models
-from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+from scripts.workloads.models import (
+    EMBED_MODELS, IMAGE_MODELS, LLM_MODELS, image_checkpoint_path,
+)
 from scripts.runtime.model_identity import model_tag_slug
 
 
@@ -182,10 +184,9 @@ def classify_engine_models(installed: list[dict], llm_catalog: list[dict] | None
 def installed_image_models(models_dir: Path, image_catalog: list[dict] | None = None) -> list[dict]:
     """Return catalog image entries in benchmark-managed model storage."""
     image_catalog = IMAGE_MODELS if image_catalog is None else image_catalog
-    checkpoints_dir = Path(models_dir) / "checkpoints"
     installed = []
     for model in image_catalog:
-        path = checkpoints_dir / model["checkpoint"]
+        path = image_checkpoint_path(model, models_dir)
         if path.exists():
             installed.append({**model, "size": path.stat().st_size, "path": path})
     return installed
