@@ -52,6 +52,7 @@
 | `docs/platform-tuning.md` | Neutral runtime settings, platform compatibility workarounds, and tuning-profile change rules |
 | `docs/model-catalog-audit-v6.md` | Precommitted Milestone 9 selection rubric, incumbent roles, candidate register, and compatibility-screen contract |
 | `docs/model-catalog-source-audit-v6.json` | Machine-readable candidate repository revisions, access/license metadata, exact artifact sets, provenance checks, and unresolved source gates |
+| `docs/model-catalog-readiness-v6.json` | Machine-readable Milestone 9 source/screen blockers and exact active-catalog artifact-byte totals |
 | `docs/strix-halo-troubleshooting-ubuntu-24.04.md` | Ubuntu OEM-kernel, inbox-driver, ROCm, DKMS recovery, and qualification runbook for Strix Halo |
 | `docs/acceptance-policies.md` | Versioned explicit threshold policy, evidence, and rejection semantics |
 | `docs/projects.md` | Local project workflows, portable configuration, baseline, and acceptance-policy behavior |

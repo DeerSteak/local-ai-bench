@@ -1,0 +1,279 @@
+{
+  "blockers": [
+    "qwen3.8-27b/llamacpp: screen report is missing",
+    "qwen3.8-27b/vllm: screen report is missing",
+    "muse-glimmer-30b/llamacpp: screen report is missing",
+    "muse-glimmer-30b/vllm: screen report is missing",
+    "gemma-4-26b-a4b/llamacpp: screen report is missing",
+    "gemma-4-26b-a4b/vllm: screen report is missing",
+    "qwen3-embedding-0.6b/llamacpp: screen report is missing",
+    "qwen3-embedding-0.6b/vllm: screen report is missing",
+    "qwen3-embedding-4b/llamacpp: screen report is missing",
+    "qwen3-embedding-4b/vllm: screen report is missing",
+    "z-image-turbo/comfyui: screen report is missing"
+  ],
+  "candidates": [
+    {
+      "family": "llm",
+      "id": "qwen3.8-27b",
+      "screens": [
+        {
+          "errors": [
+            "screen report is missing"
+          ],
+          "requirement": "llamacpp",
+          "status": "missing_or_invalid"
+        },
+        {
+          "errors": [
+            "screen report is missing"
+          ],
+          "requirement": "vllm",
+          "status": "missing_or_invalid"
+        }
+      ],
+      "source_reasons": [],
+      "source_status": "source_ready"
+    },
+    {
+      "family": "llm",
+      "id": "muse-glimmer-30b",
+      "screens": [
+        {
+          "errors": [
+            "screen report is missing"
+          ],
+          "requirement": "llamacpp",
+          "status": "missing_or_invalid"
+        },
+        {
+          "errors": [
+            "screen report is missing"
+          ],
+          "requirement": "vllm",
+          "status": "missing_or_invalid"
+        }
+      ],
+      "source_reasons": [],
+      "source_status": "source_ready"
+    },
+    {
+      "family": "llm",
+      "id": "nemotron-3.5-lightning-30b-a3b",
+      "screens": [],
+      "source_reasons": [
+        "upstream other license requires review",
+        "upstream LLM has no chat template",
+        "GGUF provenance does not identify the selected upstream repository"
+      ],
+      "source_status": "blocked"
+    },
+    {
+      "family": "llm",
+      "id": "gemma-4-26b-a4b",
+      "screens": [
+        {
+          "errors": [
+            "screen report is missing"
+          ],
+          "requirement": "llamacpp",
+          "status": "missing_or_invalid"
+        },
+        {
+          "errors": [
+            "screen report is missing"
+          ],
+          "requirement": "vllm",
+          "status": "missing_or_invalid"
+        }
+      ],
+      "source_reasons": [],
+      "source_status": "source_ready"
+    },
+    {
+      "family": "llm",
+      "id": "nemotron-nano-9b-v2",
+      "screens": [],
+      "source_reasons": [
+        "upstream other license requires review",
+        "upstream requires custom code review",
+        "GGUF license is not declared"
+      ],
+      "source_status": "blocked"
+    },
+    {
+      "family": "embedding",
+      "id": "embeddinggemma-300m",
+      "screens": [],
+      "source_reasons": [
+        "upstream repository requires access approval",
+        "upstream gemma license requires review",
+        "upstream configuration could not be inspected"
+      ],
+      "source_status": "blocked"
+    },
+    {
+      "family": "embedding",
+      "id": "qwen3-embedding-0.6b",
+      "screens": [
+        {
+          "errors": [
+            "screen report is missing"
+          ],
+          "requirement": "llamacpp",
+          "status": "missing_or_invalid"
+        },
+        {
+          "errors": [
+            "screen report is missing"
+          ],
+          "requirement": "vllm",
+          "status": "missing_or_invalid"
+        }
+      ],
+      "source_reasons": [],
+      "source_status": "source_ready"
+    },
+    {
+      "family": "embedding",
+      "id": "qwen3-embedding-4b",
+      "screens": [
+        {
+          "errors": [
+            "screen report is missing"
+          ],
+          "requirement": "llamacpp",
+          "status": "missing_or_invalid"
+        },
+        {
+          "errors": [
+            "screen report is missing"
+          ],
+          "requirement": "vllm",
+          "status": "missing_or_invalid"
+        }
+      ],
+      "source_reasons": [],
+      "source_status": "source_ready"
+    },
+    {
+      "family": "image",
+      "id": "flux.2-klein-4b",
+      "screens": [],
+      "source_reasons": [
+        "pipeline other license requires review: Comfy-Org/flux2-dev"
+      ],
+      "source_status": "blocked"
+    },
+    {
+      "family": "image",
+      "id": "z-image-turbo",
+      "screens": [
+        {
+          "errors": [
+            "screen report is missing"
+          ],
+          "requirement": "comfyui",
+          "status": "missing_or_invalid"
+        }
+      ],
+      "source_reasons": [],
+      "source_status": "source_ready"
+    }
+  ],
+  "catalog_cost": {
+    "comfyui_bytes": 115913132580,
+    "llamacpp_bytes": 262921505760,
+    "unknown": {
+      "comfyui_bytes": [],
+      "llamacpp_bytes": [],
+      "vllm_bytes": []
+    },
+    "vllm_bytes": 263807610552
+  },
+  "incumbent_source_review": [
+    {
+      "id": "gemma3:1b-it-q4_K_M",
+      "reasons": [
+        "upstream repository requires access approval",
+        "upstream gemma license requires review",
+        "upstream configuration could not be inspected"
+      ]
+    },
+    {
+      "id": "gemma3:27b-it-q4_K_M",
+      "reasons": [
+        "upstream repository requires access approval",
+        "upstream gemma license requires review",
+        "upstream configuration could not be inspected"
+      ]
+    },
+    {
+      "id": "nemotron-cascade2:30b-a3b-q4_K_M",
+      "reasons": [
+        "upstream other license requires review"
+      ]
+    },
+    {
+      "id": "llama3.3:70b-instruct-q4_K_M",
+      "reasons": [
+        "upstream repository requires access approval",
+        "upstream llama3.3 license requires review",
+        "upstream configuration could not be inspected"
+      ]
+    },
+    {
+      "id": "qwen3-coder-next:80b-a3b-q4_K_M",
+      "reasons": [
+        "selected llamacpp provenance does not identify the upstream repository"
+      ]
+    },
+    {
+      "id": "nemotron-3-super:120b",
+      "reasons": [
+        "upstream other license requires review"
+      ]
+    },
+    {
+      "id": "sd15",
+      "reasons": [
+        "upstream creativeml-openrail-m license requires review"
+      ]
+    },
+    {
+      "id": "sdxl",
+      "reasons": [
+        "upstream openrail++ license requires review"
+      ]
+    },
+    {
+      "id": "sd35-large",
+      "reasons": [
+        "upstream repository requires access approval",
+        "upstream other license requires review",
+        "upstream configuration could not be inspected",
+        "selected comfyui repository is not publicly accessible"
+      ]
+    },
+    {
+      "id": "flux-dev",
+      "reasons": [
+        "upstream repository requires access approval",
+        "upstream other license requires review",
+        "upstream configuration could not be inspected",
+        "selected comfyui repository is not publicly accessible"
+      ]
+    },
+    {
+      "id": "flux2-dev",
+      "reasons": [
+        "upstream repository requires access approval",
+        "upstream other license requires review",
+        "upstream configuration could not be inspected",
+        "selected comfyui repository is not publicly accessible"
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "status": "awaiting_evidence"
+}

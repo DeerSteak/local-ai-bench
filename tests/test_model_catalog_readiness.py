@@ -2,10 +2,12 @@ import json
 from pathlib import Path
 
 from scripts.release.model_catalog_readiness import (
-    build_readiness, incumbent_catalog_cost, required_candidate_screens,
+    DEFAULT_INCUMBENT_AUDIT, build_readiness, incumbent_catalog_cost, load_incumbent_audit,
+    required_candidate_screens,
     validate_screen_report,
 )
-from scripts.release.model_catalog_screen import build_screen_spec
+from scripts.release.model_catalog_screen import DEFAULT_AUDIT, build_screen_spec, load_source_audit
+from scripts.runtime import config
 from scripts.runtime.shared import Shared
 
 
@@ -225,3 +227,13 @@ def test_catalog_cost_uses_exact_runtime_artifact_bytes_and_tracks_unknowns():
         "llamacpp_bytes": 30, "vllm_bytes": 40, "comfyui_bytes": 0,
         "unknown": {"llamacpp_bytes": [], "vllm_bytes": [], "comfyui_bytes": ["model"]},
     }
+
+
+def test_tracked_pre_hardware_readiness_snapshot_matches_current_audits():
+    expected = build_readiness(
+        load_source_audit(DEFAULT_AUDIT), load_incumbent_audit(DEFAULT_INCUMBENT_AUDIT), [],
+    )
+    tracked = json.loads(
+        (config.SCRIPT_DIR / "docs" / "model-catalog-readiness-v6.json").read_text()
+    )
+    assert tracked == expected
