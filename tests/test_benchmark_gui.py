@@ -980,15 +980,16 @@ def test_vram_line_only_applies_to_discrete_memory_devices(monkeypatch):
     assert show_vram_usage([
         {"name": "AMD Radeon Pro W7900", "vendor": "amd", "vram_gb": 48},
     ])
+    assert show_vram_usage([
+        {"name": "Intel Arc Pro B65", "vendor": "intel", "vram_gb": 24},
+    ])
     assert not show_vram_usage([
         {"name": "AMD Radeon Graphics", "vendor": "amd", "vram_gb": 2},
         {"name": "NVIDIA GB10", "vendor": "nvidia", "vram_gb": None},
     ])
 
     monkeypatch.setattr(
-        Shared, "sample_memory_gb", staticmethod(lambda: {
-            "gpu_vram_used_gb": 10.25, "gpu_vram_total_gb": 24.0,
-        }),
+        "scripts.runtime.telemetry.query_sampler_vram_usage", lambda: (10.25, 24.0),
     )
     assert query_vram_usage() == (10.25, 24.0)
     assert resource_usage_rows(None, None, 0, None, None) == {

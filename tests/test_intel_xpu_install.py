@@ -24,6 +24,7 @@ def test_plan_installs_intel_compute_and_oneapi_build_dependencies():
     assert "ppa:kobuk-team/intel-graphics" in flattened
     assert "libze-intel-gpu1" in flattened
     assert "intel-ocloc" in flattened
+    assert "xpu-smi" in flattened
     assert ONEAPI_TOOLKIT_PACKAGE == "intel-deep-learning-essentials-2026.1"
     assert ONEAPI_DNNL_PACKAGE == "intel-oneapi-dnnl-devel-2026.0"
     assert ONEAPI_TOOLKIT_PACKAGE in flattened
