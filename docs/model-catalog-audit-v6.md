@@ -8,7 +8,9 @@ This is the precommitted decision contract and working report for Milestone 9. I
 
 Every model first passes the hard gates below. Models that pass are compared only against incumbents serving the same measurable role. The audit does not combine unrelated properties into a single weighted score; each keep, replace, move, legacy-only, defer, or reject decision states which gate or role evidence determined it.
 
-1. **Stable identity and provenance:** an exact upstream repository, pinned revision, artifact filename, architecture/configuration identity, and maintained GGUF source must be available. Community conversions require traceable source-model provenance.
+The home-lab LLM baseline is 4-bit weights on both engines: prefer `Q4_K_M` for llama.cpp and a vLLM-supported W4 format such as AWQ, GPTQ, compressed-tensors W4A16, or BitsAndBytes NF4. A different Q4 variant is acceptable when no maintained `Q4_K_M` exists, but BF16 upstream weights and MLX checkpoints do not satisfy the vLLM artifact requirement. Quantization-format support still varies by accelerator, so source readiness must be followed by the managed-runtime compatibility screen.
+
+1. **Stable identity and provenance:** an exact upstream repository, pinned revision, artifact filename, architecture/configuration identity, maintained Q4 GGUF source, and provenance-linked 4-bit vLLM source must be available for an LLM. Community conversions require traceable source-model provenance.
 2. **License and access:** the model card and authoritative license must permit redistribution by reference and the intended local evaluation. Gated access, acceptable-use terms, and commercial-use limitations are recorded rather than inferred.
 3. **Shipped-runtime compatibility:** the exact artifact must work through current project-managed llama.cpp and, for an LLM or embedding advertised for vLLM, the current project-managed vLLM environment. An unreleased runtime, local engine patch, or undocumented custom code blocks default-catalog admission.
 4. **Lifecycle correctness:** setup discovery, download identity, artifact completeness, load, unload, deterministic completion, chat formatting, cancellation, recovery, and applicable tool calling must work without manual repair.
@@ -66,7 +68,6 @@ Repository names are hypotheses from the Version 6 plan until the source audit r
 | LLM | Muse Glimmer 30B | Alternative medium-tier architecture and instruction behavior | Medium lineup |
 | LLM | Nemotron 3.5 Lightning 30B-A3B | Newer NVIDIA sparse medium-tier coverage | Nemotron Cascade 2 |
 | LLM | Gemma 4 26B-A4B | Newer sparse Gemma medium-tier coverage | Gemma 3 27B |
-| LLM | Nemotron Nano 9B v2 | NVIDIA small-tier coverage | Granite 4.1 8B and Qwen3.5 9B |
 | Embedding | EmbeddingGemma 300M | Very small multilingual embedding baseline | Nomic Embed Text |
 | Embedding | Qwen3 Embedding 0.6B | Compact instruction-aware embedding coverage | Nomic Embed Text |
 | Embedding | Qwen3 Embedding 4B | Larger instruction-aware embedding coverage | MixedBread Embed Large |
@@ -75,22 +76,21 @@ Repository names are hypotheses from the Version 6 plan until the source audit r
 
 ## Source audit snapshot
 
-The metadata-only source audit was refreshed on August 21, 2026 with `bench-env/bin/python -m scripts.release.model_catalog_audit --output docs/model-catalog-source-audit-v6.json`. It resolves the current repository commit, access state, declared license, architecture, context ceiling, chat-template source, publisher generation config, exact indexed safetensors set, support files, preferred standalone GGUF, size, GGUF base-model provenance, and exact ComfyUI pipeline file digests without downloading weights. The command exits nonzero while any candidate has an unresolved hard gate; the complete machine-readable snapshot is [model-catalog-source-audit-v6.json](model-catalog-source-audit-v6.json).
+The metadata-only source audit was refreshed on August 22, 2026 with `bench-env/bin/python -m scripts.release.model_catalog_audit --output docs/model-catalog-source-audit-v6.json`. It resolves the current repository commit, access state, declared license, architecture, context ceiling, chat-template source, publisher generation config, exact indexed weights, support files, preferred standalone GGUF, quantization method and bit width, source-model provenance, download/like signals, and exact ComfyUI pipeline file digests without downloading weights. The command exits nonzero while any candidate has an unresolved hard gate; the complete machine-readable snapshot is [model-catalog-source-audit-v6.json](model-catalog-source-audit-v6.json).
 
-| Candidate | Upstream identity | Configuration | Selected local artifact | Source-audit status |
+| Candidate | Upstream identity/configuration | llama.cpp or ComfyUI artifact | vLLM artifact | Source-audit status |
 | --- | --- | --- | --- | --- |
-| Qwen 3.8 27B | `1d4bf0f2ff60` | `qwen3_5`, 262,144 context, standalone chat template; publisher `temp=1`, `top-k=20`, `top-p=.95` | `Qwen3.8-27B-UD-Q4_K_M.gguf` (15.33 GiB) | Source ready |
-| Muse Glimmer 30B | `a4e59da52a7b` | `muse_glimmer`, 131,072 context, standalone chat template; publisher `temp=1`, `top-k=64`, `top-p=.95` | `Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf` (15.61 GiB) | Source ready |
-| NVIDIA Nemotron 3.5 Lightning 30B-A3B | `434456c9a675` | `nemotron_h`, 262,144 context, no chat template or publisher sampler | `NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Q4_0.gguf` (17.60 GiB) | Blocked: base repository has no chat template, custom license review, and base/instruct provenance mismatch |
-| Gemma 4 26B-A4B | `4d7ae4984b7d` | `gemma4`, 262,144 context, standalone chat template; publisher `temp=1`, `top-k=64`, `top-p=.95` | `gemma-4-26B-A4B-it-Q4_0.gguf` (13.61 GiB) | Source ready |
-| NVIDIA Nemotron Nano 9B v2 | `6533e8de2c68` | `nemotron_h`, 131,072 context, tokenizer chat template; custom code | `nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q4_K_M.gguf` (6.08 GiB) | Blocked: custom code and license review plus undeclared GGUF license |
-| EmbeddingGemma 300M | `57c266a740f5` | Configuration inaccessible without approved credentials | `embeddinggemma-300m-iq4_xs.gguf` (0.28 GiB) | Blocked: manual upstream access and Gemma license review |
-| Qwen3 Embedding 0.6B | `97b0c614be4d` | `qwen3`, 32,768 context | `Qwen3-Embedding-0.6B-Q8_0.gguf` (0.60 GiB) | Source ready: exact same-publisher GGUF variant explicitly identifies the embedding series and selected 0.6B model |
-| Qwen3 Embedding 4B | `5cf2132abc99` | `qwen3`, 40,960 context | `Qwen3-Embedding-4B-Q4_K_M.gguf` (2.33 GiB) | Source ready: exact same-publisher GGUF variant explicitly identifies the embedding series and selected 4B model |
-| FLUX.2 Klein 4B | `e7b7dc27f91d` | `Flux2KleinPipeline` | Pinned 15.02 GiB ComfyUI diffusion, Qwen text encoder, and VAE set | Blocked: the authoritative VAE dependency carries a custom license requiring review |
-| Z-Image Turbo | `f332072aa78b` | `ZImagePipeline` | Pinned 19.27 GiB ComfyUI diffusion, Qwen text encoder, and VAE set | Source ready |
+| Qwen 3.8 27B | `1d4bf0f2ff60`; `qwen3_5`, 262,144 context | `UD-Q4_K_M` (15.33 GiB) | cyankiwi compressed-tensors W4A16 (19.57 GiB; 384,748 downloads) | Source ready |
+| Muse Glimmer 30B | `a4e59da52a7b`; `muse_glimmer`, 131,072 context | `Q4_K_M` (15.61 GiB) | Unsloth BitsAndBytes NF4 (20.68 GiB; 16,407 downloads) | Source ready; actual vLLM platform support remains a screen result because BitsAndBytes is NVIDIA-only in vLLM's current hardware table |
+| NVIDIA Nemotron 3.5 Lightning 30B-A3B | `434456c9a675`; `nemotron_h`, 262,144 context | `Q4_0` (17.60 GiB) | Local Axiom AWQ 4-bit (16.83 GiB; 826 downloads) | Blocked: custom license review, no upstream chat template, and neither conversion declares the exact selected `Base-BF16` repository as its base model |
+| Gemma 4 26B-A4B | `4d7ae4984b7d`; `gemma4`, 262,144 context | `Q4_0` (13.61 GiB) | cyankiwi compressed-tensors W4A16 (16.01 GiB; 2,671,723 downloads) | Source ready |
+| EmbeddingGemma 300M | `57c266a740f5`; configuration inaccessible without approved credentials | `IQ4_XS` (0.28 GiB) | Upstream safetensors, inaccessible without approval | Blocked: manual upstream access and Gemma license review |
+| Qwen3 Embedding 0.6B | `97b0c614be4d`; `qwen3`, 32,768 context | `Q8_0` (0.60 GiB) | Upstream safetensors | Source ready: exact same-publisher GGUF variant explicitly identifies the embedding series and selected 0.6B model |
+| Qwen3 Embedding 4B | `5cf2132abc99`; `qwen3`, 40,960 context | `Q4_K_M` (2.33 GiB) | Upstream safetensors | Source ready: exact same-publisher GGUF variant explicitly identifies the embedding series and selected 4B model |
+| FLUX.2 Klein 4B | `e7b7dc27f91d`; `Flux2KleinPipeline` | Pinned 15.02 GiB ComfyUI diffusion, Qwen text encoder, and VAE set | — | Blocked: the authoritative VAE dependency carries a custom license requiring review |
+| Z-Image Turbo | `f332072aa78b`; `ZImagePipeline` | Pinned 19.27 GiB ComfyUI diffusion, Qwen text encoder, and VAE set | — | Source ready |
 
-This is source readiness only, not engine compatibility or catalog acceptance. In particular, the audit excludes MTP speculative-head GGUFs from standalone model selection; they are optional dependencies rather than baseline weights. The source audit exposed and fixed the shared importer incorrectly treating `mtp-*.gguf` as runnable model variants.
+This is source readiness only, not engine compatibility or catalog acceptance. The `lmstudio-community/Qwen3.8-27B-MLX-4bit` and Kagandi Nemotron MLX repositories are valid MLX artifacts but are not vLLM checkpoints; Qwen therefore uses a compressed-tensors W4A16 source and Lightning remains blocked on its AWQ source. Nemotron Nano 9B v2 was removed from the candidate register because Lightning is its newer replacement, so no Nano hardware screen will be requested. The audit also excludes MTP speculative-head GGUFs from standalone model selection; they are optional dependencies rather than baseline weights.
 
 ## Compatibility screen
 
