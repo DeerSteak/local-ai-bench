@@ -157,6 +157,7 @@ VLLM_COLD_IMPORT_TIMEOUT = 300
 LLAMABENCH_CONC_PP = 4096   # matches CONCURRENCY_TOOL_CONTEXT, so this cross-checks conc_tool at the same depth
 LLAMABENCH_CONC_TG = [128, 512]
 LLAMABENCH_CONC_NPL = [1, 2, 4, 8, 16]
+LLAMABENCH_CONC_GPU_LAYERS = "auto"
 
 # Above this, a self-reported tps is treated as unreliable — see docs/engines.md's "_sanitize_tps".
 MAX_PLAUSIBLE_TPS = 5000.0

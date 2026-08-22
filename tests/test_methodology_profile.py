@@ -17,8 +17,8 @@ def test_neutral_profile_records_only_settings_for_selected_runtime_paths():
             "llamacpp:flash_attention=on",
             "llamacpp:repack=enabled",
             f"llama.cpp:native_kv_cache={config.LLAMACPP_KV_CACHE_TYPE}",
-            f"llama.cpp:native_gpu_layers={config.LLAMABENCH_FULL_OFFLOAD_NGL}",
             "llama.cpp:native_gpu_split=layer",
+            f"llama.cpp:llama_bench_gpu_layers={config.LLAMABENCH_FULL_OFFLOAD_NGL}",
         "comfyui:dynamic_vram=disabled",
     ]
 
@@ -50,6 +50,8 @@ def test_no_repack_profile_records_server_and_supported_native_path(monkeypatch)
     )["effective_optimizations"]
     assert "llamacpp:repack=disabled" in optimizations
     assert "llama.cpp:native_repack=disabled" in optimizations
+    assert "llama.cpp:llama_bench_gpu_layers=999" in optimizations
+    assert "llama.cpp:llama_batched_bench_gpu_layers=auto" in optimizations
 
 
 def test_llamabench_profile_does_not_record_unsupported_repack_setting(monkeypatch):
@@ -60,12 +62,27 @@ def test_llamabench_profile_does_not_record_unsupported_repack_setting(monkeypat
     assert all("repack" not in value for value in optimizations)
 
 
+def test_batched_bench_profile_records_auto_fit_without_llama_bench_policy():
+    optimizations = resolve_methodology_profile(
+        engine_name="llamacpp", tests=["llamabenchconc"], cpu_only=False,
+    )["effective_optimizations"]
+    assert "llama.cpp:llama_batched_bench_gpu_layers=auto" in optimizations
+    assert all("llama_bench_gpu_layers" not in value for value in optimizations)
+
+
+def test_batched_bench_cpu_profile_records_zero_gpu_layers():
+    optimizations = resolve_methodology_profile(
+        engine_name="llamacpp", tests=["llamabenchconc"], cpu_only=True,
+    )["effective_optimizations"]
+    assert "llama.cpp:llama_batched_bench_gpu_layers=0" in optimizations
+
+
 def test_cpu_profile_records_cpu_offload_without_unselected_paths():
     profile = resolve_methodology_profile(
         engine_name="llamacpp", tests=["conv"], cpu_only=True,
     )
     assert "llamacpp:gpu_layers=0" in profile["effective_optimizations"]
-    assert all("native_gpu_layers" not in value for value in profile["effective_optimizations"])
+    assert all("bench_gpu_layers" not in value for value in profile["effective_optimizations"])
     assert all("comfyui" not in value for value in profile["effective_optimizations"])
 
 
