@@ -162,15 +162,17 @@ export function engineLabel(engine: string | null | undefined): string {
 
 export function engineRunLabel(file: ResultsFile, section?: string): string {
   const displayEngine = engineLabel(file.engine);
+  const labels = [displayEngine];
   if (file.engine === "llamacpp"
       && !["llamabench", "vllmbench"].includes(section || "")
       && file.data?.run?.effective_config?.llamacpp_no_repack === true) {
-    return `${displayEngine} -nr`;
+    labels.push("-nr");
   }
-  if (file.engine === "vllm" && file.data?.run?.effective_config?.mtp_enabled === true) {
-    return `${displayEngine} MTP on`;
+  if (["llamacpp", "vllm"].includes(file.engine || "")
+      && file.data?.run?.effective_config?.mtp_enabled === true) {
+    labels.push("MTP on");
   }
-  return displayEngine;
+  return labels.filter(Boolean).join(" ");
 }
 
 export function measuredCategoryAxisWidth(

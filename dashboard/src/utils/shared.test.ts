@@ -287,7 +287,7 @@ describe("applyEngineLabels", () => {
     expect(applyEngineLabels(files)[0].hostname).toBe("host-a\nllama.cpp -nr 7000");
   });
 
-  it("distinguishes native MTP results from their baseline on the same system", () => {
+  it("distinguishes native MTP results for every compatible engine", () => {
     const files: ResultsFile[] = [
       {
         id: 1, hostname: "host-a", engine: "vllm", engineVersion: "0.27.1",
@@ -297,9 +297,20 @@ describe("applyEngineLabels", () => {
         id: 2, hostname: "host-a", engine: "vllm", engineVersion: "0.27.1",
         data: { run: { effective_config: { mtp_enabled: true } } },
       },
+      {
+        id: 3, hostname: "host-b", engine: "llamacpp", engineVersion: "10488",
+        data: { run: { effective_config: { mtp_enabled: false } } },
+      },
+      {
+        id: 4, hostname: "host-b", engine: "llamacpp", engineVersion: "10488",
+        data: { run: { effective_config: {
+          mtp_enabled: true, llamacpp_no_repack: true,
+        } } },
+      },
     ];
     expect(applyEngineLabels(files).map(file => file.hostname)).toEqual([
       "host-a\nvLLM 0.27.1", "host-a\nvLLM MTP on 0.27.1",
+      "host-b\nllama.cpp 10488", "host-b\nllama.cpp -nr MTP on 10488",
     ]);
   });
 
