@@ -92,6 +92,15 @@ from scripts.app.interface_mode import select_interface_mode
 from scripts.release.qualification_targets import qualification_host_error, qualification_target
 
 
+def llamacpp_backend_rebuild_warning(installed_backend: str | None, required_backend: str | None,
+                                     *, qualification: bool) -> str:
+    context = "qualification" if qualification else "setup"
+    installed = installed_backend or "no detectable backend"
+    required = required_backend or "an accelerator backend"
+    return (f"llama-server exposes {installed}, but {context} requires {required} "
+            "— it will be rebuilt")
+
+
 def accessible_file(path: Path) -> bool:
     try:
         return path.is_file()
@@ -463,10 +472,10 @@ def main() -> None:  # pragma: no cover - real interactive installer
     if llamacpp_found:
         ok(f"llama-server found: {LLAMACPP_BIN}")
     elif _llamacpp_backend_mismatch:
-        warn(
-            f"llama-server has {_installed_llamacpp_backend} devices, but qualification "
-            f"requires {_required_llamacpp_backend} — it will be rebuilt"
-        )
+        warn(llamacpp_backend_rebuild_warning(
+            _installed_llamacpp_backend, _required_llamacpp_backend,
+            qualification=bool(_qualification_target),
+        ))
     else:
         warn("llama-server not found — will need to be installed")
 

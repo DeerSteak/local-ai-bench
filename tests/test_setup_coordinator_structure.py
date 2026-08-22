@@ -54,7 +54,7 @@ def test_qualification_repairs_cpu_only_gpu_runtimes():
     source = SETUP_CHECK.read_text(encoding="utf-8")
 
     assert "_llamacpp_backend_mismatch" in source
-    assert "requires {_required_llamacpp_backend} — it will be rebuilt" in source
+    assert "llamacpp_backend_rebuild_warning(" in source
     assert "vllm_runtime_expectations(\n        vllm_support.method," in source
     assert "recreate=_qualification_vllm_runtime_error is not None" in source
 
