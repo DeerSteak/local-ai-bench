@@ -972,7 +972,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     execution_passes = expand_mtp_passes(base_execution_scopes, args.mtp)
     if args.mtp == "on" and not execution_passes:
         parser.error(
-            "--mtp on requires a selected vLLM model with cataloged native MTP support "
+            "--mtp on requires a selected model with cataloged native MTP support "
             "and at least one server-backed text workload"
         )
 

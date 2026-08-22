@@ -639,7 +639,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         command=lambda: option_vars["gpu_split_mode"].set(GPU_SPLIT_MODE_LABELS["layer"]),
     ).grid(row=0, column=2, padx=(8, 0))
     mtp_row = execution_row(pady=2)
-    ttk.Label(mtp_row, text="Native MTP (supported vLLM models)").grid(
+    ttk.Label(mtp_row, text="Native MTP (compatible models)").grid(
         row=0, column=0, sticky="w",
     )
     ttk.Combobox(
