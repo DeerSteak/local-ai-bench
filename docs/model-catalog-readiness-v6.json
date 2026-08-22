@@ -4,6 +4,8 @@
     "qwen3.8-27b/vllm: screen report is missing",
     "muse-glimmer-30b/llamacpp: screen report is missing",
     "muse-glimmer-30b/vllm: screen report is missing",
+    "nemotron-3.5-lightning-30b-a3b/llamacpp: screen report is missing",
+    "nemotron-3.5-lightning-30b-a3b/vllm: screen report is missing",
     "gemma-4-26b-a4b/llamacpp: screen report is missing",
     "gemma-4-26b-a4b/vllm: screen report is missing",
     "qwen3-embedding-0.6b/llamacpp: screen report is missing",
@@ -60,14 +62,24 @@
     {
       "family": "llm",
       "id": "nemotron-3.5-lightning-30b-a3b",
-      "screens": [],
-      "source_reasons": [
-        "upstream other license requires review",
-        "upstream LLM has no chat template",
-        "GGUF provenance does not identify the selected upstream repository",
-        "vLLM provenance does not identify the selected upstream repository"
+      "screens": [
+        {
+          "errors": [
+            "screen report is missing"
+          ],
+          "requirement": "llamacpp",
+          "status": "missing_or_invalid"
+        },
+        {
+          "errors": [
+            "screen report is missing"
+          ],
+          "requirement": "vllm",
+          "status": "missing_or_invalid"
+        }
       ],
-      "source_status": "blocked"
+      "source_reasons": [],
+      "source_status": "source_ready"
     },
     {
       "family": "llm",
@@ -151,7 +163,7 @@
       "id": "flux.2-klein-4b",
       "screens": [],
       "source_reasons": [
-        "pipeline other license requires review: Comfy-Org/flux2-dev"
+        "pipeline flux-1-dev-non-commercial-license license requires review: Comfy-Org/flux2-dev"
       ],
       "source_status": "blocked"
     },

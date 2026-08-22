@@ -43,7 +43,7 @@
           "gated": false,
           "library_name": null,
           "license": "apache-2.0",
-          "likes": 2568,
+          "likes": 2570,
           "pipeline_tag": null,
           "private": false,
           "repo": "unsloth/Qwen3.8-27B-GGUF",
@@ -112,7 +112,7 @@
           "gated": false,
           "library_name": "transformers",
           "license": "apache-2.0",
-          "likes": 12048,
+          "likes": 12054,
           "pipeline_tag": "image-text-to-text",
           "private": false,
           "repo": "Qwen/Qwen3.8-27B",
@@ -350,22 +350,17 @@
         "nemotron-cascade2:30b-a3b-q4_K_M"
       ],
       "name": "NVIDIA Nemotron 3.5 Lightning 30B-A3B",
-      "reasons": [
-        "upstream other license requires review",
-        "upstream LLM has no chat template",
-        "GGUF provenance does not identify the selected upstream repository",
-        "vLLM provenance does not identify the selected upstream repository"
-      ],
+      "reasons": [],
       "role": "Newer NVIDIA sparse medium-tier coverage",
       "sources": {
         "gguf": {
           "artifact": {
             "files": [
-              "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Q4_0.gguf"
+              "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-UD-Q4_K_M.gguf"
             ],
             "kind": "gguf",
-            "label": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Q4_0.gguf",
-            "size": 18898091584
+            "label": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-UD-Q4_K_M.gguf",
+            "size": 25266255936
           },
           "base_models": [
             "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16"
@@ -385,15 +380,15 @@
             "quantization": null
           },
           "custom_code": false,
-          "downloads": 117506,
+          "downloads": 110487,
           "gated": false,
-          "library_name": null,
-          "license": "other",
-          "likes": 25,
+          "library_name": "transformers",
+          "license": "openmdw-1.1",
+          "likes": 80,
           "pipeline_tag": "text-generation",
           "private": false,
-          "repo": "ggml-org/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
-          "revision": "9d425fe18d84ab04da6aabb757d2e2807083d054"
+          "repo": "unsloth/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
+          "revision": "f2d3fe3694501008786e81e5f20360cbf715496a"
         },
         "upstream": {
           "artifact": {
@@ -416,6 +411,7 @@
             "kind": "safetensors",
             "size": 65827374264,
             "support_files": [
+              "chat_template.jinja",
               "config.json",
               "generation_config.json",
               "model.safetensors.index.json",
@@ -429,7 +425,7 @@
             "architectures": [
               "NemotronHForCausalLM"
             ],
-            "chat_template": null,
+            "chat_template": "chat_template.jinja",
             "context_tokens": 262144,
             "dtype": "bfloat16",
             "hidden_size": 2688,
@@ -438,19 +434,23 @@
             "num_experts_per_token": 6,
             "num_hidden_layers": 52,
             "pipeline_class": null,
-            "publisher_sampling": {},
+            "publisher_sampling": {
+              "do_sample": true,
+              "temperature": 1.0,
+              "top_p": 0.95
+            },
             "quantization": null
           },
           "custom_code": false,
-          "downloads": 14556,
+          "downloads": 128903,
           "gated": false,
           "library_name": "transformers",
-          "license": "other",
-          "likes": 18,
+          "license": "openmdw-1.1",
+          "likes": 183,
           "pipeline_tag": "text-generation",
           "private": false,
-          "repo": "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16",
-          "revision": "434456c9a6753f29d24e23c95d622aaf17111b3b"
+          "repo": "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+          "revision": "d468880b6ad3c6e0d21377ce7242adaea4cc884d"
         },
         "vllm": {
           "artifact": {
@@ -473,7 +473,9 @@
               "tokenizer_config.json"
             ]
           },
-          "base_models": [],
+          "base_models": [
+            "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16"
+          ],
           "configuration": {
             "architectures": [
               "NemotronHForCausalLM"
@@ -502,15 +504,19 @@
           "downloads": 826,
           "gated": false,
           "library_name": null,
-          "license": "other",
+          "license": "openmdw-1.1",
           "likes": 0,
           "pipeline_tag": null,
           "private": false,
+          "quantization_provenance": {
+            "source_model": "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+            "source_revision": "63a200063804e06fdb41d6717e43bc92f67859d2"
+          },
           "repo": "Local-Axiom-AI/Nemotron-3.5-Lightning-awq",
           "revision": "1ff11a32e2d8009ea1920c8d0c19e90a3f66f778"
         }
       },
-      "status": "blocked"
+      "status": "source_ready"
     },
     {
       "family": "llm",
@@ -525,39 +531,41 @@
         "gguf": {
           "artifact": {
             "files": [
-              "gemma-4-26B-A4B-it-Q4_0.gguf"
+              "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf"
             ],
             "kind": "gguf",
-            "label": "gemma-4-26B-A4B-it-Q4_0.gguf",
-            "size": 14618145824
+            "label": "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf",
+            "size": 16947541728
           },
           "base_models": [
             "google/gemma-4-26B-A4B-it"
           ],
           "configuration": {
-            "architectures": [],
+            "architectures": [
+              "Gemma4ForConditionalGeneration"
+            ],
             "chat_template": null,
-            "context_tokens": null,
-            "dtype": null,
-            "hidden_size": null,
-            "model_type": null,
-            "num_experts": null,
+            "context_tokens": 262144,
+            "dtype": "bfloat16",
+            "hidden_size": 2816,
+            "model_type": "gemma4",
+            "num_experts": 128,
             "num_experts_per_token": null,
-            "num_hidden_layers": null,
+            "num_hidden_layers": 30,
             "pipeline_class": null,
             "publisher_sampling": {},
             "quantization": null
           },
           "custom_code": false,
-          "downloads": 60133,
+          "downloads": 1202107,
           "gated": false,
           "library_name": null,
           "license": "apache-2.0",
-          "likes": 79,
+          "likes": 1072,
           "pipeline_tag": "image-text-to-text",
           "private": false,
-          "repo": "ggml-org/gemma-4-26B-A4B-it-GGUF",
-          "revision": "bb4531cda34d1ea09d9814959ed4d5833cf2a4c8"
+          "repo": "unsloth/gemma-4-26B-A4B-it-GGUF",
+          "revision": "c099eb48e663fd284577b04978a94ffccb261841"
         },
         "upstream": {
           "artifact": {
@@ -964,7 +972,7 @@
       ],
       "name": "FLUX.2 Klein 4B",
       "reasons": [
-        "pipeline other license requires review: Comfy-Org/flux2-dev"
+        "pipeline flux-1-dev-non-commercial-license license requires review: Comfy-Org/flux2-dev"
       ],
       "role": "Smaller FLUX.2 pipeline",
       "sources": {
@@ -997,7 +1005,7 @@
               }
             ],
             "gated": false,
-            "license": "other",
+            "license": "flux-1-dev-non-commercial-license",
             "private": false,
             "repo": "Comfy-Org/flux2-dev",
             "revision": "ab9055628ea245000e610f2aa2c96f4746093546"

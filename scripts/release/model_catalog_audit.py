@@ -11,6 +11,7 @@ from scripts.setup.model_import import inspect_repository, preferred_variant
 AUDIT_SCHEMA_VERSION = 2
 CANDIDATE_SCHEMA_VERSION = 2
 VLLM_4BIT_METHODS = {"awq", "bitsandbytes", "compressed-tensors", "gptq"}
+REVIEWED_LICENSES = {"apache-2.0", "openmdw-1.1"}
 DEFAULT_CANDIDATES = Path(__file__).with_name("model_catalog_candidates.json")
 
 
@@ -62,6 +63,10 @@ def load_candidate_register(path: Path = DEFAULT_CANDIDATES) -> list[dict]:
 def _license(info) -> str | None:
     card_data = getattr(info, "card_data", None)
     value = getattr(card_data, "license", None)
+    if value == "other":
+        name = getattr(card_data, "license_name", None)
+        if isinstance(name, str) and name:
+            return name
     return value if isinstance(value, str) and value else None
 
 
@@ -182,6 +187,21 @@ def _configuration_metadata(repo: str, revision: str, files: set[str], read_json
     }
 
 
+def _quantization_provenance(repo: str, revision: str, files: set[str], read_json) -> dict | None:
+    if "quantization_manifest.json" not in files:
+        return None
+    manifest = _json_object(read_json(repo, revision, "quantization_manifest.json"))
+    source_model = manifest.get("source_model")
+    source_revision = manifest.get("source_revision")
+    if not isinstance(source_model, str) or not source_model \
+            or not isinstance(source_revision, str) or not source_revision:
+        return None
+    return {
+        "source_model": source_model,
+        "source_revision": source_revision,
+    }
+
+
 def audit_repository(repo: str, role: str, *, api, inspect_fn=inspect_repository,
                      read_json=_default_json_reader) -> dict:
     info = api.model_info(repo, revision="main", files_metadata=True)
@@ -201,9 +221,17 @@ def audit_repository(repo: str, role: str, *, api, inspect_fn=inspect_repository
         "likes": getattr(info, "likes", None),
     }
     file_records = _files(info)
+    file_names = {file["name"] for file in file_records}
+    try:
+        provenance = _quantization_provenance(repo, revision, file_names, read_json)
+        if provenance:
+            record["quantization_provenance"] = provenance
+            record["base_models"] = sorted(set(record["base_models"] + [provenance["source_model"]]))
+    except Exception as exc:
+        record["quantization_provenance_error"] = type(exc).__name__
     try:
         record["configuration"] = _configuration_metadata(
-            repo, revision, {file["name"] for file in file_records}, read_json,
+            repo, revision, file_names, read_json,
         )
     except Exception as exc:
         record["configuration"] = None
@@ -262,7 +290,7 @@ def source_status(candidate: dict, sources: dict) -> tuple[str, list[str]]:
         reasons.append("upstream repository requires access approval")
     if not upstream["license"]:
         reasons.append("upstream license is not declared")
-    elif upstream["license"] != "apache-2.0":
+    elif upstream["license"] not in REVIEWED_LICENSES:
         reasons.append(f"upstream {upstream['license']} license requires review")
     if upstream["artifact"] is None:
         reasons.append("upstream artifact could not be resolved")

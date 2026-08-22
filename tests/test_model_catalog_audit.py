@@ -13,11 +13,13 @@ from scripts.setup.model_import import ImportVariant, RepositoryInspection
 
 
 def info(*, repo="owner/model", sha="abc123", gated: bool | str = False, private=False,
-         license="apache-2.0", base_model=None, files=(), tags=(),
+         license="apache-2.0", license_name=None, base_model=None, files=(), tags=(),
          downloads=123, likes=4):
     return SimpleNamespace(
         id=repo, sha=sha, gated=gated, private=private,
-        card_data=SimpleNamespace(license=license, base_model=base_model),
+        card_data=SimpleNamespace(
+            license=license, license_name=license_name, base_model=base_model,
+        ),
         pipeline_tag="text-generation",
         library_name="transformers",
         tags=list(tags),
@@ -109,7 +111,15 @@ def test_candidate_comparisons_reference_current_incumbents_in_the_same_family()
 
 def test_llm_candidates_use_distinct_vllm_sources_and_drop_superseded_nano():
     candidates = load_candidate_register(DEFAULT_CANDIDATES)
-    assert "nemotron-nano-9b-v2" not in {candidate["id"] for candidate in candidates}
+    by_id = {candidate["id"]: candidate for candidate in candidates}
+    assert "nemotron-nano-9b-v2" not in by_id
+    assert by_id["gemma-4-26b-a4b"]["sources"]["gguf"] == \
+        "unsloth/gemma-4-26B-A4B-it-GGUF"
+    assert by_id["nemotron-3.5-lightning-30b-a3b"]["sources"] == {
+        "upstream": "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+        "gguf": "unsloth/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
+        "vllm": "Local-Axiom-AI/Nemotron-3.5-Lightning-awq",
+    }
     for candidate in candidates:
         if candidate["family"] == "llm":
             assert candidate["sources"]["vllm"] != candidate["sources"]["upstream"]
@@ -131,6 +141,66 @@ def test_repository_audit_records_exact_revision_and_artifact_identity():
         "kind": "safetensors", "files": ["model.safetensors"],
         "support_files": ["config.json"], "size": 10,
     }
+
+
+def test_repository_audit_normalizes_named_other_license():
+    api = FakeApi({"owner/model": info(license="other", license_name="openmdw-1.1")})
+    record = audit_repository(
+        "owner/model", "upstream", api=api,
+        inspect_fn=lambda repo, **kwargs: inspection(repo),
+        read_json=lambda *_args: {},
+    )
+    assert record["license"] == "openmdw-1.1"
+
+
+def test_repository_audit_uses_quantization_manifest_provenance():
+    api = FakeApi({"owner/quant": info(files=(
+        ("config.json", 1), ("quantization_manifest.json", 1),
+    ))})
+    values = {
+        "config.json": {},
+        "quantization_manifest.json": {
+            "source_model": "owner/upstream", "source_revision": "source123",
+        },
+    }
+    record = audit_repository(
+        "owner/quant", "vllm", api=api,
+        inspect_fn=lambda repo, **kwargs: inspection(repo),
+        read_json=lambda _repo, _revision, filename: values[filename],
+    )
+    assert record["base_models"] == ["owner/upstream"]
+    assert record["quantization_provenance"] == {
+        "source_model": "owner/upstream", "source_revision": "source123",
+    }
+
+
+def test_repository_audit_records_invalid_quantization_manifest_without_losing_config():
+    api = FakeApi({"owner/quant": info(files=(
+        ("config.json", 1), ("quantization_manifest.json", 1),
+    ))})
+
+    def read_json(_repo, _revision, filename):
+        if filename == "quantization_manifest.json":
+            raise ValueError("invalid manifest")
+        return {"model_type": "model"}
+
+    record = audit_repository(
+        "owner/quant", "vllm", api=api,
+        inspect_fn=lambda repo, **kwargs: inspection(repo), read_json=read_json,
+    )
+    assert record["quantization_provenance_error"] == "ValueError"
+    assert record["configuration"]["model_type"] == "model"
+
+
+def test_repository_audit_does_not_accept_manifest_without_source_revision():
+    api = FakeApi({"owner/quant": info(files=(("quantization_manifest.json", 1),))})
+    record = audit_repository(
+        "owner/quant", "vllm", api=api,
+        inspect_fn=lambda repo, **kwargs: inspection(repo),
+        read_json=lambda *_args: {"source_model": "owner/upstream"},
+    )
+    assert record["base_models"] == []
+    assert "quantization_provenance" not in record
 
 
 def test_image_repository_records_pipeline_files():
@@ -315,6 +385,13 @@ def test_llm_source_status_requires_q4_gguf_and_provenanced_four_bit_vllm():
         "upstream": upstream, "gguf": gguf, "vllm": vllm,
     }) == ("source_ready", [])
 
+    upstream["license"] = "openmdw-1.1"
+    gguf["license"] = "openmdw-1.1"
+    vllm["license"] = "openmdw-1.1"
+    assert source_status(candidate, {
+        "upstream": upstream, "gguf": gguf, "vllm": vllm,
+    }) == ("source_ready", [])
+
     gguf["artifact"]["label"] = "model-Q8_0.gguf"
     vllm["configuration"]["quantization"] = {"method": None, "bits": 4}
     vllm["base_models"] = []
@@ -349,6 +426,31 @@ def test_llm_source_status_rejects_mlx_quantization_metadata():
     }
     assert source_status({"id": "model", "family": "llm"}, sources) == (
         "blocked", ["vLLM artifact is not a supported 4-bit quantization"],
+    )
+
+
+def test_source_status_keeps_unreviewed_named_license_blocked():
+    sources = {
+        "upstream": {
+            "repo": "owner/model", "private": False, "gated": False,
+            "license": "custom-1.0", "artifact": {"files": ["model.safetensors"]},
+            "configuration": {"chat_template": "chat_template.jinja"},
+            "custom_code": False,
+        },
+        "gguf": {
+            "repo": "owner/model-GGUF", "private": False, "gated": False,
+            "license": "custom-1.0", "base_models": ["owner/model"],
+            "artifact": {"label": "model-Q4_K_M.gguf", "files": ["model.gguf"]},
+        },
+        "vllm": {
+            "repo": "owner/model-awq", "private": False, "gated": False,
+            "license": "custom-1.0", "base_models": ["owner/model"],
+            "artifact": {"files": ["model.safetensors"]},
+            "configuration": {"quantization": {"method": "awq", "bits": 4}},
+        },
+    }
+    assert source_status({"id": "model", "family": "llm"}, sources) == (
+        "blocked", ["upstream custom-1.0 license requires review"],
     )
 
 
