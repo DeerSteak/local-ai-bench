@@ -98,17 +98,23 @@ else
     ok "Installed $($PYTHON --version)"
 fi
 
+APT_METADATA_REFRESHED=0
+refresh_apt_metadata() {
+    if [ "$APT_METADATA_REFRESHED" -eq 1 ]; then
+        return 0
+    fi
+    info "Refreshing APT package metadata ..."
+    if ! sudo apt-get update -qq; then
+        fail "APT metadata refresh failed — setup cannot resolve required packages"
+        return 1
+    fi
+    APT_METADATA_REFRESHED=1
+}
+
 # Triton (a vLLM dependency) compiles a CUDA helper at import time and needs Python.h.
 # Installed here, with any other prerequisite, so vLLM never triggers a later sudo prompt.
 # 3.12 is vllm_install.PINNED_PYTHON, the interpreter its ROCm/DGX-Spark wheels require.
 if [ "$OS" = "Linux" ]; then
-    if command -v apt-get &>/dev/null; then
-        info "Refreshing APT package metadata ..."
-        if ! sudo apt-get update -qq; then
-            fail "APT metadata refresh failed — setup cannot resolve required packages"
-            exit 1
-        fi
-    fi
     PYTHON_SERIES=$("$PYTHON" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
     MISSING_HEADERS=()
     for _series in $(printf '%s\n' "$PYTHON_SERIES" 3.12 | sort -u); do
@@ -118,6 +124,7 @@ if [ "$OS" = "Linux" ]; then
     done
     if [ ${#MISSING_HEADERS[@]} -gt 0 ]; then
         if command -v apt-get &>/dev/null; then
+            refresh_apt_metadata || exit 1
             HEADER_PACKAGES=()
             for _series in "${MISSING_HEADERS[@]}"; do
                 if apt-cache show "python${_series}-dev" &>/dev/null; then
@@ -141,6 +148,7 @@ if [ "$OS" = "Linux" ]; then
     if ! "$PYTHON" -c "import ensurepip" &>/dev/null; then
         VENV_PACKAGE=""
         if command -v apt-get &>/dev/null; then
+            refresh_apt_metadata || exit 1
             for _package in python3-venv "python${PYTHON_SERIES}-venv"; do
                 if apt-cache show "$_package" &>/dev/null; then
                     VENV_PACKAGE="$_package"

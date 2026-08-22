@@ -1,5 +1,6 @@
 """CUDA toolkit prerequisites for the llama.cpp source build — see docs/setup.md."""
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -21,6 +22,7 @@ CUDA_KEYRING_DEB = "/tmp/cuda-keyring.deb"
 CUDA_TOOLKIT_PACKAGE = "cuda-toolkit"
 NATIVE_NVIDIA_UBUNTU_VERSIONS = {"24.04", "26.04"}
 NATIVE_NVIDIA_REBOOT_EXIT_CODE = 75
+GET_EFFECTIVE_UID = getattr(os, "geteuid", lambda: 1)
 NOUVEAU_BLOCKLIST_COMMAND = (
     "printf '%s\\n' 'blacklist nouveau' 'options nouveau modeset=0' "
     "> /etc/modprobe.d/disable-nouveau.conf"
@@ -137,9 +139,11 @@ def native_nvidia_driver_plan(os_release: dict[str, str], kernel_release: str, *
 
 
 def run_native_nvidia_driver_install(plan: tuple[tuple[str, ...], ...], *,
-                                     run=subprocess.run) -> None:
+                                     run=subprocess.run,
+                                     geteuid=GET_EFFECTIVE_UID) -> None:
+    prefix = [] if geteuid() == 0 else ["sudo"]
     for command in plan:
-        completed = run(["sudo", *command])
+        completed = run([*prefix, *command])
         if completed.returncode:
             raise RuntimeError(
                 f"NVIDIA driver install command exited with {completed.returncode}: "

@@ -188,5 +188,17 @@ def test_native_nvidia_install_is_privileged_and_stops_on_failure():
         return SimpleNamespace(returncode=1 if command[-1] == "second" else 0)
 
     with pytest.raises(RuntimeError, match="NVIDIA driver install command exited with 1"):
-        run_native_nvidia_driver_install(commands, run=run)
+        run_native_nvidia_driver_install(commands, run=run, geteuid=lambda: 501)
     assert calls == [["sudo", "first"], ["sudo", "second"]]
+
+
+def test_native_nvidia_install_does_not_require_sudo_when_already_root():
+    calls = []
+
+    run_native_nvidia_driver_install(
+        (("apt-get", "update"),),
+        run=lambda command: calls.append(command) or SimpleNamespace(returncode=0),
+        geteuid=lambda: 0,
+    )
+
+    assert calls == [["apt-get", "update"]]

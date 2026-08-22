@@ -21,9 +21,21 @@ $startedAt = [DateTime]::UtcNow.ToString("o")
 } | ConvertTo-Json | Set-Content -Encoding UTF8 -Path $statusPath
 Add-Content -Path $log -Value "`n=== qualification setup attempt $startedAt ==="
 
-& $SetupPath --qualification $Engine --qualification-target $Target 2>&1 |
-    Tee-Object -FilePath $log -Append
-$setupExit = $LASTEXITCODE
+$setupExit = 1
+$previousErrorActionPreference = $ErrorActionPreference
+try {
+    # Windows PowerShell promotes redirected native stderr to ErrorRecord objects.
+    $ErrorActionPreference = "Continue"
+    & $SetupPath --qualification $Engine --qualification-target $Target 2>&1 |
+        Tee-Object -FilePath $log -Append
+    if ($null -ne $LASTEXITCODE) {
+        $setupExit = $LASTEXITCODE
+    }
+} catch {
+    $_ | Out-String | Tee-Object -FilePath $log -Append
+} finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+}
 $status = if ($setupExit -eq 0) { "passed" } else { "failed" }
 [ordered]@{
     schema = "qualification-setup-v1"

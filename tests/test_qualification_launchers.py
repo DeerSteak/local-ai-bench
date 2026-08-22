@@ -42,6 +42,9 @@ def test_windows_launcher_runs_normal_setup_then_normal_benchmark_wrapper():
 def test_windows_setup_capture_retains_log_and_machine_readable_status():
     text = (ROOT / "scripts" / "release" / "qualification_setup.ps1").read_text()
     assert "Tee-Object -FilePath $log -Append" in text
+    assert '$ErrorActionPreference = "Continue"' in text
+    assert "$ErrorActionPreference = $previousErrorActionPreference" in text
+    assert "catch {" in text
     assert 'schema = "qualification-setup-v1"' in text
     assert 'status = "running"' in text
     assert 'log = "setup.log"' in text
