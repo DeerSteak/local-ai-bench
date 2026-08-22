@@ -140,6 +140,8 @@ These are selected to match `Q4_K_M`'s **bit width**, which is as close as the t
 
 Sizes here are the sum of the repo's safetensors and config files. A vLLM snapshot is generally *not* the same size as the corresponding GGUF — compare the two size columns before selecting both engines, and see [Setup](setup.md#choosing-engines).
 
+Native MTP comparison is cataloged per engine artifact rather than inferred from a model-family name. The selected vLLM artifacts for Qwen3.5 4B, Qwen3.5 9B, Qwen 3.8 27B, Nemotron 3.5 Lightning, and Nemotron 3 Super currently carry confirmed self-contained predictor metadata and support `--mtp on`/`both`. No current llama.cpp artifact is marked: notably, the selected Qwen 3.8 GGUF repository publishes its MTP weights as a separate GGUF, which is outside the first self-contained implementation. `both` runs the normal workload selection once, then runs only the compatible catalog models through server-backed generation, conversation, accuracy, HTTP concurrency, and sustained load with MTP enabled; it does not duplicate image generation, embeddings, llama-bench, llama-batched-bench, or native vLLM bench.
+
 #### Where the two builds diverge
 
 Both columns say "4-bit", and that label hides real differences. `Q4_K_M` is mixed precision by design: llama.cpp promotes selected tensors to `Q6_K`, so its effective rate lands nearer 5 bits per weight than 4. AWQ and GPTQ recipes make their own choices about what to leave in higher precision — embeddings, `lm_head`, the MoE router, Mamba state layers — and different quantizers disagree. The result is that two files both described as 4-bit can differ by a factor of two in size.
