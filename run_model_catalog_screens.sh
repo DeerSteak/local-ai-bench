@@ -10,11 +10,38 @@ CANDIDATES=(
 )
 ENGINES=("llamacpp" "vllm")
 ENGINE_FILTER=""
+SKIP_CELLS="|"
 OUTPUT_ROOT=""
 LIST_ONLY=0
 
 usage() {
-    echo "Usage: $0 [--engine llamacpp|vllm] [--output-root DIR] [--list]" >&2
+    echo "Usage: $0 [--engine llamacpp|vllm] [--skip-cell ID/ENGINE] [--output-root DIR] [--list]" >&2
+}
+
+known_candidate() {
+    local wanted="$1"
+    local candidate
+    for candidate in "${CANDIDATES[@]}"; do
+        [ "$candidate" = "$wanted" ] && return 0
+    done
+    return 1
+}
+
+known_cell() {
+    local cell="$1"
+    local candidate="${cell%/*}"
+    local engine="${cell##*/}"
+    [ "$candidate" != "$cell" ] || return 1
+    known_candidate "$candidate" || return 1
+    [ "$engine" = "llamacpp" ] || [ "$engine" = "vllm" ]
+}
+
+cell_selected() {
+    local wanted="$1/$2"
+    case "$SKIP_CELLS" in
+        *"|$wanted|"*) return 1 ;;
+        *) return 0 ;;
+    esac
 }
 
 while [ "$#" -gt 0 ]; do
@@ -26,6 +53,12 @@ while [ "$#" -gt 0 ]; do
                 usage
                 exit 2
             fi
+            shift 2
+            ;;
+        --skip-cell)
+            [ "$#" -ge 2 ] || { usage; exit 2; }
+            known_cell "$2" || { usage; exit 2; }
+            SKIP_CELLS="${SKIP_CELLS}$2|"
             shift 2
             ;;
         --output-root)
@@ -55,6 +88,7 @@ selected_engines() {
 if [ "$LIST_ONLY" -eq 1 ]; then
     for candidate in "${CANDIDATES[@]}"; do
         while IFS= read -r engine; do
+            cell_selected "$candidate" "$engine" || continue
             printf '%s\t%s\n' "$candidate" "$engine"
         done < <(selected_engines)
     done
@@ -73,6 +107,7 @@ passed=()
 failed=()
 for candidate in "${CANDIDATES[@]}"; do
     while IFS= read -r engine; do
+        cell_selected "$candidate" "$engine" || continue
         echo
         echo "=== Catalog screen: $candidate / $engine ==="
         command=(

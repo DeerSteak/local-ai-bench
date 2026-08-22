@@ -41,12 +41,29 @@ def test_catalog_screen_launcher_can_filter_the_matrix_by_engine():
     assert all(line.endswith("\tvllm") for line in result.stdout.splitlines())
 
 
+def test_catalog_screen_launcher_can_skip_a_known_failed_cell():
+    result = subprocess.run(
+        [LAUNCHER, "--list", "--skip-cell", "qwen3.8-27b/llamacpp"],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert len(result.stdout.splitlines()) == 7
+    assert "qwen3.8-27b\tllamacpp" not in result.stdout.splitlines()
+    assert "qwen3.8-27b\tvllm" in result.stdout.splitlines()
+
+
 def test_catalog_screen_launcher_rejects_unknown_arguments_without_running():
     result = subprocess.run(
         [LAUNCHER, "--engine", "future"], cwd=ROOT, capture_output=True, text=True,
     )
     assert result.returncode == 2
     assert "Usage:" in result.stderr
+
+    result = subprocess.run(
+        [LAUNCHER, "--skip-cell", "unknown/llamacpp"],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    assert result.returncode == 2
 
 
 def test_catalog_screen_launcher_continues_matrix_and_reports_failed_cells(tmp_path):
