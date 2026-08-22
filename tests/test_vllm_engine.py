@@ -573,7 +573,7 @@ def test_max_context_length_falls_back_on_missing_or_broken_config(engine):
 
 
 def test_max_context_length_reads_a_nested_text_config(engine):
-    tag = "gemma3:27b-it-q4_K_M"
+    tag = "gemma4:26b-a4b-it-ud-q4_K_M"
     repo = engine._repo(tag).replace("/", "--")
     snapshot = engine._cache_home / "hub" / f"models--{repo}" / "snapshots" / "abc"
     snapshot.mkdir(parents=True)

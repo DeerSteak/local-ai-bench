@@ -44,18 +44,30 @@ def test_gemma4_12b_uses_bartowski_q4_model():
 
 def test_medium_roster_preserves_dense_and_sparse_architecture_mix():
     assert [model["short"] for model in LLM_MODELS_MEDIUM] == [
-        "gemma3-27b-q4",
-        "nemotron-cascade2-30b-a3b",
-        "qwen3.6-35b-a3b",
+        "gemma4-26b-a4b-q4",
+        "qwen3.8-27b-q4",
+        "nemotron3.5-lightning-30b-a3b",
     ]
 
 
-def test_gemma3_27b_uses_official_llamacpp_q4_model():
-    model = next(model for model in LLM_MODELS_MEDIUM
-                 if model["short"] == "gemma3-27b-q4")
-    assert model["hf_repo"] == "ggml-org/gemma-3-27b-it-GGUF"
-    assert model["hf_file"] == "gemma-3-27b-it-Q4_K_M.gguf"
-    assert model["download_size"] == "~16.6 GB"
+def test_medium_models_use_qualified_q4_and_vllm_artifacts():
+    models = {model["short"]: model for model in LLM_MODELS_MEDIUM}
+    assert models["gemma4-26b-a4b-q4"] == {
+        "tag": "gemma4:26b-a4b-it-ud-q4_K_M",
+        "label": "Gemma 4 26B-A4B 4-Bit Quantization",
+        "short": "gemma4-26b-a4b-q4", "tier": "medium",
+        "download_size": "~16.9 GB", "params_b": 26,
+        "hf_repo": "unsloth/gemma-4-26B-A4B-it-GGUF",
+        "hf_file": "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf",
+        "vllm_repo": "cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit",
+        "vllm_download_size": "~17.2 GB", "vllm_tool_parser": "gemma4",
+    }
+    assert models["qwen3.8-27b-q4"]["hf_file"] == "Qwen3.8-27B-UD-Q4_K_M.gguf"
+    assert models["qwen3.8-27b-q4"]["vllm_repo"] == "cyankiwi/Qwen3.8-27B-AWQ-INT4"
+    assert models["nemotron3.5-lightning-30b-a3b"]["hf_file"] == \
+        "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-UD-Q4_K_M.gguf"
+    assert models["nemotron3.5-lightning-30b-a3b"]["vllm_repo"] == \
+        "Local-Axiom-AI/Nemotron-3.5-Lightning-awq"
 
 
 def test_large_roster_preserves_distinct_baseline_agent_and_planner_roles():

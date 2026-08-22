@@ -6,7 +6,7 @@
       "family": "llm",
       "name": "Qwen 3.8 27B",
       "role": "Contemporary dense medium-tier Qwen coverage",
-      "incumbents": ["gemma3:27b-it-q4_K_M"],
+      "incumbents": ["qwen3.8:27b-ud-q4_K_M"],
       "sources": {
         "upstream": "Qwen/Qwen3.8-27B",
         "gguf": "unsloth/Qwen3.8-27B-GGUF",
@@ -19,9 +19,9 @@
       "name": "Muse Glimmer 30B",
       "role": "Alternative medium-tier architecture and instruction behavior",
       "incumbents": [
-        "gemma3:27b-it-q4_K_M",
-        "nemotron-cascade2:30b-a3b-q4_K_M",
-        "qwen3.6:35b-a3b"
+        "gemma4:26b-a4b-it-ud-q4_K_M",
+        "qwen3.8:27b-ud-q4_K_M",
+        "nemotron3.5-lightning:30b-a3b-ud-q4_K_M"
       ],
       "sources": {
         "upstream": "meta-models/Muse-Glimmer-30B",
@@ -34,7 +34,7 @@
       "family": "llm",
       "name": "NVIDIA Nemotron 3.5 Lightning 30B-A3B",
       "role": "Newer NVIDIA sparse medium-tier coverage",
-      "incumbents": ["nemotron-cascade2:30b-a3b-q4_K_M"],
+      "incumbents": ["nemotron3.5-lightning:30b-a3b-ud-q4_K_M"],
       "sources": {
         "upstream": "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
         "gguf": "unsloth/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
@@ -46,7 +46,7 @@
       "family": "llm",
       "name": "Gemma 4 26B-A4B",
       "role": "Newer sparse Gemma medium-tier coverage",
-      "incumbents": ["gemma3:27b-it-q4_K_M"],
+      "incumbents": ["gemma4:26b-a4b-it-ud-q4_K_M"],
       "sources": {
         "upstream": "google/gemma-4-26B-A4B-it",
         "gguf": "unsloth/gemma-4-26B-A4B-it-GGUF",

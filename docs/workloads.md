@@ -83,17 +83,17 @@ The extra-small tier deliberately spans three roles. Gemma 3 1B is the ultra-lig
 | Qwen3.5 9B 4-Bit Quantization | `qwen3.5:9b-q4_K_M` | `QuantTrio/Qwen3.5-9B-AWQ` | ~6.2 GB | Dense |
 | Gemma 4 12B 4-Bit Quantization | `gemma4:12b-it-q4_K_M` | `mattbucci/gemma-4-12B-AWQ` | ~7.7 GB | Dense |
 
-The small tier scales the same worker-model experiment upward. Granite 4.1 8B measures how the Granite tool/structured-execution specialization improves with more capacity, while Qwen3.5 9B is the corresponding stronger general executor. Gemma 4 12B anchors the top of the tier and pairs with Gemma 3 27B in the medium tier the same way Qwen3.5/Qwen3.6 span small→medium. Together, the Granite 3B→8B and Qwen3.5 4B→9B pairs expose whether extra capacity materially improves execution reliability, while Gemma 1B and Gemma 4 12B bracket the two tiers with a speed floor and capability ceiling.
+The small tier scales the same worker-model experiment upward. Granite 4.1 8B measures how the Granite tool/structured-execution specialization improves with more capacity, while Qwen3.5 9B is the corresponding stronger general executor. Gemma 4 12B anchors the top of the tier and pairs with Gemma 4 26B-A4B in the medium tier, while Qwen3.5 9B pairs with Qwen 3.8 27B. Together, these pairs expose whether extra capacity materially improves execution reliability, while Gemma 1B and Gemma 4 12B bracket the two lower tiers with a speed floor and capability ceiling.
 
 ### Medium tier (26–35B params)
 
 | Model | llama.cpp Tag | vLLM Tag | llama.cpp Size | Architecture |
 |---|---|---|---|---|
-| Gemma 3 27B 4-Bit Quantization | `gemma3:27b-it-q4_K_M` | `RedHatAI/gemma-3-27b-it-quantized.w4a16` | ~16.6 GB | Dense |
-| Nemotron Cascade 2 30B-A3B | `nemotron-cascade2:30b-a3b-q4_K_M` | `cyankiwi/Nemotron-Cascade-2-30B-A3B-AWQ-4bit` | ~24.7 GB | Hybrid Mamba MoE — 3B active of 32B total |
-| Qwen3.6 35B-A3B | `qwen3.6:35b-a3b` | `cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit` | ~24.0 GB | MoE — 3B active of 35B total |
+| Gemma 4 26B-A4B 4-Bit Quantization | `gemma4:26b-a4b-it-ud-q4_K_M` | `cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit` | ~16.9 GB | MoE — 4B active of 26B total |
+| Qwen 3.8 27B 4-Bit Quantization | `qwen3.8:27b-ud-q4_K_M` | `cyankiwi/Qwen3.8-27B-AWQ-INT4` | ~16.5 GB | Dense |
+| Nemotron 3.5 Lightning 30B-A3B | `nemotron3.5-lightning:30b-a3b-ud-q4_K_M` | `Local-Axiom-AI/Nemotron-3.5-Lightning-awq` | ~25.3 GB | Hybrid Mamba MoE — 3B active of 30B total |
 
-The medium tier contrasts three models with similar total parameter counts but very different execution costs and roles. Gemma 3 27B is the dense general-purpose baseline and provides a full-compute comparison against Gemma 3 1B at the other end of the catalog. Nemotron Cascade 2 represents hybrid long-context reasoning with only 3B parameters active per token; it is post-trained from Nemotron 3 Nano's base and replaced that model in this tier. Qwen3.6 35B-A3B supplies a conventional sparse MoE generalist at the same active scale. This keeps one Qwen model in the tier while using the dense slot for architecture and vendor diversity.
+The medium tier contrasts three current architectures with similar total parameter counts but different execution costs and vendor roles. Qwen 3.8 27B is the dense general-purpose baseline. Gemma 4 26B-A4B supplies sparse Gemma-family coverage with 4B active parameters, while Nemotron 3.5 Lightning supplies NVIDIA's hybrid long-context architecture with 3B active parameters. These replace Gemma 3 27B, Qwen3.6 35B-A3B, and Nemotron Cascade 2 without increasing the active catalog.
 
 ### Large tier (70B+ params)
 
@@ -113,7 +113,7 @@ llama.cpp parses tool calls from the model's own chat template, so every catalog
 
 Preflight records this tool capability before execution as a workload-scoped check. It does not turn missing tool support into a whole-model failure; non-tool measurements remain eligible, and the tool bank owns the durable per-model skip reason.
 
-`models.py` carries `vllm_tool_parser` per entry, set only where vLLM documents a parser for that family: `granite4` (Granite 4.1), `llama3_json` (Llama 3.3), `qwen3_coder` (Qwen3-Coder-Next). Gemma has no parser for its instruct models (only `functiongemma`, for a different model), vLLM documents none for Nemotron, and the correct choice for Qwen3.5/3.6 is unconfirmed — those are left unset until a real run settles them. The value is not a guess to be filled in casually: a *valid but wrong* parser fails silently, producing unparsed calls that score as wrong answers, which is exactly the outcome the skip exists to prevent.
+`models.py` carries `vllm_tool_parser` per entry, set only where vLLM documents a parser for that family: `granite4` (Granite 4.1), `gemma4` (Gemma 4), `llama3_json` (Llama 3.3), and `qwen3_coder` (Qwen3-Coder-Next). vLLM documents none for Nemotron, and the correct choice for Qwen3.5/3.8 is unconfirmed — those are left unset until a real run settles them. The value is not a guess to be filled in casually: a *valid but wrong* parser fails silently, producing unparsed calls that score as wrong answers, which is exactly the outcome the skip exists to prevent.
 
 ### Per-engine weights
 
@@ -127,9 +127,9 @@ The tier tables above give each model's identifier on both engines. The llama.cp
 | `granite4.1:8b-q4_K_M` | `cyankiwi/granite-4.1-8b-AWQ-INT4` | AWQ INT4 | ~5.5 GB |
 | `qwen3.5:9b-q4_K_M` | `cyankiwi/Qwen3.5-9B-AWQ-4bit` | AWQ INT4 | ~9.1 GB |
 | `gemma4:12b-it-q4_K_M` | `mattbucci/gemma-4-12B-AWQ` | AWQ INT4 | ~7.8 GB |
-| `gemma3:27b-it-q4_K_M` | `ISTA-DASLab/gemma-3-27b-it-GPTQ-4b-128g` | GPTQ 4-bit (128g) | ~16.9 GB |
-| `nemotron-cascade2:30b-a3b-q4_K_M` | `cyankiwi/Nemotron-Cascade-2-30B-A3B-AWQ-4bit` | AWQ INT4 | ~20.8 GB |
-| `qwen3.6:35b-a3b` | `cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit` | AWQ INT4 | ~25.1 GB |
+| `gemma4:26b-a4b-it-ud-q4_K_M` | `cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit` | compressed-tensors W4A16 | ~17.2 GB |
+| `qwen3.8:27b-ud-q4_K_M` | `cyankiwi/Qwen3.8-27B-AWQ-INT4` | compressed-tensors W4A16 | ~21.0 GB |
+| `nemotron3.5-lightning:30b-a3b-ud-q4_K_M` | `Local-Axiom-AI/Nemotron-3.5-Lightning-awq` | AWQ INT4 | ~18.1 GB |
 | `llama3.3:70b-instruct-q4_K_M` | `ibnzterrell/Meta-Llama-3.3-70B-Instruct-AWQ-INT4` | AWQ INT4 | ~39.8 GB |
 | `qwen3-coder-next:80b-a3b-q4_K_M` | `bullpoint/Qwen3-Coder-Next-AWQ-4bit` | AWQ INT4 | ~48.3 GB |
 | `nemotron-3-super:120b` | `cyankiwi/NVIDIA-Nemotron-3-Super-120B-A12B-AWQ-4bit` | AWQ INT4 | ~80.7 GB |
@@ -160,11 +160,11 @@ The effect concentrates in small models because a vocabulary embedding is a larg
 
 ### Dense vs. Mixture-of-Experts (MoE)
 
-A **dense** model runs every one of its parameters for every token it generates. A **Mixture-of-Experts (MoE)** model instead routes each token through only a small subset of specialized "expert" sub-networks, out of many more it holds in total — so most of its parameters sit idle on any given token. Catalog tags spell this out for MoE variants with an `-aN` suffix (e.g. `qwen3.6:35b-a3b`): the number after `a` is how many parameters actually activate per token ("active"), versus the number before it (total parameters, which is what drives memory/VRAM use).
+A **dense** model runs every one of its parameters for every token it generates. A **Mixture-of-Experts (MoE)** model instead routes each token through only a small subset of specialized "expert" sub-networks, out of many more it holds in total — so most of its parameters sit idle on any given token. Catalog tags spell this out for MoE variants with an `-aN` suffix (e.g. `gemma4:26b-a4b-it-ud-q4_K_M`): the number after `a` is how many parameters actually activate per token ("active"), versus the number before it (total parameters, which is what drives memory/VRAM use).
 
-Because decode speed tracks active parameters far more closely than total size or VRAM footprint, an MoE model can generate noticeably faster than a dense model of similar total size. That gap is exactly why the medium and large tiers each pair their two MoE entries with one dense model (Gemma 3 27B and Llama 3.3 70B): total download size alone would put an MoE model like Nemotron Cascade 2 (3B active of 32B total) in the same tier as models many times slower to run, so a dense representative keeps each tier honest about what it actually costs in generation time, not just disk space. Nemotron Cascade 2 and Nemotron 3 Super use a hybrid Mamba architecture, while Qwen3-Coder-Next combines gated delta networks with sparse and full attention; both approaches reduce long-context cost relative to a conventional dense transformer, but exercise different inference paths.
+Because decode speed tracks active parameters far more closely than total size or VRAM footprint, an MoE model can generate noticeably faster than a dense model of similar total size. That gap is exactly why the medium and large tiers each pair their two MoE entries with one dense model (Qwen 3.8 27B and Llama 3.3 70B): total download size alone would put an MoE model like Nemotron 3.5 Lightning (3B active of 30B total) in the same tier as models many times slower to run, so a dense representative keeps each tier honest about what it actually costs in generation time, not just disk space. Nemotron 3.5 Lightning and Nemotron 3 Super use a hybrid Mamba architecture, while Qwen3-Coder-Next combines gated delta networks with sparse and full attention; both approaches reduce long-context cost relative to a conventional dense transformer, but exercise different inference paths.
 
-**Reasoning models** (Nemotron Cascade 2 here, a unified model for both reasoning and non-reasoning tasks, with thinking off unless the chat template's `enable_thinking` is set) generate internal thinking tokens before their answer, via llama-server's separate `reasoning_content` field rather than mixing them into the answer text. Tokens/sec uses llama-server's generated-token count, including thinking output; streamed text fragments are never treated as tokens. Both single-shot and conversation TTFT are client-observed from immediately before the HTTP request opens until the first content, reasoning, or tool fragment arrives. Conversation requests still reuse the existing KV cache, while llama-server's separate prompt-evaluation duration is retained only in explicitly named server timing fields.
+**Reasoning models** (Nemotron 3.5 Lightning here, a unified model for both reasoning and non-reasoning tasks) generate internal thinking tokens before their answer, via llama-server's separate `reasoning_content` field rather than mixing them into the answer text. Tokens/sec uses llama-server's generated-token count, including thinking output; streamed text fragments are never treated as tokens. Both single-shot and conversation TTFT are client-observed from immediately before the HTTP request opens until the first content, reasoning, or tool fragment arrives. Conversation requests still reuse the existing KV cache, while llama-server's separate prompt-evaluation duration is retained only in explicitly named server timing fields.
 
 Measured generation results record requested, completed, and valid sample counts. Invalid non-finite, negative, internally inconsistent, or TTFT-after-wall measurements remain visible as diagnostic run entries but are excluded from means and raw valid-sample arrays; legacy `n_runs` keeps its historical completed-call meaning. With at least two valid samples, results also include medians and coefficients of variation without dropping outliers or assigning an instability verdict.
 
