@@ -5,7 +5,7 @@ import os
 import math
 from pathlib import Path
 
-VERSION        = "6.0-pre7"
+VERSION        = "6.0-pre8"
 
 COMFYUI_URL  = "http://localhost:8188"
 
@@ -38,6 +38,8 @@ VLLM_PORT = 8000
 VLLM_URL  = f"http://localhost:{VLLM_PORT}"
 # vLLM preallocates this fraction of VRAM for weights + KV cache.
 VLLM_GPU_MEMORY_UTILIZATION = 0.90
+VLLMBENCH_GPU_MEMORY_UTILIZATION = 0.85
+VLLMBENCH_GB10_GPU_MEMORY_UTILIZATION = 0.10
 VLLM_OFFLOAD_STEP_GB = 2
 VLLM_OFFLOAD_RESERVE_GB = 3
 VLLM_OFFLOAD_HOST_RESERVE_GB = 8
@@ -141,9 +143,7 @@ LLAMABENCH_TIMEOUT = 1800
 LLAMABENCH_FULL_OFFLOAD_NGL = 999
 
 # `vllm bench` latency/throughput sweep (opt-in `vllmbench` test) — see docs/workloads.md#vllm-bench.
-# Same shapes as LLAMABENCH_PP/TG so both engines sweep the same points; the numbers are
-# still not comparable across engines (different weights and different metric definitions).
-VLLMBENCH_INPUT = [512, 2048, 4096, 8192, 16384, 32768, 49152, 65536, 81920, 98304]
+# Uses LLAMABENCH_PP for input shapes so the shared prompt cap applies identically.
 VLLMBENCH_OUTPUT = [128, 512]
 VLLMBENCH_BATCH_SIZE = 1
 # vllm bench latency defaults to 30 iterations and 10 warmups, far more than this suite needs.
@@ -151,6 +151,7 @@ VLLMBENCH_ITERS = 3
 VLLMBENCH_WARMUP_ITERS = 1
 VLLMBENCH_NUM_PROMPTS = 32
 VLLMBENCH_TIMEOUT = 1800
+VLLM_COLD_IMPORT_TIMEOUT = 300
 
 # llama-batched-bench concurrency sweep (opt-in `llamabenchconc` test) — see docs/workloads.md#llama-bench-concurrency.
 LLAMABENCH_CONC_PP = 4096   # matches CONCURRENCY_TOOL_CONTEXT, so this cross-checks conc_tool at the same depth

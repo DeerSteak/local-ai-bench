@@ -130,6 +130,7 @@ def test_build_command_shape():
         "-b", "2048", "-ub", "512",
         "-ngl", "999", "--split-mode", "layer",
         "--cache-type-k", "q8_0", "--cache-type-v", "q8_0",
+        "--flash-attn", "on",
         "--output-format", "jsonl",
     ]
 
@@ -212,6 +213,23 @@ def test_run_one_parses_jsonl_rows(monkeypatch):
                         _popen_factory(_FakePopen(0, stdout_lines=lines)))
     entries = LBC.run_one("b", Path("/x.gguf"), 4096, 8192, [128], [1, 2], 2048, 512, 999, 60)
     assert [e["pl"] for e in entries] == [1, 2]
+
+
+def test_run_one_passes_runtime_environment_to_process(monkeypatch):
+    captured = {}
+
+    def popen(cmd, stdout, stderr, text, env):
+        captured["env"] = env
+        return _FakePopen(0, stdout_lines=[json.dumps(_row(1)) + "\n"])
+
+    monkeypatch.setattr(
+        "scripts.workloads.llamabench_concurrency_benchmark.subprocess.Popen", popen,
+    )
+    LBC.run_one(
+        "b", Path("/x.gguf"), 4096, 8192, [128], [1], 2048, 512, 999, 60,
+        env={"ONEAPI": "ready"},
+    )
+    assert captured["env"] == {"ONEAPI": "ready"}
 
 
 def test_run_one_reports_progress_per_row(monkeypatch):
@@ -479,14 +497,17 @@ def test_run_clamps_prompt_depth_on_small_context_models(fake_engine, monkeypatc
 
 def test_run_passes_on_progress_to_run_one(fake_engine, monkeypatch):
     captured = {}
+    fake_engine._process_env = {"ONEAPI": "ready"}
 
-    def fake_run_one(cls, *a, on_progress=None, **kw):
+    def fake_run_one(cls, *a, on_progress=None, env=None, **kw):
         captured["on_progress"] = on_progress
+        captured["env"] = env
         return [_row(1)]
 
     monkeypatch.setattr(LBC, "run_one", classmethod(fake_run_one))
     LBC().run(fake_engine, _MODELS)
     assert captured["on_progress"] is Shared.log
+    assert captured["env"] == {"ONEAPI": "ready"}
 
 
 def test_run_calls_save_fn_after_each_model(fake_engine, monkeypatch):

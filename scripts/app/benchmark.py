@@ -16,6 +16,7 @@ from pathlib import Path
 
 from scripts.runtime import config
 from scripts.runtime.execution_profile import build_execution_profile
+from scripts.release.qualification import experimental_engine_ack_error
 from scripts.app.benchmark_options import TEST_CHOICES, TG_TOKEN_CHOICES, TIER_CHOICES, option_value_errors
 from scripts.runtime.progress_events import emit_result_saved, set_progress_engine
 from scripts.runtime.comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
@@ -76,7 +77,6 @@ from scripts.runtime.supervised_stage import relay_runner_log, run_supervised_ll
 from scripts.setup.setup_config import (
     available_gpu_split_modes, configured_comfyui_dir, load_setup_config,
 )
-from scripts.setup.runtime_identity import engine_runtime_version
 from scripts.stage_registry import (
     ACCURACY_TESTS, CONCURRENCY_TESTS, JOURNAL_STAGES, LLM_TESTS,
     engine_incompatible_tests,
@@ -143,9 +143,8 @@ def format_duration_estimate(seconds: float | None) -> str:
     return f"about {minutes // 60}h {minutes % 60}m" if minutes >= 60 else f"about {minutes}m"
 
 
-def eta_match_config(args) -> dict:
-    """Runtime-shaping settings required for a historical ETA match."""
-    values = {
+def runtime_shaping_config(args) -> dict:
+    return {
         "runs": config.N_RUNS, "warmup_runs": args.warmup,
         "run_timeout_seconds": config.RUN_TIMEOUT,
         "accuracy_timeout_seconds": config.ACC_TIMEOUT,
@@ -165,6 +164,11 @@ def eta_match_config(args) -> dict:
         "sustained_window_sec": config.SUSTAINED_WINDOW_SEC,
         "sustained_context_tokens": config.SUSTAINED_CONTEXT_TOKENS,
     }
+
+
+def eta_match_config(args) -> dict:
+    """Runtime-shaping settings required for a historical ETA match."""
+    values = runtime_shaping_config(args)
     matched = {key: values[key] for key in ETA_MATCH_KEYS}
     if "sustained" in getattr(args, "tests", []):
         matched.update({key: values[key] for key in (
@@ -198,7 +202,7 @@ def format_resolved_plan(engine: str, tests: list[str], models: dict[str, list[d
         elif test == "llamabenchconc":
             cases = f"pp {config.LLAMABENCH_CONC_PP}; tg {config.LLAMABENCH_CONC_TG}; concurrency {config.LLAMABENCH_CONC_NPL}"
         elif test == "vllmbench":
-            cases = f"input {config.VLLMBENCH_INPUT}; output {config.VLLMBENCH_OUTPUT}"
+            cases = f"input {config.LLAMABENCH_PP}; output {config.VLLMBENCH_OUTPUT}"
         elif test == "conc_tool":
             cases = f"levels {config.CONCURRENCY_TOOL_LEVELS}"
         elif test == "conc_chat":
@@ -243,7 +247,7 @@ def select_tier(maxtier: str | None, image_models: list) -> tuple[list, str, lis
 def apply_max_prompt_tokens_cap(max_tokens: int | None, context_lengths: list[int],
                                 llamabench_pp: list[int], llamabenchconc_pp: int,
                                 ) -> tuple[list[int], list[int], int]:
-    """Caps 'llm'/'llamabench'/'llamabenchconc' prompt depths to max_tokens — see --max-prompt-tokens.
+    """Caps LLM and native-benchmark prompt depths to max_tokens — see --max-prompt-tokens.
     Raises ValueError if the cap excludes every depth from a list-based sweep."""
     if max_tokens is None:
         return list(context_lengths), list(llamabench_pp), llamabenchconc_pp
@@ -332,6 +336,13 @@ def interruption_exit_code(sig) -> int:
     return 128 + int(sig)
 
 
+def cleanup_signal_numbers(signal_module: object = signal) -> tuple[int, ...]:
+    values = [int(getattr(signal_module, "SIGINT")), int(getattr(signal_module, "SIGTERM"))]
+    if hasattr(signal_module, "SIGBREAK"):
+        values.append(int(getattr(signal_module, "SIGBREAK")))
+    return tuple(dict.fromkeys(values))
+
+
 def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
                          patterns: list[str] | None, concurrency_enabled: bool
                          ) -> tuple[list[dict], list[dict]]:
@@ -354,6 +365,7 @@ def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
 def engine_version_applies(tests: list[str]) -> bool:
     return bool(set(tests) & (set(LLM_TESTS) | set(CONCURRENCY_TESTS) | {"emb"}))
 
+
 def engine_pass_tests(tests: list[str], engine_name: str, *, include_images: bool) -> list[str]:
     """Workloads that produce results in one engine pass."""
     incompatible = set(engine_incompatible_tests(tests, engine_name))
@@ -361,6 +373,20 @@ def engine_pass_tests(tests: list[str], engine_name: str, *, include_images: boo
         test for test in tests
         if test not in incompatible and (include_images or test != "img")
     ]
+
+
+def build_engine_execution_profiles(engine_scopes: list[dict], tests: list[str], *,
+                                    cpu_only: bool, hardware_profile: dict,
+                                    profile_builder=build_execution_profile) -> dict[str, dict]:
+    profiles = {}
+    for index, scope in enumerate(engine_scopes):
+        pass_tests = engine_pass_tests(tests, scope["name"], include_images=index == 0)
+        if pass_tests:
+            profiles[scope["name"]] = profile_builder(
+                scope["engine"], pass_tests, cpu_only=cpu_only,
+                engine_name=scope["name"], hardware_profile=hardware_profile,
+            )
+    return profiles
 
 
 def selected_plan_models(tests: list[str], llm_models: list[dict],
@@ -374,6 +400,45 @@ def selected_plan_models(tests: list[str], llm_models: list[dict],
         "embeddings": model_identity(embedding_models) if "emb" in selected else [],
         "images": model_identity(image_models) if "img" in selected else [],
     }
+
+
+def validated_run_plan(*, engine_name: str, tests: list[str], stage_order: list[str],
+                       models: dict[str, list[dict]], effective_config: dict,
+                       job_id: str | None = None) -> RunPlan:
+    plan = RunPlan.create(
+        application_version=config.VERSION, engine_name=engine_name,
+        tests=tests, stage_order=stage_order, models=models,
+        effective_config=effective_config, job_id=job_id,
+    )
+    plan.validate_for_execution()
+    return plan
+
+
+def preflight_result(preflight, power_availability, temperature_availability) -> dict:
+    return {
+        **preflight.to_dict(),
+        **({"power": power_availability_dict(power_availability)}
+           if power_availability else {}),
+        **({"temperature": temperature_availability_dict(temperature_availability)}
+           if temperature_availability else {}),
+    }
+
+
+def apply_preflight_plan(plan: RunPlan, preflight, *, engine_name: str,
+                         tests: list[str], stage_order: list[str],
+                         llm_models: list[dict], concurrency_models: list[dict],
+                         embedding_models: list[dict], image_models: list[dict],
+                         effective_config: dict) -> tuple[RunPlan, list[dict], list[dict]]:
+    llm_models = filter_models(llm_models, preflight.runnable_tags)
+    concurrency_models = filter_models(concurrency_models, preflight.runnable_tags)
+    plan = validated_run_plan(
+        engine_name=engine_name, tests=tests, stage_order=stage_order,
+        models=selected_plan_models(
+            tests, llm_models, concurrency_models, embedding_models, image_models,
+        ),
+        effective_config=effective_config, job_id=plan.job_id,
+    )
+    return plan, llm_models, concurrency_models
 
 
 def resolve_catalog_scopes(image_models: list[dict], embedding_patterns: list[str] | None,
@@ -516,6 +581,18 @@ def add_model_selection_arguments(parser: argparse.ArgumentParser) -> None:
              "or shell-style wildcards (default: every image model allowed by --maxtier). "
              "Applied after --maxtier. Quote wildcards in a shell.",
     )
+
+
+def supervised_stage_runner(event_path: Path, stage_name: str, save_fn, *,
+                            resume_identity, power_availability,
+                            temperature_availability):
+    def runner(context):
+        return run_supervised_stage(
+            context.plan, event_path, stage_name, save_fn,
+            resume_identity=resume_identity, power_availability=power_availability,
+            temperature_availability=temperature_availability,
+        )
+    return runner
 
 
 def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/ComfyUI runs
@@ -722,6 +799,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "until a second engine (e.g. MLX) is added — kept here so scripts/"
              "docs referencing --engine don't need to change when one is.",
     )
+    parser.add_argument(
+        "--ack-experimental-engine", action="store_true",
+        help="Acknowledge that selected experimental engines lack complete qualification.",
+    )
     args = parser.parse_args()
     if args.power_telemetry and not args.memory_telemetry:
         parser.error("--power-telemetry requires --memory-telemetry")
@@ -764,7 +845,6 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         run_engine_names = resolve_engine_names(args.engine, _engines)
     except ValueError as exc:
         parser.error(str(exc))
-
     if args.list_models:
         any_installed = False
         for engine_name in run_engine_names:
@@ -842,6 +922,25 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         Shared.output(format_dry_run_output(previews))
         return
 
+    execution_profiles = build_engine_execution_profiles(
+        engine_scopes, args.tests, cpu_only=args.cpu_only,
+        hardware_profile=hardware_profile,
+    )
+    acknowledged_runtimes = [
+        scope["name"] for index, scope in enumerate(engine_scopes)
+        if engine_version_applies(engine_pass_tests(
+            args.tests, scope["name"], include_images=index == 0,
+        ))
+    ]
+    support_profiles = {
+        name: profile["engine_support"] for name, profile in execution_profiles.items()
+    }
+    acknowledgement_error = experimental_engine_ack_error(
+        acknowledged_runtimes, support_profiles, args.ack_experimental_engine,
+    )
+    if acknowledgement_error:
+        parser.error(acknowledgement_error)
+
     _safe = re.sub(r'[\\/:*?"<>|\s]+', '_', hardware_profile['hostname']).strip('_')
     _start_stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     config.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -887,13 +986,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             t for t in ("llm", "conv", "llamabench", "llamabenchconc", "emb", "mcq", "math", "reasoning", "code", "tool",
                         "conc_tool", "conc_chat", "sustained") if t in tests
         ]
-        profile = build_execution_profile(
-            engine, tests, cpu_only=args.cpu_only, hardware_profile=hardware_profile,
+        profile = execution_profiles[engine_name]
+        runtime_version = (
+            profile["engine_support"]["runtime_version"] if engine_version_applies(tests) else None
         )
         hardware_backend = profile["hardware_backend"]
-        runtime_version = (
-            engine_runtime_version(engine_name, engine) if engine_version_applies(tests) else None
-        )
         if (engine_backed_tests
                 and args.gpu_split_mode not in available_gpu_split_modes(setup_config, profile["backend"])):
             parser.error(
@@ -911,6 +1008,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         Shared.output(f"  Engine:    {engine_name}")
         if runtime_version:
             Shared.output(f"  Runtime:   {runtime_version}")
+        Shared.output(
+            f"  Support:   {profile['engine_support']['support_level']} — "
+            f"{profile['engine_support']['caveat']}"
+        )
         Shared.output(f"  Runs:      {config.N_RUNS} measured + {args.warmup} warmup")
         Shared.output(
             f"  Timeout:   {config.RUN_TIMEOUT}s per run, "
@@ -997,24 +1098,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     f"Temperature preflight: unavailable — {temperature_availability.reason}"
                 )
         effective_config = {
-            "runs": config.N_RUNS, "warmup_runs": args.warmup,
-            "run_timeout_seconds": config.RUN_TIMEOUT,
-            "accuracy_timeout_seconds": config.ACC_TIMEOUT,
-            "accuracy_token_budget": config.ACC_TOKEN_BUDGET,
-            "cpu_only": args.cpu_only, "force_all": args.force_all,
+            **runtime_shaping_config(args),
             "retry_crashed_models": args.retry_crashed_models,
             "gpu_split_mode": args.gpu_split_mode,
             "llamacpp_no_repack": args.llamacpp_no_repack,
-            "max_prompt_tokens": args.max_prompt_tokens,
-            "context_lengths": config.CONTEXT_LENGTHS,
-            "llamabench_pp": config.LLAMABENCH_PP,
-            "llamabench_tg": config.LLAMABENCH_TG,
-            "concurrency_tool_levels": config.CONCURRENCY_TOOL_LEVELS,
-            "concurrency_chat_levels": config.CONCURRENCY_CHAT_LEVELS,
-            "concurrency_tool_context": config.CONCURRENCY_TOOL_CONTEXT,
-            "concurrency_chat_context": config.CONCURRENCY_CHAT_CONTEXT,
-            "concurrency_chat_soft_exit_floor": config.CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT,
-            "sample_size": args.sample,
             "offline": args.offline,
             "memory_telemetry": args.memory_telemetry,
             "memory_telemetry_interval_sec": (
@@ -1033,9 +1120,6 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "temperature_sources": (
                 dict(temperature_availability.sources) if temperature_availability else None
             ),
-            "sustained_duration_sec": args.sustained_duration,
-            "sustained_window_sec": config.SUSTAINED_WINDOW_SEC,
-            "sustained_context_tokens": config.SUSTAINED_CONTEXT_TOKENS,
             "ambient_temp_c": args.ambient_temp_c,
             "methodology_profile": methodology["profile"],
             "effective_optimizations": methodology["effective_optimizations"],
@@ -1043,12 +1127,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         plan_models = selected_plan_models(
             tests, llm_models, conc_models, embedding_models, image_models,
         )
-        plan = RunPlan.create(
-            application_version=config.VERSION, engine_name=engine_name,
-            tests=tests, stage_order=stage_order, models=plan_models,
-            effective_config=effective_config,
+        plan = validated_run_plan(
+            engine_name=engine_name, tests=tests, stage_order=stage_order,
+            models=plan_models, effective_config=effective_config,
         )
-        plan.validate_for_execution()
         context_cap = args.max_prompt_tokens or max(LLMConversationBenchmark.CONV_CHECKPOINTS)
         contexts_by_test = {
             "llm": config.CONTEXT_LENGTHS,
@@ -1082,18 +1164,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             f"Static model preflight completed in {preflight.elapsed_seconds:.2f}s "
             f"({len(preflight.reports)} model(s))"
         )
-        llm_models = filter_models(llm_models, preflight.runnable_tags)
-        conc_models = filter_models(conc_models, preflight.runnable_tags)
-        if any(report.status == "excluded" for report in preflight.reports):
-            plan = RunPlan.create(
-                application_version=config.VERSION, engine_name=engine_name,
-                tests=tests, stage_order=stage_order,
-                models=selected_plan_models(
-                    tests, llm_models, conc_models, embedding_models, image_models,
-                ),
-                effective_config=effective_config, job_id=plan.job_id,
-            )
-            plan.validate_for_execution()
+        plan, llm_models, conc_models = apply_preflight_plan(
+            plan, preflight, engine_name=engine_name, tests=tests,
+            stage_order=stage_order, llm_models=llm_models,
+            concurrency_models=conc_models, embedding_models=embedding_models,
+            image_models=image_models, effective_config=effective_config,
+        )
         forked_from = (
             fork_provenance(Path(args.fork_plan), plan, Path(out_path))
             if args.fork_plan else None
@@ -1101,7 +1177,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         journal_stages = set(tests) & JOURNAL_STAGES
         image_dir = None
         if "img" in journal_stages:
-            image_dir = images_dir_for_result(Path(out_path), config.RESULTS_DIR)
+            image_dir = images_dir_for_result(Path(out_path))
             write_local_execution_context(
                 event_store_path(Path(out_path)),
                 LocalExecutionContext(plan.job_id, comfyui_dir.resolve(), image_dir),
@@ -1118,6 +1194,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             extra_resume_artifacts.update(image_resume_artifacts(image_models))
             extra_resume_runtimes.update(image_resume_runtimes(comfyui_dir))
         model_families = []
+        resume_identity_options: dict | None = None
         if journal_stages:
             if "llamabench" in tests:
                 llama_bench_path = find_llamacpp_tool("llama-bench")
@@ -1149,16 +1226,19 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             Shared.log(
                 f"Verifying resume identity for {identity_model_count} local model artifact(s) ..."
             )
-            resume_identity = build_engine_resume_identity(
-                plan, engine, model_families=model_families,
-                include_engine_runtime=bool(journal_stages & {
+            resume_identity_options = {
+                "model_families": model_families,
+                "include_engine_runtime": bool(journal_stages & {
                     "llm", "conv", "vllmbench", "sustained", "emb", "conc_tool", "conc_chat",
                     *ACCURACY_TESTS,
                 }),
-                extra_runtimes=extra_resume_runtimes,
-                extra_artifacts=extra_resume_artifacts,
-                digest_cache_path=config.RESUME_DIGEST_CACHE_PATH,
-                environment=profile,
+                "extra_runtimes": extra_resume_runtimes,
+                "extra_artifacts": extra_resume_artifacts,
+                "digest_cache_path": config.RESUME_DIGEST_CACHE_PATH,
+                "environment": profile,
+            }
+            resume_identity = build_engine_resume_identity(
+                plan, engine, **resume_identity_options,
             )
 
         results = {
@@ -1179,13 +1259,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 "code": Shared.file_hash(CodeBenchmark.CODE_DATA_PATH),
                 "tool": Shared.file_hash(ToolBenchmark.TOOL_DATA_PATH),
             },
-            "preflight":       {
-                **preflight.to_dict(),
-                **({"power": power_availability_dict(power_availability)}
-                   if power_availability else {}),
-                **({"temperature": temperature_availability_dict(temperature_availability)}
-                   if temperature_availability else {}),
-            },
+            "preflight":       preflight_result(
+                preflight, power_availability, temperature_availability,
+            ),
             "sample_ids": {},  # populated only when --sample is used
             "llm":             {},
             "llm_conversation": {},
@@ -1245,8 +1321,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             return _save
 
         _checkpoint("run started")
-        signal.signal(signal.SIGINT,  _cleanup)
-        signal.signal(signal.SIGTERM, _cleanup)
+        for cleanup_signal in cleanup_signal_numbers():
+            signal.signal(cleanup_signal, _cleanup)
 
         lifecycle = LifecycleCoordinator(
             engine, engine_name, _engines, get_engine, Shared.shutdown_managed,
@@ -1268,43 +1344,28 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 f"Model preflight completed in {preflight.elapsed_seconds:.2f}s "
                 f"({len(preflight.reports)} model(s))"
             )
-            llm_models = filter_models(llm_models, preflight.runnable_tags)
-            conc_models = filter_models(conc_models, preflight.runnable_tags)
-            plan = RunPlan.create(
-                application_version=config.VERSION, engine_name=engine_name,
-                tests=tests, stage_order=stage_order,
-                models=selected_plan_models(
-                    tests, llm_models, conc_models, embedding_models, image_models,
-                ),
-                effective_config=effective_config, job_id=plan.job_id,
+            plan, llm_models, conc_models = apply_preflight_plan(
+                plan, preflight, engine_name=engine_name, tests=tests,
+                stage_order=stage_order, llm_models=llm_models,
+                concurrency_models=conc_models, embedding_models=embedding_models,
+                image_models=image_models, effective_config=effective_config,
             )
-            plan.validate_for_execution()
-            results["preflight"] = {
-                **preflight.to_dict(),
-                **({"power": power_availability_dict(power_availability)}
-                   if power_availability else {}),
-                **({"temperature": temperature_availability_dict(temperature_availability)}
-                   if temperature_availability else {}),
-            }
+            results["preflight"] = preflight_result(
+                preflight, power_availability, temperature_availability,
+            )
             results["run"].update(
                 models=plan.models, plan_id=plan.plan_id, plan=plan.to_dict(),
             )
             if journal_stages:
+                assert resume_identity_options is not None
                 resume_identity = build_engine_resume_identity(
-                    plan, engine, model_families=model_families,
-                    include_engine_runtime=bool(journal_stages & {
-                        "llm", "conv", "vllmbench", "sustained", "emb", "conc_tool", "conc_chat",
-                        *ACCURACY_TESTS,
-                    }),
-                    extra_runtimes=extra_resume_runtimes,
-                    extra_artifacts=extra_resume_artifacts,
-                    digest_cache_path=config.RESUME_DIGEST_CACHE_PATH,
-                    environment=profile,
+                    plan, engine, **resume_identity_options,
                 )
             _checkpoint("runtime preflight complete")
         context = RunContext(
             plan, RunPaths(Path(out_path), comfyui_dir), engine, store, lifecycle,
         )
+        journal_path = event_store_path(Path(out_path))
 
         def start_case_telemetry():
             if not args.memory_telemetry:
@@ -1316,26 +1377,18 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
         def run_llm(_context):
             return run_supervised_llm(
-                _context.plan, event_store_path(Path(out_path)), make_save("llm"),
+                _context.plan, journal_path, make_save("llm"),
                 resume_identity=resume_identity, power_availability=power_availability,
                 temperature_availability=temperature_availability,
             )
 
-        def run_conversation(_context):
-            return run_supervised_stage(
-                _context.plan, event_store_path(Path(out_path)), "conv",
-                make_save("llm_conversation", "conv"), resume_identity=resume_identity,
-                power_availability=power_availability,
-                temperature_availability=temperature_availability,
-            )
-
-        def run_sustained(_context):
-            return run_supervised_stage(
-                _context.plan, event_store_path(Path(out_path)), "sustained",
-                make_save("sustained"), resume_identity=resume_identity,
-                power_availability=power_availability,
-                temperature_availability=temperature_availability,
-            )
+        stage_runner = lambda stage, save: supervised_stage_runner(
+            journal_path, stage, save, resume_identity=resume_identity,
+            power_availability=power_availability,
+            temperature_availability=temperature_availability,
+        )
+        run_conversation = stage_runner("conv", make_save("llm_conversation", "conv"))
+        run_sustained = stage_runner("sustained", make_save("sustained"))
 
         def release_port_for_runner(_context):
             """A runner is a separate process and cannot stop this one's server, so a
@@ -1343,37 +1396,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             if engine.available():
                 engine.stop()
 
-        def run_llamabench(_context):
-            return run_supervised_stage(
-                _context.plan, event_store_path(Path(out_path)), "llamabench",
-                make_save("llamabench"), resume_identity=resume_identity,
-                power_availability=power_availability,
-                temperature_availability=temperature_availability,
-            )
-
-        def run_llamabench_concurrency(_context):
-            return run_supervised_stage(
-                _context.plan, event_store_path(Path(out_path)), "llamabenchconc",
-                make_save("llamabenchconc"), resume_identity=resume_identity,
-                power_availability=power_availability,
-                temperature_availability=temperature_availability,
-            )
-
-        def run_vllmbench(_context):
-            return run_supervised_stage(
-                _context.plan, event_store_path(Path(out_path)), "vllmbench",
-                make_save("vllmbench"), resume_identity=resume_identity,
-                power_availability=power_availability,
-                temperature_availability=temperature_availability,
-            )
-
-        def run_embeddings(_context):
-            return run_supervised_stage(
-                _context.plan, event_store_path(Path(out_path)), "emb",
-                make_save("embeddings", "emb"), resume_identity=resume_identity,
-                power_availability=power_availability,
-                temperature_availability=temperature_availability,
-            )
+        run_llamabench = stage_runner("llamabench", make_save("llamabench"))
+        run_llamabench_concurrency = stage_runner(
+            "llamabenchconc", make_save("llamabenchconc"),
+        )
+        run_vllmbench = stage_runner("vllmbench", make_save("vllmbench"))
+        run_embeddings = stage_runner("emb", make_save("embeddings", "emb"))
 
         def accuracy_stage(test_name, Bench):
             def runner(_context):
@@ -1383,7 +1411,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     results["sample_ids"][test_name] = [q["id"] for q in questions]
                 answers_path = sidecar_path(_context.paths.output_path, f"answers_{test_name}_")
                 section = run_supervised_stage(
-                    _context.plan, event_store_path(Path(out_path)), test_name,
+                    _context.plan, journal_path, test_name,
                     make_save(test_name), resume_identity=resume_identity,
                     power_availability=power_availability,
                     temperature_availability=temperature_availability,
@@ -1399,7 +1427,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 if not conc_models:
                     Shared.warn(f"No downloaded models to test — {key} test will have nothing to run")
                 return run_supervised_stage(
-                    _context.plan, event_store_path(Path(out_path)), key,
+                    _context.plan, journal_path, key,
                     make_save(section, key), resume_identity=resume_identity,
                     power_availability=power_availability,
                     temperature_availability=temperature_availability,
@@ -1411,13 +1439,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             lifecycle.restore_gpu()
             lifecycle.stop_engine()
 
-        def run_images(_context):
-            return run_supervised_stage(
-                _context.plan, event_store_path(Path(out_path)), "img",
-                make_save("images", "img"), resume_identity=resume_identity,
-                power_availability=power_availability,
-                temperature_availability=temperature_availability,
-            )
+        run_images = stage_runner("img", make_save("images", "img"))
 
         registry = [
             StageDefinition("llm", "llm", len(llm_models), run_llm,
@@ -1480,5 +1502,16 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     Shared.section("Done")
     Shared.ok("All servers shut down. Benchmark complete.")
 
+
+def cli_main(run=main) -> int:
+    try:
+        run()
+    except StageExecutionError as exc:
+        Shared.err(f"Benchmark stopped: {exc}")
+        Shared.err("Partial results were preserved for inspection or recovery.")
+        return 1
+    return 0
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(cli_main())

@@ -1,6 +1,6 @@
 """Supervised journal-stage execution shared by benchmark and recovery flows."""
 
-import sys
+import json
 from pathlib import Path
 from typing import Callable, Protocol
 
@@ -35,14 +35,34 @@ class RunnerLike(Protocol):
     def cancel(self) -> None: ...
 
 
+def _redact_progress_value(value):
+    if isinstance(value, str):
+        return redact_log_text(value)
+    if isinstance(value, list):
+        return [_redact_progress_value(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            redact_log_text(key): _redact_progress_value(item)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _redact_runner_text(text: str) -> str:
+    stripped = text.rstrip()
+    if not stripped.startswith(PROGRESS_PREFIX):
+        return redact_log_text(stripped)
+    try:
+        payload = json.loads(stripped.removeprefix(PROGRESS_PREFIX))
+    except json.JSONDecodeError:
+        return redact_log_text(stripped)
+    redacted = _redact_progress_value(payload)
+    return f"{PROGRESS_PREFIX}{json.dumps(redacted, separators=(',', ':'))}"
+
+
 def relay_runner_log(text: str) -> None:
-    """Relay runner timestamps unchanged while redacting ordinary log lines."""
-    if text.startswith(PROGRESS_PREFIX):
-        sys.stdout.write(text if text.endswith("\n") else f"{text}\n")
-        sys.stdout.flush()
-        return
-    sys.stdout.write(f"{redact_log_text(text.rstrip())}\n")
-    sys.stdout.flush()
+    """Relay runner timestamps unchanged after redacting every output shape."""
+    Shared.plain_output(_redact_runner_text(text))
 
 
 def run_supervised_stage(plan: RunPlan, event_path: Path, stage_name: str, save_fn,

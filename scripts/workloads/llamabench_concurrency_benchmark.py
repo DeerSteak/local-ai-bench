@@ -63,17 +63,21 @@ class LlamaBenchConcurrencyBenchmark:
             *LlamaCppEngine.gpu_split_args(cpu_only=ngl == 0),
             "--cache-type-k", cache_type,
             "--cache-type-v", cache_type,
+            "--flash-attn", "on",
             "--output-format", "jsonl",
         ]
 
     @classmethod
     def run_one(cls, binary: str, model_path: Path, ctx_size: int, pp: int, tg: list[int],
                 npl: list[int], batch_size: int, ubatch_size: int, ngl: int, timeout: int | float,
-                on_progress=None, on_entry=None) -> list[dict]:
+                on_progress=None, on_entry=None, env=None) -> list[dict]:
         """Parses each stdout JSONL row as it arrives (this build is silent on stderr, so
         that's the only progress signal). `timeout` is an idle timeout, not a wall-clock cap."""
         cmd = cls.build_command(binary, model_path, ctx_size, pp, tg, npl, batch_size, ubatch_size, ngl)
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        popen_kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE, "text": True}
+        if env is not None:
+            popen_kwargs["env"] = env
+        proc = subprocess.Popen(cmd, **popen_kwargs)
         Shared._managed_procs.append(proc)
 
         entries: list[dict] = []
@@ -266,11 +270,14 @@ class LlamaBenchConcurrencyBenchmark:
                             telemetry.begin_measured("measured:native-sweep-includes-load")
                         before = len(entries)
                         try:
+                            run_kwargs = {"on_progress": Shared.log, "on_entry": _record_entry}
+                            if process_env := engine.process_environment():
+                                run_kwargs["env"] = process_env
                             returned_entries = self.run_one(
                                 binary, paths[0], ctx_size, effective_pp, sweep_tg, sweep_npl,
                                 config.LLAMABENCH_BATCH_SIZE, config.LLAMABENCH_UBATCH_SIZE,
                                 ngl, config.LLAMABENCH_TIMEOUT,
-                                on_progress=Shared.log, on_entry=_record_entry,
+                                **run_kwargs,
                             )
                             if len(entries) == before:
                                 for entry in returned_entries:

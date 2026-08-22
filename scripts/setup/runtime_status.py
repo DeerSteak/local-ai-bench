@@ -7,6 +7,7 @@ import subprocess
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from scripts.runtime import config
 from scripts.setup.runtime_identity import (
     RuntimeIdentity, inspect_runtime, parse_llamacpp_commit, probe_vllm_server_health,
     probe_vllm_server_version, source_commit_version,
@@ -69,7 +70,8 @@ def probe_vllm_environment(python_exe: Path | None, *, run=subprocess.run) -> tu
         return {}, "The Python interpreter for this vLLM executable was not found."
     try:
         result = run(
-            [str(python_exe), "-c", VLLM_ENV_PROBE], capture_output=True, text=True, timeout=30,
+            [str(python_exe), "-c", VLLM_ENV_PROBE], capture_output=True, text=True,
+            timeout=config.VLLM_COLD_IMPORT_TIMEOUT,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return {}, str(exc)

@@ -3,6 +3,7 @@ See docs/engines.md#llamacppengine for the full rationale."""
 
 import http.client
 import json
+import os
 import platform
 import re
 import shutil
@@ -19,12 +20,13 @@ import gguf
 import requests
 
 from scripts.runtime import config
-from scripts.runtime.llamacpp_tools import find_llamacpp_tool
+from scripts.runtime.llamacpp_tools import find_llamacpp_tool, probe_llamacpp_backend
 from scripts.runtime.engines.base import ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine
 from scripts.runtime.engines import openai_api
 from scripts.runtime.engines.chat_flow import chat_measurement, run_bounded_chat, validate_chat_budget
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
 from scripts.setup.custom_models import custom_model
+from scripts.setup.intel_xpu_install import oneapi_environment
 from scripts.runtime.model_identity import model_tag_slug
 from scripts.runtime.generation_guard import looks_like_loop
 from scripts.runtime.crash_cache import record_crash
@@ -72,6 +74,7 @@ class LlamaCppEngine(InferenceEngine):
         # Remembered for the lazy spawn in _ensure_model — no tag yet at start()/ensure_running() time.
         self._gpu_visible = True
         self._cpu_only_active = False
+        self._process_env: dict[str, str] | None = None
         self._model_lock = threading.RLock()
 
     @classmethod
@@ -316,36 +319,17 @@ class LlamaCppEngine(InferenceEngine):
                     installed.append(item)
         return installed
 
-    @staticmethod
-    def _backend_from_device_listing(output: str) -> str:
-        for line in output.splitlines():
-            device = line.strip().lower()
-            if re.match(r"cuda\d*\s*:", device):
-                return "cuda"
-            if re.match(r"(?:rocm|hip)\d*\s*:", device):
-                return "rocm"
-            if re.match(r"(?:metal|mtl)\d*\s*:", device):
-                return "metal"
-            if re.match(r"(?:sycl|level[- ]?zero)\d*\s*:", device):
-                return "xpu"
-            if re.match(r"vulkan\d*\s*:", device):
-                return "vulkan"
-        return "cpu"
-
     def runtime_backend(self, hardware_backend: str, *, cpu_only: bool = False) -> str:
+        self._process_env = oneapi_environment() if hardware_backend == "xpu" else None
         if cpu_only:
             return "cpu"
         binary = self._binary_path()
         if binary is None:
             return hardware_backend
-        try:
-            completed = subprocess.run(
-                [binary, "--list-devices"], capture_output=True, text=True, timeout=10,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return hardware_backend
-        output = f"{completed.stdout}\n{completed.stderr}"
-        return self._backend_from_device_listing(output) if completed.returncode == 0 else hardware_backend
+        return probe_llamacpp_backend(binary, env=self._process_env) or hardware_backend
+
+    def process_environment(self) -> dict[str, str] | None:
+        return self._process_env
 
     def max_context_length(self, tag: str, default: int = 131072) -> int:
         """Read a model's max context from its GGUF metadata, without loading weights.
@@ -506,7 +490,9 @@ class LlamaCppEngine(InferenceEngine):
             log_fh = tempfile.NamedTemporaryFile(mode="w", suffix="-llamacpp-server.log", delete=False)
             self._log_path = Path(log_fh.name)
             try:
-                proc = subprocess.Popen(args, stdout=log_fh, stderr=subprocess.STDOUT)
+                proc = subprocess.Popen(
+                    args, stdout=log_fh, stderr=subprocess.STDOUT, env=self._process_env,
+                )
             except FileNotFoundError:
                 log_fh.close()
                 raise RuntimeError(f"'{self.BINARY}' not found in PATH") from None
@@ -734,11 +720,9 @@ class LlamaCppEngine(InferenceEngine):
                         server_prompt_sec = prompt_ms / 1000
                     if prompt_n is not None:
                         prompt_eval_count = prompt_n
-                usage = chunk.get("usage")
-                if usage and usage.get("prompt_tokens") is not None:
-                    prompt_eval_count = usage["prompt_tokens"]
-                if usage and usage.get("completion_tokens") is not None:
-                    tokens = usage["completion_tokens"]
+                tokens, prompt_eval_count = openai_api.streamed_usage(
+                    chunk, tokens, prompt_eval_count,
+                )
 
         total = time.perf_counter() - request_start
         if ttft is None:

@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+from scripts.app.benchmark_options import PUBLIC_OPTION_SCHEMA
 from scripts.results.result_store import atomic_write_json
 
 
@@ -52,6 +53,9 @@ def validate_portable_preset(preset: object) -> list[str]:
     if (option_keys - expected_keys
             or not (expected_keys - option_keys).issubset({"offline", "gpu_split_mode"})):
         return ["Preset execution options are invalid."]
+    split_mode = config["options"].get("gpu_split_mode", "layer")
+    if split_mode not in PUBLIC_OPTION_SCHEMA["--gpu-split-mode"].choices:
+        return ["Preset GPU split mode is invalid."]
     return []
 
 

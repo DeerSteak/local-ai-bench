@@ -14,10 +14,10 @@ def local_execution_path(event_path: Path) -> Path:
     return Path(f"{Path(event_path).resolve()}.local.json")
 
 
-def images_dir_for_result(result_path: Path, results_dir: Path) -> Path:
+def images_dir_for_result(result_path: Path) -> Path:
     stem = Path(result_path).stem
     suffix = stem[len("results_"):] if stem.startswith("results_") else stem
-    return (Path(results_dir) / f"images_{suffix}").resolve()
+    return (Path(result_path).resolve().parent / f"images_{suffix}").resolve()
 
 
 @dataclass(frozen=True)

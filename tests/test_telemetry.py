@@ -175,6 +175,55 @@ def test_macos_uses_host_pool_without_claiming_separate_accelerator_counters(mon
     }
 
 
+def test_integrated_rocm_uses_host_pool_without_claiming_vram_aperture():
+    rocminfo = type("Result", (), {"returncode": 0, "stdout": """
+Agent 1
+  Device Type: CPU
+  Marketing Name: AMD Ryzen AI MAX+ 395
+Agent 2
+  Device Type: GPU
+  Marketing Name: AMD Radeon 8060S
+"""})()
+    sources = default_memory_sources(
+        which_fn=lambda name: f"/usr/bin/{name}" if name in {"rocm-smi", "rocminfo"} else None,
+        run_fn=lambda *_args, **_kwargs: rocminfo,
+    )
+    assert sources["accelerator_memory_used_gb"] == "unsupported"
+    assert sources["accelerator_memory_total_gb"] == "unsupported"
+
+
+def test_discrete_rocm_uses_accelerator_memory_counters():
+    rocminfo = type("Result", (), {"returncode": 0, "stdout": """
+Agent 1
+  Device Type: GPU
+  Marketing Name: AMD Radeon RX 9060 XT
+"""})()
+    sources = default_memory_sources(
+        which_fn=lambda name: f"/usr/bin/{name}" if name in {"rocm-smi", "rocminfo"} else None,
+        run_fn=lambda *_args, **_kwargs: rocminfo,
+    )
+    assert sources["accelerator_memory_used_gb"] == "rocm-smi"
+    assert sources["accelerator_memory_total_gb"] == "rocm-smi"
+
+
+def test_sampler_does_not_query_vram_when_accelerator_memory_is_unsupported(monkeypatch):
+    monkeypatch.setattr("scripts.runtime.telemetry.system_memory_usage", lambda: (2, 8))
+    monkeypatch.setattr("scripts.runtime.telemetry.process_resource_usage", lambda _pid: (0, 1))
+    monkeypatch.setattr(
+        "scripts.runtime.telemetry.query_sampler_vram_usage",
+        lambda: pytest.fail("unsupported ROCm memory must not be sampled"),
+    )
+    sampler = TelemetrySampler(42, memory_sources={
+        "host_ram_used_gb": "psutil",
+        "process_rss_gb": "psutil",
+        "accelerator_memory_used_gb": "unsupported",
+        "accelerator_memory_total_gb": "unsupported",
+    })
+    result = sampler._sample(0, "measured")
+    assert result.accelerator_memory_used_gb is None
+    assert result.accelerator_memory_total_gb is None
+
+
 def test_sampler_vram_query_aggregates_nvidia_devices_and_rejects_bad_output():
     result = type("Result", (), {"returncode": 0, "stdout": "1024, 8192\n2048, 16384\n"})()
     assert query_sampler_vram_usage(

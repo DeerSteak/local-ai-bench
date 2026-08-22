@@ -116,6 +116,18 @@ def test_legacy_environment_identity_reuses_only_saved_timestamp():
     assert legacy_environment_identity(current, {}) is None
 
 
+def test_legacy_environment_identity_omits_new_support_profile_for_old_result():
+    current = {
+        "hostname": "host", "timestamp": "now",
+        "engine_support": {"support_level": "unverified"},
+    }
+    assert legacy_environment_identity(current, {"timestamp": "then"}) == {
+        "profile_sha256": recovery_inspector.sha256_json({
+            "hostname": "host", "timestamp": "then",
+        }),
+    }
+
+
 def test_compatible_environment_identity_returns_saved_legacy_hash_only_on_exact_match():
     profile = {"hostname": "host", "backend": "metal", "timestamp": "now"}
     current = {"environment": {"profile_sha256": "stable"}, "plan_id": "plan"}

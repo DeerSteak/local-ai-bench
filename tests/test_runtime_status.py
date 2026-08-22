@@ -37,6 +37,21 @@ def test_probe_reports_import_failure_without_raising(tmp_path):
     assert warning == "vllm import failed"
 
 
+def test_probe_allows_a_slow_vllm_cold_import(tmp_path):
+    calls = []
+
+    def run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(
+            stdout=json.dumps({"vllm": "0.27.1"}), stderr="", returncode=0,
+        )
+
+    components, warning = probe_vllm_environment(tmp_path / "python", run=run)
+    assert components["vllm"] == "0.27.1"
+    assert warning is None
+    assert calls[0][1]["timeout"] == 300
+
+
 def test_llamacpp_status_combines_identity_backend_and_health(tmp_path):
     result = SimpleNamespace(stdout="version: 6527\n", stderr="", returncode=0)
     status = build_llamacpp_status(

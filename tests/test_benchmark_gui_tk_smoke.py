@@ -17,7 +17,9 @@ def test_benchmark_gui_builds_all_tabs_and_controller_wiring(monkeypatch):
     probe.destroy()
 
     inventory = {"llm": [], "custom": [], "embedding": [], "image": []}
-    engine = type("SmokeEngine", (), {"runtime_backend": lambda self, backend: backend})()
+    engine = type("SmokeEngine", (), {
+        "runtime_backend": lambda self, backend, *, cpu_only=False: "cpu" if cpu_only else backend,
+    })()
     observed = {}
 
     monkeypatch.setattr(benchmark_gui, "load_frontend_state", lambda _path: None)
@@ -27,8 +29,16 @@ def test_benchmark_gui_builds_all_tabs_and_controller_wiring(monkeypatch):
     monkeypatch.setattr(benchmark_gui, "get_engine", lambda _name: engine)
     monkeypatch.setattr(benchmark_gui, "build_model_inventory", lambda *_args: inventory.copy())
     monkeypatch.setattr(benchmark_gui, "find_llamacpp_tool", lambda _name: None)
-    monkeypatch.setattr(benchmark_gui.Shared, "system_ram_gb", lambda: 32.0)
-    monkeypatch.setattr(benchmark_gui.Shared, "detect_backend", lambda: "cpu")
+    monkeypatch.setattr(
+        benchmark_gui, "start_qualification_profile_load",
+        lambda engines, hardware_profile, output_queue: output_queue.put(
+            benchmark_gui.pending_qualification_profiles(tuple(engines), failed=True)
+        ),
+    )
+    monkeypatch.setattr(benchmark_gui.Shared, "build_profile", lambda: {
+        "hostname": "test host", "os": "Linux 6.17", "arch": "x86_64",
+        "ram_gb": 32.0, "backend": "cpu", "timestamp": "now",
+    })
     monkeypatch.setattr(benchmark_gui, "available_gpu_split_modes", lambda *_args: ("layer",))
     monkeypatch.setattr(benchmark_gui, "configured_gpu_devices", lambda _setup: [])
     monkeypatch.setattr(

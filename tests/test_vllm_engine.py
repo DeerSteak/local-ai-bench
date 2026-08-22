@@ -75,7 +75,15 @@ def _delta_chunk(content=None, finish=None, tool_calls=None):
 
 # ── command construction ──
 
-def test_launcher_is_preferred_and_pins_the_port(engine):
+def test_managed_runtime_is_preferred_over_a_platform_launcher(engine):
+    engine._launcher = "/usr/bin/vllm-launch"
+    command = engine.server_command("org/m", 4096)
+    assert command[:3] == ["/usr/bin/vllm", "serve", "org/m"]
+    assert "--port" in command
+
+
+def test_platform_launcher_is_the_fallback_when_no_executable_exists(engine):
+    engine._executable = None
     engine._launcher = "/usr/bin/vllm-launch"
     command = engine.server_command("org/m", 4096)
     assert command[0] == "/usr/bin/vllm-launch"
@@ -99,6 +107,17 @@ def test_fp8_cache_is_selected_only_for_supported_accelerator_backends(engine):
     assert "--kv-cache-dtype" not in engine.server_command("org/m", 4096)
 
 
+def test_embedding_does_not_use_quantized_kv_cache(engine):
+    engine.configure_kv_cache("cuda")
+    command = engine.server_command("org/m", None, embedding=True)
+    assert "--kv-cache-dtype" not in command
+
+
+def test_cuda_generation_leaves_attention_backend_selection_to_vllm(engine):
+    engine.configure_kv_cache("cuda")
+    assert "--attention-backend" not in engine.server_command("org/m", 4096)
+
+
 def test_external_server_cache_policy_remains_unmanaged(engine):
     engine._server_url = "http://external:8000"
     assert engine.configure_kv_cache("cuda") == "auto"
@@ -119,6 +138,31 @@ def test_cpu_offload_is_only_added_when_calibrated(engine):
     assert "--cpu-offload-gb" not in engine.server_command("org/m", 4096)
     command = engine.server_command("org/m", 4096, cpu_offload_gb=8)
     assert command[command.index("--cpu-offload-gb") + 1] == "8"
+
+
+def test_server_command_accepts_an_explicit_chat_template(engine):
+    command = engine.server_command("org/m", 4096, chat_template="/cache/chat_template.jinja")
+    assert command[command.index("--chat-template") + 1] == "/cache/chat_template.jinja"
+
+
+def test_dgx_reserves_host_memory_on_unified_gb10():
+    from scripts.runtime.engines.vllm import vllm_gpu_memory_utilization
+    assert vllm_gpu_memory_utilization("aarch64", [{"name": "NVIDIA GB10"}]) == 0.70
+    assert vllm_gpu_memory_utilization("x86_64", [{"name": "NVIDIA GB10"}]) == 0.90
+    assert vllm_gpu_memory_utilization("aarch64", [{"name": "NVIDIA H100"}]) == 0.90
+
+
+def test_server_command_uses_selected_platform_memory_reservation(engine):
+    engine._gpu_memory_utilization = 0.70
+    command = engine.server_command("org/m", 4096)
+    assert command[command.index("--gpu-memory-utilization") + 1] == "0.7"
+
+
+def test_native_bench_reserves_more_transient_memory_than_the_server(engine):
+    engine._gpu_memory_utilization = 0.90
+    assert engine.bench_gpu_memory_utilization() == 0.85
+    engine._gpu_memory_utilization = 0.70
+    assert engine.bench_gpu_memory_utilization() == 0.10
 
 
 @pytest.mark.parametrize(("available", "expected"), [
@@ -238,6 +282,8 @@ def test_offload_cache_key_tracks_model_revision_and_visible_devices(engine, mon
 
 def test_host_offload_limit_accounts_for_per_worker_tensor_parallel_allocation(
         engine, monkeypatch):
+    engine._executable = None
+    engine._launcher = "/usr/bin/vllm-launch"
     engine._launcher_extra_args = ["--tensor-parallel-size", "4"]
     memory = type("Memory", (), {"available": 72 * 1024 ** 3})()
     monkeypatch.setattr(vllm_module.psutil, "virtual_memory", lambda: memory)
@@ -559,9 +605,12 @@ def _cache_snapshot(engine, symlink, repo=None, files=("model.safetensors", "con
 
 
 def test_resume_artifacts_resolve_through_the_cache_symlinks(engine, symlink_or_skip):
-    _cache_snapshot(engine, symlink_or_skip, files=("model-00001.safetensors", "model-00002.safetensors", "config.json"))
+    _cache_snapshot(engine, symlink_or_skip, files=(
+        "model-00001.safetensors", "model-00002.safetensors", "config.json",
+        "tokenizer_config.json", "chat_template.jinja",
+    ))
     paths = engine.resume_artifact_paths("qwen3.5:9b-q4_K_M")
-    assert len(paths) == 3
+    assert len(paths) == 5
     assert all(path.parent.name == "blobs" for path in paths), "identity follows the blob, not the link"
     assert all(path.exists() for path in paths)
 
@@ -571,9 +620,11 @@ def test_resume_artifacts_raise_for_an_uncached_model(engine):
         engine.resume_artifact_paths("qwen3.5:9b-q4_K_M")
 
 
-def test_resume_runtime_prefers_the_launcher(engine):
+def test_resume_runtime_prefers_the_managed_executable(engine):
     assert engine.resume_runtime_paths() == {"vllm": Path("/usr/bin/vllm").resolve()}
     engine._launcher = "/usr/bin/vllm-launch"
+    assert engine.resume_runtime_paths() == {"vllm": Path("/usr/bin/vllm").resolve()}
+    engine._executable = None
     assert engine.resume_runtime_paths() == {"vllm": Path("/usr/bin/vllm-launch").resolve()}
 
 
@@ -591,6 +642,51 @@ def test_resume_identity_builds_for_a_cached_model(engine, symlink_or_skip):
     for path in engine.resume_artifact_paths("qwen3.5:9b-q4_K_M"):
         assert cached_file_identity(path, cache)["sha256"]
     assert len(cache) == 2
+
+
+def test_compatibility_metadata_reads_a_standalone_chat_template(engine, symlink_or_skip):
+    snapshot = _cache_snapshot(engine, symlink_or_skip, files=(
+        "model.safetensors", "config.json", "tokenizer_config.json", "chat_template.jinja",
+    ))
+    (snapshot / "config.json").resolve().write_text(json.dumps({"architectures": ["Granite"]}))
+    (snapshot / "tokenizer_config.json").resolve().write_text("{}")
+    (snapshot / "chat_template.jinja").resolve().write_text("{{ messages }}")
+
+    metadata, error = engine.compatibility_metadata("qwen3.5:9b-q4_K_M")
+
+    assert error is None
+    assert metadata["tokenizer.chat_template"] == "{{ messages }}"
+
+
+def test_managed_runtime_passes_standalone_chat_template_by_path(engine, symlink_or_skip):
+    snapshot = _cache_snapshot(engine, symlink_or_skip, files=(
+        "model.safetensors", "config.json", "tokenizer_config.json", "chat_template.jinja",
+    ))
+    (snapshot / "tokenizer_config.json").resolve().write_text("{}")
+    expected = str((snapshot / "chat_template.jinja").resolve())
+    assert engine._chat_template_argument("qwen3.5:9b-q4_K_M") == expected
+
+
+def test_platform_launcher_passes_standalone_chat_template_inline(engine, symlink_or_skip):
+    snapshot = _cache_snapshot(engine, symlink_or_skip, files=(
+        "model.safetensors", "config.json", "tokenizer_config.json", "chat_template.jinja",
+    ))
+    (snapshot / "tokenizer_config.json").resolve().write_text("{}")
+    (snapshot / "chat_template.jinja").resolve().write_text("{{ messages }}")
+    engine._executable = None
+    engine._launcher = "/usr/bin/vllm-launch"
+    assert engine._chat_template_argument("qwen3.5:9b-q4_K_M") == "{{ messages }}"
+
+
+def test_embedded_chat_template_does_not_get_overridden(engine, symlink_or_skip):
+    snapshot = _cache_snapshot(engine, symlink_or_skip, files=(
+        "model.safetensors", "config.json", "tokenizer_config.json", "chat_template.jinja",
+    ))
+    (snapshot / "tokenizer_config.json").resolve().write_text(
+        json.dumps({"chat_template": "embedded"})
+    )
+    (snapshot / "chat_template.jinja").resolve().write_text("standalone")
+    assert engine._chat_template_argument("qwen3.5:9b-q4_K_M") is None
 
 
 # ── tool-call capability ──
@@ -709,6 +805,7 @@ def test_launcher_stop_interrupts_before_escalating(engine, monkeypatch):
         def send_signal(self, sig): pass
 
     engine._launcher = "/usr/bin/vllm-launch"
+    engine._executable = None
     engine._proc = Proc()
     monkeypatch.setattr("os.getpgid", lambda pid: pid)
     monkeypatch.setattr("os.killpg", lambda pgid, sig: signalled.append(sig))
@@ -872,6 +969,26 @@ def test_is_installed_true_with_only_a_server_url(engine):
     engine._executable = None
     engine._server_url = "http://gpu-box:8000"
     assert engine.is_installed() is True
+
+
+def test_managed_runtime_wins_over_a_saved_external_server(monkeypatch, tmp_path):
+    from scripts.setup.setup_config import vllm_setup_config, write_setup_config
+
+    setup_path = tmp_path / "setup.json"
+    write_setup_config(
+        setup_path, comfyui_dir=None, llamacpp_tools={},
+        vllm=vllm_setup_config(
+            executable="/managed/vllm", launcher="/usr/bin/vllm-launch",
+            server_url="http://localhost:8000", launcher_extra_args=["--flag"],
+            hf_home=tmp_path / "cache",
+        ),
+    )
+    monkeypatch.setattr(config, "SETUP_CONFIG_PATH", setup_path)
+    selected = VllmEngine()
+    assert selected._local_runtime == "/managed/vllm"
+    assert selected.external_server_url() is None
+    assert selected.runtime_launcher() is None
+    assert selected.launcher_extra_args == []
 
 
 def test_base_url_prefers_the_configured_server(engine):

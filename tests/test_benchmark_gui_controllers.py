@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 
 import pytest
@@ -425,7 +426,7 @@ def test_llamacpp_update_dispatches_platform_and_release(monkeypatch, platform_n
 
     def capture(name):
         def updater(*_args, release_fetcher, **_kwargs):
-            calls.append((name, release_fetcher()))
+            calls.append((name, release_fetcher(), _kwargs.get("intel_xpu")))
             return name
         return updater
 
@@ -443,7 +444,33 @@ def test_llamacpp_update_dispatches_platform_and_release(monkeypatch, platform_n
 
     expected_platform = {"Darwin": "mac", "Windows": "windows", "Linux": "linux"}[platform_name]
     assert result == expected_platform
-    assert calls == [(expected_platform, "latest" if tag is None else f"tag:{tag}")]
+    expected_xpu = False if platform_name == "Windows" else None
+    assert calls == [(
+        expected_platform, "latest" if tag is None else f"tag:{tag}", expected_xpu,
+    )]
+
+
+def test_windows_intel_llamacpp_update_preserves_sycl_backend(monkeypatch):
+    actions = EngineUpdateActions({}, "xpu")
+    status = SimpleNamespace(engine="llamacpp", managed=True, backend="xpu")
+    calls = []
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.collect_engine_management",
+        lambda *_args: SimpleNamespace(statuses=[status]),
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.platform.system", lambda: "Windows",
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.detect_nvidia_max_cuda_version", lambda: None,
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.update_windows_llamacpp",
+        lambda *_args, **kwargs: calls.append(kwargs) or "updated",
+    )
+
+    assert actions.update_llamacpp_version(None, SimpleNamespace(log=lambda _text: None)) == "updated"
+    assert calls[0]["intel_xpu"] is True
 
 
 def test_configuration_refresh_imported_models_updates_screen_state(monkeypatch):
@@ -564,3 +591,25 @@ def test_run_log_export_writes_current_text(monkeypatch, tmp_path):
 
     assert destination.read_text(encoding="utf-8") == "benchmark output\n"
     assert messages[0][0][0] == "Log exported"
+
+
+def test_run_log_open_folder_detaches_desktop_process(monkeypatch, tmp_path):
+    calls = []
+    controller = RunLogActions.__new__(RunLogActions)
+    controller.option_vars = {"out": SimpleNamespace(get=lambda: str(tmp_path / "result.json"))}
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.run_log_actions.platform.system", lambda: "Linux",
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.run_log_actions.subprocess.Popen",
+        lambda command, **options: calls.append((command, options)),
+    )
+
+    controller.open_results_folder()
+
+    assert calls == [(["xdg-open", str(tmp_path.resolve())], {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "start_new_session": True,
+    })]

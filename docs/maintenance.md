@@ -8,7 +8,7 @@ Maintenance is deliberately split between project-owned files and external/syste
 
 ## Upgrade and rollback
 
-Version 6.0-pre7 has no automatic updater. A preview upgrade is a separately downloaded source release applied only after the user backs up projects/results and reviews its release notes and compatibility axes. The old directory remains the rollback copy until the new build passes setup health and a verification run. Models and imported result bundles can be reused through explicit paths, but executable environments are rebuilt from the target release rather than shared across versions.
+Version 6.0-pre8 has no automatic updater. A preview upgrade is a separately downloaded source release applied only after the user backs up projects/results and reviews its release notes and compatibility axes. The old directory remains the rollback copy until the new build passes setup health and a verification run. Models and imported result bundles can be reused through explicit paths, but executable environments are rebuilt from the target release rather than shared across versions.
 
 Signed in-place upgrade and rollback remain stable-release blockers. They require signed packages and manifests, downgrade protection, staged channels, migration dry runs, power/network interruption tests, and a tested last-known-good restoration path. The application must not present manual source replacement as a commercially supported automatic update.
 

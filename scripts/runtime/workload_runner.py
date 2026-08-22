@@ -100,10 +100,14 @@ def create_case_telemetry(settings: dict, environ=None) -> CaseTelemetry | None:
 
 def configure_runner_engine(engine, hardware_backend: str, cpu_only: bool) -> str:
     """Reapply runtime policy in this child process; parent engine state is not inherited."""
+    resolve_backend = getattr(engine, "runtime_backend", None)
+    runtime_backend = (
+        resolve_backend(hardware_backend, cpu_only=cpu_only)
+        if resolve_backend is not None else ("cpu" if cpu_only else hardware_backend)
+    )
     configure = getattr(engine, "configure_kv_cache", None)
     if configure is None:
         return "auto"
-    runtime_backend = engine.runtime_backend(hardware_backend, cpu_only=cpu_only)
     return configure(runtime_backend)
 
 
@@ -302,6 +306,7 @@ def execute_vllmbench_job(path, job_id, *, engine_factory=get_engine,
         raise ValueError("runner job does not include the native vLLM bench stage")
     settings = plan.effective_config
     apply_runner_settings(settings)
+    config.LLAMABENCH_PP = settings["llamabench_pp"]
     catalog = {model["tag"]: model for model in LLM_MODELS}
     models = [
         {**identity, "label": (catalog.get(identity["tag"]) or identity).get(

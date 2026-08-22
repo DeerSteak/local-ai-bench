@@ -102,7 +102,7 @@ def discover_system(meminfo_path: Path = Path("/proc/meminfo")) -> SystemDiscove
 def discover_nvidia() -> NvidiaDiscovery:
     try:
         inventory = subprocess.check_output(
-            ["nvidia-smi", "--query-gpu=name,memory.total,driver_version",
+            [hardware.nvidia_smi_executable(), "--query-gpu=name,memory.total,driver_version",
              "--format=csv,noheader"], text=True, stderr=subprocess.DEVNULL,
         )
         gpus = hardware.parse_nvidia_gpus(inventory)
@@ -110,14 +110,14 @@ def discover_nvidia() -> NvidiaDiscovery:
         return NvidiaDiscovery([], None, None)
     try:
         capability = subprocess.check_output(
-            ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
+            [hardware.nvidia_smi_executable(), "--query-gpu=compute_cap", "--format=csv,noheader"],
             text=True, stderr=subprocess.DEVNULL,
         ).strip().splitlines()[0].strip()
     except (FileNotFoundError, subprocess.CalledProcessError, IndexError):
         capability = None
     try:
         summary = subprocess.check_output(
-            ["nvidia-smi"], text=True, stderr=subprocess.DEVNULL,
+            [hardware.nvidia_smi_executable()], text=True, stderr=subprocess.DEVNULL,
         )
         max_cuda = hardware.parse_nvidia_max_cuda_version(summary)
     except (FileNotFoundError, subprocess.CalledProcessError):
@@ -128,7 +128,8 @@ def discover_nvidia() -> NvidiaDiscovery:
 def discover_rocm() -> RocmDiscovery:
     try:
         output = subprocess.check_output(
-            ["rocminfo"], text=True, stderr=subprocess.DEVNULL,
+            [hardware.rocm_executable("rocminfo") or "rocminfo"],
+            text=True, stderr=subprocess.DEVNULL,
         )
     except (FileNotFoundError, subprocess.CalledProcessError):
         return RocmDiscovery([], [], None, [])
@@ -144,7 +145,8 @@ def discover_rocm() -> RocmDiscovery:
     if kind == "discrete":
         try:
             memory = subprocess.check_output(
-                ["rocm-smi", "--showmeminfo", "vram", "--json"],
+                [hardware.rocm_executable("rocm-smi") or "rocm-smi",
+                 "--showmeminfo", "vram", "--json"],
                 text=True, stderr=subprocess.DEVNULL,
             )
             gpus = hardware.parse_rocm_smi_gpus(memory, names)
@@ -157,7 +159,8 @@ def discover_rocm() -> RocmDiscovery:
 def rocm_version(version_path: Path = Path("/opt/rocm/.info/version")) -> tuple[int, int] | None:
     try:
         output = subprocess.check_output(
-            ["hipconfig", "--version"], text=True, stderr=subprocess.DEVNULL,
+            [hardware.rocm_executable("hipconfig") or "hipconfig", "--version"],
+            text=True, stderr=subprocess.DEVNULL,
         )
         return hardware.parse_rocm_version(output)
     except (FileNotFoundError, subprocess.CalledProcessError):
@@ -199,7 +202,7 @@ def discover_windows_gpu() -> DisplayDiscovery:
     for name in (line.strip() for line in output.splitlines() if line.strip()):
         if "AMD" in name or "Radeon" in name:
             return DisplayDiscovery("amd", hardware.classify_gpu(name), name)
-        if "Intel" in name and "Arc" in name:
+        if hardware.is_intel_xpu_display(name):
             return DisplayDiscovery("intel", hardware.classify_gpu(name), name)
     return DisplayDiscovery(None, None, None)
 
@@ -208,12 +211,42 @@ def discover_linux_intel_gpu() -> DisplayDiscovery:
     if platform.system() != "Linux":
         return DisplayDiscovery(None, None, None)
     try:
-        output = subprocess.check_output(["lspci"], text=True, stderr=subprocess.DEVNULL)
+        output = subprocess.check_output(["lspci", "-nn"], text=True, stderr=subprocess.DEVNULL)
     except (FileNotFoundError, subprocess.CalledProcessError):
         return DisplayDiscovery(None, None, None)
     for line in output.splitlines():
         if (any(key in line for key in ("VGA", "3D controller", "Display"))
-                and "Intel" in line and "Arc" in line):
+                and hardware.is_intel_xpu_display(line)):
             name = line.split(":", 2)[-1].strip()
             return DisplayDiscovery("intel", hardware.classify_gpu(name), name)
+    return DisplayDiscovery(None, None, None)
+
+
+def discover_linux_amd_gpu() -> DisplayDiscovery:
+    if platform.system() != "Linux":
+        return DisplayDiscovery(None, None, None)
+    try:
+        output = subprocess.check_output(["lspci", "-nn"], text=True, stderr=subprocess.DEVNULL)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return DisplayDiscovery(None, None, None)
+    for line in output.splitlines():
+        if (any(key in line for key in ("VGA", "3D controller", "Display"))
+                and ("AMD/ATI" in line or "[1002:" in line)):
+            name = line.split(":", 2)[-1].strip()
+            return DisplayDiscovery("amd", hardware.classify_gpu(name), name)
+    return DisplayDiscovery(None, None, None)
+
+
+def discover_linux_nvidia_gpu() -> DisplayDiscovery:
+    if platform.system() != "Linux":
+        return DisplayDiscovery(None, None, None)
+    try:
+        output = subprocess.check_output(["lspci", "-nn"], text=True, stderr=subprocess.DEVNULL)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return DisplayDiscovery(None, None, None)
+    for line in output.splitlines():
+        if (any(key in line for key in ("VGA", "3D controller", "Display"))
+                and ("NVIDIA" in line or "[10de:" in line.casefold())):
+            name = line.split(":", 2)[-1].strip()
+            return DisplayDiscovery("nvidia", "discrete", name)
     return DisplayDiscovery(None, None, None)

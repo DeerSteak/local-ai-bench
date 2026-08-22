@@ -41,6 +41,16 @@ if TYPE_CHECKING:
 
 
 RUN_LOG_UTC_OFFSET_ENV = "LOCAL_AI_BENCH_RUN_LOG_UTC_OFFSET_MINUTES"
+WINDOWS_DISPLAY_ADAPTERS = {
+    "microsoft basic display adapter", "microsoft remote display adapter",
+}
+
+
+def _windows_gpu_names(output: str) -> list[str]:
+    return [
+        name for line in output.splitlines() if (name := line.strip())
+        and name.casefold() not in WINDOWS_DISPLAY_ADAPTERS
+    ]
 
 
 def _console_timezone(environment=None):
@@ -86,6 +96,11 @@ def _nvidia_gpu_summary(output):
     return devices[0]["name"], sum(capacities) if len(capacities) == len(devices) else None
 
 
+def _rocm_gpu_summary(output):
+    names = hardware.rocminfo_gpu_names(output)
+    return names[0] if names else None
+
+
 def _machine_identity(cpu, gpu, ram_gb, total_vram_gb=None):
     lines = []
     if cpu:
@@ -101,7 +116,6 @@ def _machine_identity(cpu, gpu, ram_gb, total_vram_gb=None):
 class EngineTimeout(TimeoutError):
     """Raised when chat() exceeds its wall-clock timeout. Carries whatever text
     had streamed before the cutoff — see docs/workloads.md#timeouts-and-loop-detection."""
-
     def __init__(self, message: str, partial_text: str = "",
                  budget_nudged: bool = False):
         super().__init__(message)
@@ -231,12 +245,14 @@ class Shared:
 
         try:
             info_out = subprocess.check_output(
-                ["rocminfo"], text=True, stderr=subprocess.DEVNULL,
+                [hardware.rocm_executable("rocminfo") or "rocminfo"],
+                text=True, stderr=subprocess.DEVNULL,
             )
             gpu_names = hardware.rocminfo_gpu_names(info_out)
             if any(hardware.classify_gpu(name) == "discrete" for name in gpu_names):
                 mem_out = subprocess.check_output(
-                    ["rocm-smi", "--showmeminfo", "vram", "--json"],
+                    [hardware.rocm_executable("rocm-smi") or "rocm-smi",
+                     "--showmeminfo", "vram", "--json"],
                     text=True, stderr=subprocess.DEVNULL, timeout=10,
                 )
                 mem_data = json.loads(mem_out)
@@ -318,7 +334,7 @@ class Shared:
                 }
                 if not managed_checkpoints_visible(available, managed):
                     Shared.warn("ComfyUI is running but has not loaded Local AI Bench's managed model path")
-                    Shared.warn("Stop ComfyUI and retry so Local AI Bench can launch it with the correct configuration")
+                    Shared.warn("Stop it without active work, restart it once, then retry the image workload")
                     return False
             except Exception as exc:
                 Shared.warn(f"Could not verify checkpoints in the running ComfyUI server: {exc}")
@@ -460,8 +476,7 @@ class Shared:
             if cpu_names:
                 cpu = cpu_names[0]
 
-            _skip = {"microsoft basic display adapter", "microsoft remote display adapter"}
-            gpus = [n for n in _ps_names("Win32_VideoController") if n and n.lower() not in _skip]
+            gpus = _windows_gpu_names("\n".join(_ps_names("Win32_VideoController")))
             if gpus:
                 gpu = gpus[0]
             try:
@@ -490,7 +505,7 @@ class Shared:
             # NVIDIA first, then AMD via rocminfo, then lspci fallback
             try:
                 out = subprocess.run(
-                    ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                    [hardware.nvidia_smi_executable(), "--query-gpu=name", "--format=csv,noheader"],
                     capture_output=True, text=True, timeout=10,
                 ).stdout.strip()
                 if out:
@@ -500,18 +515,27 @@ class Shared:
             if not gpu:
                 try:
                     out = subprocess.run(
-                        ["rocminfo"], capture_output=True, text=True, timeout=10,
+                        [hardware.rocm_executable("rocminfo") or "rocminfo"],
+                        capture_output=True, text=True, timeout=10,
                     ).stdout
-                    for line in out.splitlines():
-                        if "Marketing Name:" in line:
-                            gpu = line.split(":", 1)[1].strip()
-                            break
+                    gpu = _rocm_gpu_summary(out)
+                except Exception:
+                    pass
+            if not gpu and Shared.detect_wsl(system, platform.release()):
+                try:
+                    out = subprocess.run(
+                        ["powershell.exe", "-NoProfile", "-Command",
+                         "(Get-CimInstance Win32_VideoController).Name"],
+                        capture_output=True, text=True, timeout=10,
+                    ).stdout
+                    gpus = _windows_gpu_names(out)
+                    gpu = gpus[0] if gpus else None
                 except Exception:
                     pass
             if not gpu:
                 try:
                     out = subprocess.run(
-                        ["lspci"], capture_output=True, text=True, timeout=10,
+                        ["lspci", "-nn"], capture_output=True, text=True, timeout=10,
                     ).stdout
                     for line in out.splitlines():
                         if any(k in line for k in ("VGA", "3D controller", "Display")):
@@ -554,9 +578,11 @@ class Shared:
             pass
         # ROCm (Linux)
         try:
-            out = subprocess.check_output(["rocminfo"], text=True,
-                                           stderr=subprocess.DEVNULL)
-            if "Marketing Name" in out:
+            out = subprocess.check_output(
+                [hardware.rocm_executable("rocminfo") or "rocminfo"],
+                text=True, stderr=subprocess.DEVNULL,
+            )
+            if _rocm_gpu_summary(out):
                 return "rocm"
         except (FileNotFoundError, subprocess.CalledProcessError):
             pass
@@ -571,17 +597,19 @@ class Shared:
                 names = [n.strip() for n in out.splitlines() if n.strip()]
                 if any("AMD" in n or "Radeon" in n for n in names):
                     return "rocm"
-                if any("Intel" in n and "Arc" in n for n in names):
+                if any(hardware.is_intel_xpu_display(n) for n in names):
                     return "xpu"
             except Exception:
                 pass
-        # No guaranteed xpu-smi on Linux — reuse the "Intel"+"Arc" heuristic on lspci (not just "Intel", to exclude integrated Iris Xe).
+        # lspci may report Arc Pro B-series by its Battlemage codename.
         if platform.system() == "Linux":
             try:
-                out = subprocess.check_output(["lspci"], text=True, stderr=subprocess.DEVNULL)
+                out = subprocess.check_output(
+                    ["lspci", "-nn"], text=True, stderr=subprocess.DEVNULL,
+                )
                 for line in out.splitlines():
                     if (any(k in line for k in ("VGA", "3D controller", "Display"))
-                            and "Intel" in line and "Arc" in line):
+                            and hardware.is_intel_xpu_display(line)):
                         return "xpu"
             except (FileNotFoundError, subprocess.CalledProcessError):
                 pass

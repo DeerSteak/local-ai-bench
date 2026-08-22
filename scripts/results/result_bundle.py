@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import math
 import statistics
 import zipfile
 from pathlib import Path
@@ -95,7 +96,9 @@ def aggregate_reproduction_errors(result: dict) -> list[str]:
                     values = [sample.get(sample_key) for sample in samples]
                     if aggregate in value and all(isinstance(item, (int, float)) for item in values):
                         reproduced = round(statistics.mean(values), digits)
-                        if value[aggregate] != reproduced:
+                        if not math.isclose(
+                                value[aggregate], reproduced, rel_tol=0,
+                                abs_tol=(10 ** -digits) * (1 + 1e-9)):
                             errors.append(f"{path}.{aggregate} does not match valid_samples")
             runs = value.get("runs")
             if isinstance(runs, list) and runs and all(isinstance(item, (int, float)) for item in runs):

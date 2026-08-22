@@ -8,7 +8,6 @@ import shlex
 import subprocess
 from pathlib import Path
 
-
 def normalize_comfyui_dir(path: Path) -> Path | None:
     """Return the ComfyUI program directory for manual or portable layouts."""
     candidate = path.expanduser()

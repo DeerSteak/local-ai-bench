@@ -7,6 +7,7 @@ import math
 import os
 import platform
 import re
+import shutil
 import secrets
 import signal
 import subprocess
@@ -132,6 +133,13 @@ def offload_calibration_timeout(load_timeout: int, requested_timeout: int) -> in
     return max(requested_timeout, load_timeout * attempts)
 
 
+def vllm_gpu_memory_utilization(machine: str, devices: list[dict]) -> float:
+    names = " ".join(str(device.get("name", "")) for device in devices).casefold()
+    if machine.casefold() in {"arm64", "aarch64"} and "gb10" in names:
+        return 0.70
+    return config.VLLM_GPU_MEMORY_UTILIZATION
+
+
 class VllmEngine(InferenceEngine):
     name = "vllm"
 
@@ -145,13 +153,20 @@ class VllmEngine(InferenceEngine):
     def __init__(self):
         setup = load_setup_config(config.SETUP_CONFIG_PATH)
         self._launcher = configured_vllm_path(setup, "launcher") or find_vllm_launcher()
-        self._executable = configured_vllm_path(setup, "executable") or find_vllm_binary(
-            platform_name=platform.system())
+        self._executable = (
+            configured_vllm_path(setup, "executable") or find_vllm_binary(
+                platform_name=platform.system())
+        )
         # Set when setup_check.py found a reachable vLLM with no local binary/launcher —
         # an externally-managed server we talk to but never spawn or stop ourselves.
-        self._server_url = configured_vllm_path(setup, "server_url")
+        configured_server_url = configured_vllm_path(setup, "server_url")
+        self._server_url = configured_server_url if self._local_runtime is None else None
         self._launcher_extra_args = configured_vllm_launcher_args(setup)
-        self._gpu_fingerprint = json.dumps(configured_gpu_devices(setup), sort_keys=True)
+        gpu_devices = configured_gpu_devices(setup)
+        self._gpu_fingerprint = json.dumps(gpu_devices, sort_keys=True)
+        self._gpu_memory_utilization = vllm_gpu_memory_utilization(
+            platform.machine(), gpu_devices,
+        )
         recorded_home = configured_vllm_path(setup, "hf_home")
         self._cache_home = Path(recorded_home) if recorded_home else vllm_cache_home(self._launcher)
 
@@ -168,6 +183,14 @@ class VllmEngine(InferenceEngine):
         self._kv_cache_dtype = "auto"
         self._cpu_offload_gb: dict[str, int] = self._load_offload_cache()
         self._model_lock = threading.RLock()
+
+    @property
+    def _local_runtime(self) -> str | None:
+        return self._executable or self._launcher
+
+    @property
+    def _uses_launcher(self) -> bool:
+        return self._executable is None and self._launcher is not None
 
     @property
     def _offload_cache_path(self) -> Path:
@@ -195,7 +218,7 @@ class VllmEngine(InferenceEngine):
         temporary.replace(target)
 
     def _offload_key(self, tag: str, repo: str) -> str:
-        runtime = self._launcher or self._executable or "external"
+        runtime = self._local_runtime or "external"
         try:
             runtime_mtime = Path(runtime).stat().st_mtime_ns
         except OSError:
@@ -209,7 +232,8 @@ class VllmEngine(InferenceEngine):
     def _host_offload_limit_gb(self) -> int:
         available = psutil.virtual_memory().available / (1024 ** 3)
         usable = max(0, int(available - config.VLLM_OFFLOAD_HOST_RESERVE_GB))
-        per_worker = usable // tensor_parallel_size(self._launcher_extra_args)
+        launcher_args = self._launcher_extra_args if self._uses_launcher else []
+        per_worker = usable // tensor_parallel_size(launcher_args)
         return per_worker // config.VLLM_OFFLOAD_STEP_GB * config.VLLM_OFFLOAD_STEP_GB
 
     @staticmethod
@@ -230,7 +254,7 @@ class VllmEngine(InferenceEngine):
 
     @property
     def launcher_extra_args(self) -> list[str]:
-        return list(self._launcher_extra_args)
+        return list(self._launcher_extra_args) if self._uses_launcher else []
 
     # ── model resolution ──
 
@@ -262,6 +286,35 @@ class VllmEngine(InferenceEngine):
     def _snapshot_dir(self, tag: str) -> Path | None:
         repo = self._repo(tag)
         return hf_cache_snapshot_dir(self._cache_home, repo) if repo else None
+
+    def _standalone_chat_template(self, tag: str) -> tuple[str | None, str | None]:
+        snapshot = self._snapshot_dir(tag)
+        path = snapshot / "chat_template.jinja" if snapshot else None
+        if path is None or not path.is_file():
+            return None, None
+        try:
+            template = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            return None, str(exc)
+        return template, None
+
+    def _chat_template_argument(self, tag: str) -> str | None:
+        snapshot = self._snapshot_dir(tag)
+        try:
+            tokenizer_data = json.loads(
+                (snapshot / "tokenizer_config.json").read_text(encoding="utf-8")
+            ) if snapshot else {}
+        except (OSError, json.JSONDecodeError):
+            return None
+        if tokenizer_data.get("chat_template"):
+            return None
+        template, error = self._standalone_chat_template(tag)
+        if error is not None or template is None:
+            return None
+        path = snapshot / "chat_template.jinja" if snapshot else None
+        if self._uses_launcher:
+            return template
+        return str(path.resolve()) if path else None
 
     # ── per-request prefill timing ──
 
@@ -363,7 +416,7 @@ class VllmEngine(InferenceEngine):
         return self._executable
 
     def runtime_launcher(self) -> str | None:
-        return self._launcher
+        return self._launcher if self._uses_launcher else None
 
     def external_server_url(self) -> str | None:
         return self._server_url
@@ -377,6 +430,11 @@ class VllmEngine(InferenceEngine):
     def bench_executable(self) -> str | None:
         """`vllm bench` needs the real binary — a launcher only wraps `vllm serve`."""
         return self._executable
+
+    def bench_gpu_memory_utilization(self) -> float:
+        if self._gpu_memory_utilization == 0.70:
+            return config.VLLMBENCH_GB10_GPU_MEMORY_UTILIZATION
+        return min(self._gpu_memory_utilization, config.VLLMBENCH_GPU_MEMORY_UTILIZATION)
 
     def ensure_running(self) -> bool:
         """Preflight only — the real spawn is lazy, per tag, in _ensure_model."""
@@ -394,7 +452,7 @@ class VllmEngine(InferenceEngine):
             Shared.err(f"vLLM model cache not found at {self._cache_home} — "
                        "run setup_check.py to download at least one model first")
             return False
-        Shared.ok(f"vLLM found at {self._launcher or self._executable} — models load on demand per test")
+        Shared.ok(f"vLLM found at {self._local_runtime} — models load on demand per test")
         return True
 
     def start(self, *, gpu_visible: bool = True, timeout: int = 15) -> bool:  # pragma: no cover — thin wrapper
@@ -421,10 +479,10 @@ class VllmEngine(InferenceEngine):
     def _stop_process(self, timeout: int = 15) -> None:  # pragma: no cover — kills real processes
         """Signal the whole process group, so the EngineCore child dies with the server."""
         proc = self._proc
-        launcher_was_running = self._launcher is not None and proc is not None
+        launcher_was_running = self._uses_launcher and proc is not None
         if proc is not None and proc.poll() is None:
             # Container launchers handle an interactive interrupt by stopping their container.
-            self._signal_group(signal.SIGINT if self._launcher else signal.SIGTERM)
+            self._signal_group(signal.SIGINT if self._uses_launcher else signal.SIGTERM)
             try:
                 proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
@@ -491,11 +549,14 @@ class VllmEngine(InferenceEngine):
         snapshot = self._snapshot_dir(tag)
         if snapshot is None:
             raise ValueError(f"cannot identify local model artifact for resume: {tag}")
-        paths = sorted(snapshot.glob("*.safetensors")) + [snapshot / "config.json"]
+        paths = sorted(snapshot.glob("*.safetensors")) + [
+            snapshot / "config.json", snapshot / "tokenizer_config.json",
+            snapshot / "chat_template.jinja",
+        ]
         return tuple(path.resolve() for path in paths if path.exists())
 
     def resume_runtime_paths(self) -> dict[str, Path]:
-        runtime = self._launcher or self._executable
+        runtime = self._local_runtime
         if runtime is None:
             raise ValueError("cannot identify vLLM runtime for resume")
         return {"vllm": Path(runtime).resolve()}
@@ -530,6 +591,11 @@ class VllmEngine(InferenceEngine):
             )
         except (OSError, json.JSONDecodeError) as exc:
             return {}, str(exc)
+        chat_template = tokenizer_data.get("chat_template")
+        if not chat_template:
+            chat_template, template_error = self._standalone_chat_template(tag)
+            if template_error is not None:
+                return {}, template_error
         architecture = next(iter(config_data.get("architectures") or []), None)
         context = next((
             config_data.get(key) or (config_data.get("text_config") or {}).get(key)
@@ -538,7 +604,7 @@ class VllmEngine(InferenceEngine):
         ), None)
         return {
             "general.architecture": architecture,
-            "tokenizer.chat_template": tokenizer_data.get("chat_template"),
+            "tokenizer.chat_template": chat_template,
             "model.context_length": context,
         }, None
 
@@ -646,30 +712,32 @@ class VllmEngine(InferenceEngine):
 
     def server_command(self, repo: str, num_ctx: int | None, *, embedding: bool = False,
                        n_parallel: int = 1, tool_parser: str | None = None,
-                       cpu_offload_gb: int = 0) -> list[str]:
-        """Argv serving `repo`. A platform launcher (AMD's vllm-launch) is preferred
-        over bare `vllm serve` because it carries that platform's environment."""
+                       cpu_offload_gb: int = 0,
+                       chat_template: str | None = None) -> list[str]:
+        """Argv serving `repo` from the managed runtime, with a platform launcher fallback."""
         options = ["--served-model-name", repo,
                     "--max-num-seqs", str(n_parallel),
-                    "--gpu-memory-utilization", str(config.VLLM_GPU_MEMORY_UTILIZATION)]
-        if self._kv_cache_dtype != "auto":
+                    "--gpu-memory-utilization", str(self._gpu_memory_utilization)]
+        if self._kv_cache_dtype != "auto" and not embedding:
             options += ["--kv-cache-dtype", self._kv_cache_dtype]
         if num_ctx is not None:
             options += ["--max-model-len", str(num_ctx)]
         if cpu_offload_gb:
             options += ["--cpu-offload-gb", str(cpu_offload_gb)]
+        if chat_template:
+            options += ["--chat-template", chat_template]
         if embedding:
             # --task was replaced by --runner; pooling is the embedding runner.
             options += ["--runner", "pooling"]
         if tool_parser:
             # tool_calls stay empty unless the frontend parser is enabled explicitly.
             options += ["--enable-auto-tool-choice", "--tool-call-parser", tool_parser]
+        if self._executable:
+            return [self._executable, "serve", repo, "--host", "127.0.0.1",
+                    "--port", str(config.VLLM_PORT), *options]
         if self._launcher:
             return [self._launcher, "-p", str(config.VLLM_PORT), "-m", repo, *options]
-        if not self._executable:
-            raise RuntimeError("no vLLM runtime found — run setup_check.py or install vLLM")
-        return [self._executable, "serve", repo, "--host", "127.0.0.1",
-                "--port", str(config.VLLM_PORT), *options]
+        raise RuntimeError("no vLLM runtime found — run setup_check.py or install vLLM")
 
     def _ensure_model(self, tag: str, num_ctx: int | None, *, embedding: bool = False,
                        n_parallel: int = 1, deadline: float | None = None,
@@ -742,6 +810,7 @@ class VllmEngine(InferenceEngine):
                 args = self.server_command(
                     repo, context_limit, embedding=embedding, n_parallel=n_parallel,
                     tool_parser=tool_parser, cpu_offload_gb=cpu_offload_gb,
+                    chat_template=self._chat_template_argument(tag),
                 )
                 log_fh = tempfile.NamedTemporaryFile(
                     mode="w", suffix="-vllm-server.log", delete=False)
@@ -818,7 +887,7 @@ class VllmEngine(InferenceEngine):
             token = token_file.read_text(encoding="utf-8").strip()
             if token:
                 env["HF_TOKEN"] = token
-        if (self._launcher is None and self._server_url is None
+        if (not self._uses_launcher and self._server_url is None
                 and Shared.detect_wsl(platform.system(), platform.release())):
             env.setdefault("VLLM_WSL2_ENABLE_PIN_MEMORY", "1")
         return env
@@ -876,22 +945,16 @@ class VllmEngine(InferenceEngine):
                     response_parts.append(text)
                 if choice.get("finish_reason") is not None:
                     finish_reason = choice["finish_reason"]
-                usage = chunk.get("usage") or {}
-                if usage.get("completion_tokens") is not None:
-                    tokens = usage["completion_tokens"]
-                if usage.get("prompt_tokens") is not None:
-                    prompt_tokens = usage["prompt_tokens"]
+                tokens, prompt_tokens = openai_api.streamed_usage(
+                    chunk, tokens, prompt_tokens,
+                )
                 if time.perf_counter() > deadline:
                     raise EngineTimeout(f"vllm_generate exceeded {timeout}s wall-clock timeout",
                                         partial_text="".join(response_parts))
 
         total = time.perf_counter() - request_start
         prefill_sec = self.prefill_seconds_from_delta(prefill_before, self._prefill_reading())
-        if ttft is None:
-            ttft = total
-        decode_seconds = max(total - ttft, 0)
-        raw_tps = tokens / decode_seconds if decode_seconds else 0
-        tps = openai_api.sanitize_tps(raw_tps, tokens, ttft, total)
+        ttft, decode_seconds, raw_tps, tps = openai_api.stream_timing(total, ttft, tokens)
         return GenerationMeasurement(
             client_ttft_sec=ttft,
             generated_tokens=tokens,
@@ -955,11 +1018,9 @@ class VllmEngine(InferenceEngine):
                 if tool_calls:
                     openai_api.accumulate_tool_fragments(tool_fragments, tool_calls)
 
-                usage = chunk.get("usage") or {}
-                if usage.get("completion_tokens") is not None:
-                    tokens = usage["completion_tokens"]
-                if usage.get("prompt_tokens") is not None:
-                    prompt_eval_count = usage["prompt_tokens"]
+                tokens, prompt_eval_count = openai_api.streamed_usage(
+                    chunk, tokens, prompt_eval_count,
+                )
 
                 now = time.perf_counter()
                 response_text = "".join(response_parts) or "".join(reasoning_parts)
@@ -978,11 +1039,7 @@ class VllmEngine(InferenceEngine):
                             partial_text=response_text, budget_nudged=budget_nudged)
 
         total = time.perf_counter() - request_start
-        if ttft is None:
-            ttft = total
-        decode_seconds = max(total - ttft, 0)
-        raw_tps = tokens / decode_seconds if decode_seconds else 0
-        tps = openai_api.sanitize_tps(raw_tps, tokens, ttft, total)
+        ttft, decode_seconds, raw_tps, tps = openai_api.stream_timing(total, ttft, tokens)
         return {
             "ttft": ttft,
             "server_prompt_sec": None,
@@ -1025,24 +1082,28 @@ class VllmEngine(InferenceEngine):
         )
         return first, second, budget_nudged, model_load_sec
 
-    def chat(self, tag: str, messages: list, timeout: int = 600,
-             num_ctx: int | None = None, num_predict: int = 1024,
-             check_loop: bool = False, token_budget: int | None = None) -> ChatMeasurement:
-        first, second, budget_nudged, model_load_sec = self._chat_with_optional_finalize(
-            tag, messages, None, timeout, num_ctx, num_predict, check_loop, token_budget)
-        return chat_measurement(
-            first, second, budget_nudged, model_load_sec, openai_api.sanitize_tps,
-            self._loaded_cpu_offload_gb,
-        )
-
-    def chat_tools(self, tag: str, messages: list, tools: list, timeout: int = 600,
-                   num_ctx: int | None = None, num_predict: int = 1024,
-                   check_loop: bool = False, token_budget: int | None = None) -> ChatMeasurement:
+    def _chat_measurement(self, tag: str, messages: list, tools: list | None,
+                          timeout: int, num_ctx: int | None, num_predict: int,
+                          check_loop: bool, token_budget: int | None) -> ChatMeasurement:
         first, second, budget_nudged, model_load_sec = self._chat_with_optional_finalize(
             tag, messages, tools, timeout, num_ctx, num_predict, check_loop, token_budget)
         return chat_measurement(
             first, second, budget_nudged, model_load_sec, openai_api.sanitize_tps,
             self._loaded_cpu_offload_gb,
+        )
+
+    def chat(self, tag: str, messages: list, timeout: int = 600,
+             num_ctx: int | None = None, num_predict: int = 1024,
+             check_loop: bool = False, token_budget: int | None = None) -> ChatMeasurement:
+        return self._chat_measurement(
+            tag, messages, None, timeout, num_ctx, num_predict, check_loop, token_budget,
+        )
+
+    def chat_tools(self, tag: str, messages: list, tools: list, timeout: int = 600,
+                   num_ctx: int | None = None, num_predict: int = 1024,
+                   check_loop: bool = False, token_budget: int | None = None) -> ChatMeasurement:
+        return self._chat_measurement(
+            tag, messages, tools, timeout, num_ctx, num_predict, check_loop, token_budget,
         )
 
     def embed(self, tag: str, inputs: list[str], timeout: int = 120) -> EmbeddingMeasurement:

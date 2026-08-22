@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import html2canvas from "html2canvas";
-import { readNamedJSONSource, sanitizeForFilename, filesForSection, getRunReliabilityWarning, getLlamaBenchMethodologyWarning, getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning, getNoRepackMethodologyWarning, getCrossEngineWeightsWarning, getMemoryTelemetryMethodologyWarning } from "./utils/shared";
+import { readNamedJSONSource, sanitizeForFilename, filesForSection, getRunReliabilityWarning, getEngineSupport, getLlamaBenchMethodologyWarning, getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning, getNoRepackMethodologyWarning, getCrossEngineWeightsWarning, getMemoryTelemetryMethodologyWarning } from "./utils/shared";
 import { isTrialSetArtifact, trialArtifactLoadMode } from "./utils/trials";
 import { isRecommendationArtifact, recommendationArtifactLoadMode } from "./utils/recommendations";
 import { getAllLLMModels } from "./utils/llm";
@@ -122,6 +122,7 @@ export default function Dashboard() {
     if (file.error || !file.data) return { entry: null, error: `${file.name}: ${file.error}` };
     const data = file.data;
     const p = data.profile || {};
+    const engineSupport = getEngineSupport(data);
     const baseHostname = p.hostname || file.name.replace(".json", "");
     const entry: DisplayFile = {
       id: `${file.name}-${Date.now()}`,
@@ -130,6 +131,8 @@ export default function Dashboard() {
       engine:   data.engine || null,
       engineVersion: data.engine_version || null,
       engineVersionRecorded: Object.prototype.hasOwnProperty.call(data, "engine_version"),
+      engineSupportLevel: engineSupport.level,
+      engineSupportCaveat: engineSupport.caveat,
       backend:  p.backend  || "cpu",
       os:       p.os       || "",
       wsl:      p.wsl === true,

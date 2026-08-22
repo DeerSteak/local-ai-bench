@@ -9,7 +9,8 @@ import pytest
 
 from scripts.setup.runtime_update import (
     detect_nvidia_compute_capability, detect_nvidia_max_cuda_version,
-    fetch_llamacpp_releases, homebrew_llamacpp_prefix, llamacpp_clone_command,
+    fetch_llamacpp_release, fetch_llamacpp_releases, homebrew_llamacpp_prefix,
+    llamacpp_clone_command,
     llamacpp_cmake_flags, llamacpp_source_release, normalize_llamacpp_release_tag,
     rebuild_managed_llamacpp,
     RuntimeUpdateControl, select_macos_llamacpp_asset, select_windows_llamacpp_assets,
@@ -55,6 +56,22 @@ def test_release_history_keeps_recent_published_build_tags():
     )
 
     assert [release["tag_name"] for release in releases] == ["b10362", "b10361"]
+
+
+def test_latest_llamacpp_release_uses_first_build_tag_not_unrelated_latest_release():
+    payload = [
+        {"tag_name": "v0.2.0", "draft": False, "prerelease": False, "assets": []},
+        {"tag_name": "b10362", "draft": False, "prerelease": False, "assets": []},
+    ]
+
+    class Response:
+        def __init__(self): self.stream = io.StringIO(json.dumps(payload))
+        def read(self, *args): return self.stream.read(*args)
+        def __enter__(self): return self
+        def __exit__(self, *_args): pass
+
+    assert fetch_llamacpp_release(opener=lambda *_args, **_kwargs: Response())["tag_name"] \
+        == "b10362"
 
 
 def test_llamacpp_clone_checks_out_exact_release_tag(tmp_path):
@@ -108,6 +125,36 @@ def test_validate_vllm_environment_captures_version(tmp_path):
     )
     assert result.success
     assert result.version == "vllm 0.10.0"
+
+
+def test_validate_vllm_environment_allows_a_slow_cold_import(tmp_path):
+    executable = vllm_executable(tmp_path)
+    executable.parent.mkdir()
+    executable.touch()
+    calls = []
+
+    def run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(returncode=0, stdout="vllm 0.27.1\n", stderr="")
+
+    assert validate_vllm_environment(tmp_path, run=run).success
+    assert calls[0][1]["timeout"] == 60
+    assert calls[1][1]["timeout"] == 300
+
+
+def test_validate_vllm_environment_rejects_wrong_hardware_runtime(tmp_path):
+    executable = vllm_executable(tmp_path)
+    executable.parent.mkdir()
+    executable.touch()
+
+    def run(command, **_kwargs):
+        if "-c" in command:
+            return SimpleNamespace(returncode=1, stdout="", stderr="PyTorch is not a CUDA build")
+        return SimpleNamespace(returncode=0, stdout="vllm 1.0", stderr="")
+
+    result = validate_vllm_environment(tmp_path, support=SUPPORT, run=run)
+    assert not result.success
+    assert "not a CUDA build" in result.detail
 
 
 def test_update_managed_vllm_recreates_venv_at_final_path_after_staging(tmp_path):
@@ -304,6 +351,9 @@ def test_llamacpp_cmake_flags_match_backend():
         "-DCMAKE_CUDA_ARCHITECTURES=89",
     ]
     assert llamacpp_cmake_flags("rocm") == ["-DGGML_HIP=ON"]
+    assert llamacpp_cmake_flags("xpu") == [
+        "-DGGML_SYCL=ON", "-DCMAKE_C_COMPILER=icx", "-DCMAKE_CXX_COMPILER=icpx",
+    ]
     assert llamacpp_cmake_flags("cpu") == []
 
 
@@ -369,6 +419,20 @@ def test_select_windows_assets_prefers_compatible_cuda_pair():
         "llama-b1-bin-win-cuda-12.4-x64.zip",
         "cudart-llama-bin-win-cuda-12.4-x64.zip",
     ]
+
+
+def test_select_windows_assets_uses_sycl_exclusively_for_intel_xpu():
+    assets = [
+        {"name": "llama-b1-bin-win-sycl-x64.zip"},
+        {"name": "llama-b1-bin-win-vulkan-x64.zip"},
+    ]
+    selected = select_windows_llamacpp_assets(
+        {"assets": assets}, None, intel_xpu=True,
+    )
+    assert [asset["name"] for asset in selected] == ["llama-b1-bin-win-sycl-x64.zip"]
+    assert select_windows_llamacpp_assets(
+        {"assets": assets[1:]}, None, intel_xpu=True,
+    ) == []
 
 
 def test_select_macos_asset_matches_machine_architecture():
@@ -478,6 +542,8 @@ def test_rebuild_managed_llamacpp_builds_all_tools_before_swap(tmp_path, monkeyp
                 tool.touch()
         if "--version" in command:
             return SimpleNamespace(returncode=0, stdout="version: 7000", stderr="")
+        if "--list-devices" in command:
+            return SimpleNamespace(returncode=0, stdout="CUDA0: NVIDIA GPU", stderr="")
         if command[:1] == ["nvidia-smi"]:
             return SimpleNamespace(returncode=0, stdout="8.9\n", stderr="")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
@@ -495,6 +561,38 @@ def test_rebuild_managed_llamacpp_builds_all_tools_before_swap(tmp_path, monkeyp
     assert "-DCMAKE_CUDA_ARCHITECTURES=89" in configure
     assert all(name in build for name in ("llama-server", "llama-bench", "llama-batched-bench"))
     assert not (target / "old").exists()
+
+
+def test_rebuild_managed_llamacpp_preserves_cpu_runtime_when_cuda_build_has_no_cuda(tmp_path,
+                                                                                   monkeypatch):
+    target = tmp_path / "llama.cpp"
+    target.mkdir()
+    marker = target / "old"
+    marker.touch()
+    monkeypatch.setattr("scripts.setup.runtime_update.find_nvcc", lambda: "/cuda/nvcc")
+
+    def run(command, **_kwargs):
+        if command[:2] == ["git", "clone"]:
+            staged = Path(command[-1])
+            for name in ("llama-server", "llama-bench", "llama-batched-bench"):
+                tool = staged / "build" / "bin" / name
+                tool.parent.mkdir(parents=True, exist_ok=True)
+                tool.touch()
+        if command[:1] == ["nvidia-smi"]:
+            return SimpleNamespace(returncode=0, stdout="8.9\n", stderr="")
+        if "--version" in command:
+            return SimpleNamespace(returncode=0, stdout="version: 7000", stderr="")
+        if "--list-devices" in command:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    result = rebuild_managed_llamacpp(
+        target, "cuda", run=run, os_name="posix", release_fetcher=lambda: SOURCE_RELEASE,
+        token_factory=lambda: "test",
+    )
+    assert not result.success
+    assert "exposes cpu" in result.detail
+    assert marker.exists()
 
 
 def test_rebuild_managed_llamacpp_preserves_checkout_on_build_failure(tmp_path):

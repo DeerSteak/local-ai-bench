@@ -29,7 +29,12 @@ def gpu_split_mode_value(label: str) -> str:
 
 def effective_gui_options(state: dict | None) -> dict:
     options = state.get("gui_options") if state else None
-    return dict(options) if options is not None else dict(GUI_OPTION_DEFAULTS)
+    effective = dict(options) if options is not None else dict(GUI_OPTION_DEFAULTS)
+    try:
+        effective["gpu_split_mode"] = gpu_split_mode_value(effective["gpu_split_mode"])
+    except (KeyError, TypeError, ValueError):
+        effective["gpu_split_mode"] = "layer"
+    return effective
 
 
 def build_discovery_report(*, platform_name: str, architecture: str, ram_gb: float,

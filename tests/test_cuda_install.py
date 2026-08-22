@@ -1,9 +1,18 @@
 from types import SimpleNamespace
 
+import pytest
+
+from scripts.release.qualification_targets import qualification_target
 from scripts.setup.cuda_install import (
     CUDA_TOOLKIT_PACKAGE,
+    NATIVE_NVIDIA_REBOOT_EXIT_CODE,
     cuda_toolkit_plan,
+    native_cuda_toolkit_plan,
+    native_nvidia_driver_plan,
+    nouveau_loaded,
+    qualification_needs_native_nvidia_driver,
     run_cuda_toolkit_install,
+    run_native_nvidia_driver_install,
 )
 
 
@@ -44,6 +53,33 @@ def test_plan_falls_back_to_curl_and_gives_up_without_a_downloader():
     assert plan(which_fn=have("apt-get")) == []
 
 
+def test_native_plan_installs_driver_free_toolkit_from_matching_ubuntu_repository():
+    commands = native_cuda_toolkit_plan(
+        {"ID": "ubuntu", "VERSION_ID": "24.04"}, "x86_64",
+        nvidia_ok=True, nvcc_found=False, which_fn=have("apt-get", "wget"),
+    )
+    assert "ubuntu2404/x86_64" in commands[0][-1]
+    assert commands[-1] == ["sudo", "apt-get", "install", "-y", CUDA_TOOLKIT_PACKAGE]
+    assert "cuda-drivers" not in commands[-1]
+
+
+def test_native_plan_requires_supported_ubuntu_nvidia_and_missing_nvcc():
+    kwargs = {"nvidia_ok": True, "nvcc_found": False, "which_fn": have("apt-get", "curl")}
+    assert native_cuda_toolkit_plan(
+        {"ID": "ubuntu", "VERSION_ID": "26.04"}, "amd64", **kwargs,
+    )[0][0] == "curl"
+    assert native_cuda_toolkit_plan(
+        {"ID": "ubuntu", "VERSION_ID": "22.04"}, "x86_64", **kwargs,
+    ) == []
+    assert native_cuda_toolkit_plan(
+        {"ID": "ubuntu", "VERSION_ID": "24.04"}, "aarch64", **kwargs,
+    ) == []
+    assert native_cuda_toolkit_plan(
+        {"ID": "ubuntu", "VERSION_ID": "24.04"}, "x86_64",
+        **{**kwargs, "nvcc_found": True},
+    ) == []
+
+
 def test_install_reports_success_only_when_every_command_succeeds():
     calls = []
 
@@ -74,3 +110,95 @@ def test_install_reports_a_missing_binary_instead_of_raising():
 
     assert not run_cuda_toolkit_install([["wget"]], log=messages.append, run=run)
     assert any("wget" in message for message in messages)
+
+
+def test_native_nvidia_target_requires_driver_only_when_nvidia_smi_is_missing():
+    assert NATIVE_NVIDIA_REBOOT_EXIT_CODE == 75
+    target = qualification_target("nvidia-linux-llamacpp-cuda")
+    assert qualification_needs_native_nvidia_driver(
+        target, os_name="Linux", release="6.17.0-generic", nvidia_available=False,
+    )
+    assert not qualification_needs_native_nvidia_driver(
+        target, os_name="Linux", release="6.17.0-generic", nvidia_available=True,
+    )
+    assert not qualification_needs_native_nvidia_driver(
+        qualification_target("geforce-wsl2-llamacpp-cuda"), os_name="Linux",
+        release="microsoft-standard-WSL2", nvidia_available=False,
+    )
+    assert not qualification_needs_native_nvidia_driver(
+        qualification_target("dgx-spark-llamacpp-cuda"), os_name="Linux",
+        release="6.14.0-nvidia", nvidia_available=False,
+    )
+
+
+def test_native_nvidia_target_rejects_wsl_before_installing_linux_driver():
+    with pytest.raises(ValueError, match="requires native Linux"):
+        qualification_needs_native_nvidia_driver(
+            qualification_target("nvidia-linux-vllm-cuda"), os_name="Linux",
+            release="microsoft-standard-WSL2", nvidia_available=False,
+        )
+
+
+def test_native_nvidia_plan_uses_ubuntu_hardware_selected_signed_driver():
+    commands = native_nvidia_driver_plan(
+        {"ID": "ubuntu", "VERSION_ID": "26.04"}, "7.0.0-30-generic",
+    )
+    assert commands == (
+        ("apt-get", "update"),
+        (
+            "apt-get", "install", "-y", "ubuntu-drivers-common",
+            "linux-headers-7.0.0-30-generic",
+        ),
+        ("ubuntu-drivers", "install"),
+    )
+
+
+def test_native_nvidia_plan_disables_loaded_nouveau_before_reboot():
+    commands = native_nvidia_driver_plan(
+        {"ID": "ubuntu", "VERSION_ID": "24.04"}, "6.8.0-90-generic",
+        disable_nouveau=True,
+    )
+    assert commands[-2][0:2] == ("sh", "-c")
+    assert "blacklist nouveau" in commands[-2][2]
+    assert commands[-1] == ("update-initramfs", "-u")
+
+
+def test_nouveau_detection_reads_the_loaded_kernel_module(tmp_path):
+    module = tmp_path / "nouveau"
+    assert not nouveau_loaded(module)
+    module.mkdir()
+    assert nouveau_loaded(module)
+
+
+@pytest.mark.parametrize("release", [
+    {"ID": "ubuntu", "VERSION_ID": "22.04"},
+    {"ID": "debian", "VERSION_ID": "13"},
+])
+def test_native_nvidia_plan_rejects_unqualified_distributions(release):
+    with pytest.raises(ValueError, match="requires Ubuntu 24.04 or 26.04"):
+        native_nvidia_driver_plan(release, "6.17.0-generic")
+
+
+def test_native_nvidia_install_is_privileged_and_stops_on_failure():
+    commands = (("first",), ("second",))
+    calls = []
+
+    def run(command):
+        calls.append(command)
+        return SimpleNamespace(returncode=1 if command[-1] == "second" else 0)
+
+    with pytest.raises(RuntimeError, match="NVIDIA driver install command exited with 1"):
+        run_native_nvidia_driver_install(commands, run=run, geteuid=lambda: 501)
+    assert calls == [["sudo", "first"], ["sudo", "second"]]
+
+
+def test_native_nvidia_install_does_not_require_sudo_when_already_root():
+    calls = []
+
+    run_native_nvidia_driver_install(
+        (("apt-get", "update"),),
+        run=lambda command: calls.append(command) or SimpleNamespace(returncode=0),
+        geteuid=lambda: 0,
+    )
+
+    assert calls == [["apt-get", "update"]]

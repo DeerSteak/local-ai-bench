@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from scripts.runtime import config
+from scripts.runtime.process_tree import stop_process_tree
 from scripts.runtime.telemetry import PowerAvailability, TemperatureAvailability
 from scripts.stage_registry import JOURNAL_STAGES
 
@@ -188,19 +189,8 @@ class RunnerSupervisor:
             raise
 
     def cancel(self) -> None:
-        if self.process is None or self.process.poll() is not None:
+        if self.process is None:
             return
-        if self.system == "Windows":
-            self.process.send_signal(getattr(signal, "CTRL_BREAK_EVENT", signal.SIGINT))
-        else:
-            os.killpg(os.getpgid(self.process.pid), signal.SIGINT)
-        try:
-            self.process.wait(timeout=self.graceful_timeout)
-            return
-        except subprocess.TimeoutExpired:
-            self.process.terminate()
-        try:
-            self.process.wait(timeout=self.graceful_timeout)
-        except subprocess.TimeoutExpired:
-            self.process.kill()
-            self.process.wait()
+        stop_process_tree(
+            self.process, timeout=self.graceful_timeout, system=self.system,
+        )

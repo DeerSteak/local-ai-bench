@@ -1,10 +1,13 @@
 import json
+import io
+import sys
 from types import SimpleNamespace
 
 from scripts.app.benchmark import (
     relay_runner_log, run_supervised_llm, run_supervised_stage,
-    temperature_telemetry_requested,
+    supervised_stage_runner, temperature_telemetry_requested,
 )
+from scripts.app import benchmark as benchmark_module
 from scripts.runtime.engines.base import EmbeddingMeasurement, GenerationMeasurement
 from scripts.results.llm_event_stage import LLMEventStage
 from scripts.results.accuracy_event_stage import AccuracyEventStage
@@ -14,6 +17,7 @@ from scripts.results.local_execution_context import (
     LocalExecutionContext, write_local_execution_context,
 )
 from scripts.runtime import supervised_stage
+from scripts.runtime.progress_events import PROGRESS_PREFIX
 from scripts.runtime.shared import Shared
 from scripts.workloads.mcq_benchmark import MCQBenchmark
 from scripts.results.native_bench_event_stage import NativeBenchEventStage
@@ -38,6 +42,30 @@ def make_plan():
         effective_config={"runs": 1, "warmup_runs": 0, "cpu_only": False,
                           "force_all": False},
     )
+
+
+def test_supervised_stage_runner_forwards_the_shared_stage_contract(monkeypatch, tmp_path):
+    calls = []
+    save_fn = object()
+    power = object()
+    temperature = object()
+
+    def run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return {"done": True}
+
+    monkeypatch.setattr(benchmark_module, "run_supervised_stage", run)
+    runner = supervised_stage_runner(
+        tmp_path / "events.sqlite3", "conv", save_fn,
+        resume_identity={"digest": "abc"}, power_availability=power,
+        temperature_availability=temperature,
+    )
+    assert runner(SimpleNamespace(plan="plan")) == {"done": True}
+    assert calls == [(('plan', tmp_path / "events.sqlite3", "conv", save_fn), {
+        "resume_identity": {"digest": "abc"},
+        "power_availability": power,
+        "temperature_availability": temperature,
+    })]
 
 
 def test_qualification_temperature_override_controls_default_sustained_sampling():
@@ -112,6 +140,34 @@ def test_supervised_progress_log_keeps_machine_readable_prefix(capsys):
     assert capsys.readouterr().out == line
 
 
+def test_supervised_progress_log_redacts_secrets_and_private_paths(capsys):
+    secret = "hf_" + "a" * 34
+    line = PROGRESS_PREFIX + json.dumps({
+        "kind": "result",
+        "stage": "run",
+        "status": "complete",
+        "path": f"C:\\Users\\Ben\\results_{secret}.json",
+    }, separators=(",", ":"))
+
+    relay_runner_log(line)
+
+    output = capsys.readouterr().out.strip()
+    assert output.startswith(PROGRESS_PREFIX)
+    payload = json.loads(output.removeprefix(PROGRESS_PREFIX))
+    assert payload["path"] == "<home>\\results_<secret>.json"
+    assert secret not in output
+
+
+def test_malformed_progress_log_is_still_redacted(capsys):
+    secret = "hf_" + "a" * 34
+
+    relay_runner_log(f"{PROGRESS_PREFIX}not-json token={secret}\n")
+
+    output = capsys.readouterr().out
+    assert output.startswith(PROGRESS_PREFIX)
+    assert secret not in output
+
+
 def test_relayed_log_keeps_the_runners_own_timestamp(capsys):
     """The runner stamps its own lines; a second stamp reports when the parent relayed
     the line, not when it happened, and the two can differ by seconds under buffering."""
@@ -136,6 +192,15 @@ def test_relayed_log_is_still_redacted(capsys):
     assert out.rstrip() == redact_log_text(f"downloading with token {secret}")
     if redact_log_text(secret) != secret:
         assert secret not in out
+
+
+def test_relayed_log_never_crashes_a_legacy_windows_console(monkeypatch):
+    output = io.BytesIO()
+    console = io.TextIOWrapper(output, encoding="cp1252", errors="strict")
+    monkeypatch.setattr(sys, "stdout", console)
+    relay_runner_log("[23:09:27] ✓ model loaded\n")
+    console.flush()
+    assert output.getvalue().decode("cp1252") == "[23:09:27] ? model loaded\n"
 
 
 def test_supervised_llm_checkpoints_commits_and_requires_clean_terminal(tmp_path):
@@ -792,10 +857,19 @@ def test_runner_reapplies_vllm_cache_policy_for_its_runtime_backend():
     assert engine.configured == "cpu"
 
 
-def test_runner_skips_cache_policy_for_engines_without_configuration_hook():
+def test_runner_initializes_runtime_without_cache_configuration_hook():
     from scripts.runtime.workload_runner import configure_runner_engine
 
-    assert configure_runner_engine(object(), "cuda", False) == "auto"
+    class Engine:
+        configured = None
+
+        def runtime_backend(self, hardware_backend, *, cpu_only=False):
+            self.configured = (hardware_backend, cpu_only)
+            return "cpu" if cpu_only else hardware_backend
+
+    engine = Engine()
+    assert configure_runner_engine(engine, "xpu", False) == "auto"
+    assert engine.configured == ("xpu", False)
 
 
 def test_runner_restores_recorded_gpu_split_mode(monkeypatch):

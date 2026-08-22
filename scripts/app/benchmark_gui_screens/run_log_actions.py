@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 from scripts.runtime import config
-from scripts.app.benchmark_gui_process import open_path_command
+from scripts.app.benchmark_gui_process import open_path_command, open_path_process_options
 from scripts.app.result_actions import result_paths_for_log, run_log_path
 from scripts.results.acceptance_policy import load_policy
 from scripts.results.decision_report import (
@@ -72,7 +72,8 @@ class RunLogActions:
     def open_results_folder(self) -> None:
         output = self.option_vars["out"].get().strip()
         folder = Path(output).expanduser().resolve().parent if output else config.RESULTS_DIR
-        subprocess.Popen(open_path_command(folder, platform.system()))
+        system = platform.system()
+        subprocess.Popen(open_path_command(folder, system), **open_path_process_options(system))
 
     def review_outbound_metadata(self, result, purpose, *, allow_aliases=True):
         decision: dict[str, dict | None] = {"value": None}

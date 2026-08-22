@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from scripts.app.benchmark import eta_match_config
+from scripts.app.benchmark import eta_match_config, runtime_shaping_config
 from scripts.results.result_history import ETA_MATCH_KEYS
 
 
@@ -16,6 +16,8 @@ def test_eta_match_config_covers_the_runtime_shape_registry(monkeypatch):
     assert matched["warmup_runs"] == 1
     assert matched["cpu_only"] is True
     assert matched["sample_size"] == 5
+    shaping = runtime_shaping_config(args)
+    assert all(shaping[key] == value for key, value in matched.items())
 
 
 def test_sustained_eta_adds_only_its_runtime_shaping_settings():

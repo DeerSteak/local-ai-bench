@@ -1,4 +1,5 @@
 import json
+import queue
 import subprocess
 from pathlib import Path
 from typing import cast
@@ -21,9 +22,11 @@ from scripts.app.benchmark_gui import (
     PsutilLike, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults, default_control_values,
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
-    gpu_split_mode_labels, gpu_split_mode_value, history_row_height,
+    gpu_split_mode_availability_error, gpu_split_mode_labels, gpu_split_mode_value,
+    history_row_height,
     launch_controlled_process, open_path_command, parse_progress_line,
     normalize_gui_option_values, prepare_benchmark_launch, restored_tg_tokens,
+    pending_qualification_profiles, qualification_profiles_for_selection,
     process_completion_state, resolve_engine_selection,
     resolve_engine_names,
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
@@ -35,10 +38,14 @@ from scripts.app.benchmark_gui import (
     resolve_preset,
     preset_control_values, process_resource_usage, preset_after_control_change,
     restored_preset_name, should_finalize_process_exit,
-    resource_usage_rows, system_memory_usage,
+    reconcile_gpu_split_mode, resource_usage_rows, runtime_profiles_for_engines,
+    split_mode_capability_known, split_modes_for_runtime_profiles,
+    system_memory_usage,
+    start_qualification_profile_load,
     windows_host_utc_offset_minutes,
     update_progress_metrics, workload_preflight_errors,
 )
+from scripts.app.benchmark_gui_process import open_path_process_options
 from scripts.app.result_actions import (
     completed_result_paths, dashboard_launcher_command, record_result_path,
     result_paths_for_log, run_log_path, selected_result_paths, write_run_logs,
@@ -55,6 +62,153 @@ def test_effective_gui_options_uses_defaults_without_saved_gui_settings():
     assert effective_gui_options(None) == GUI_OPTION_DEFAULTS
     assert effective_gui_options({"tests": ["llm"]}) == GUI_OPTION_DEFAULTS
     assert effective_gui_options(None) is not GUI_OPTION_DEFAULTS
+
+
+def test_effective_gui_options_preserves_known_split_modes_and_defaults_unknown_values():
+    assert effective_gui_options({
+        "gui_options": dict(GUI_OPTION_DEFAULTS, gpu_split_mode="tensor"),
+    })["gpu_split_mode"] == "tensor"
+    assert effective_gui_options({
+        "gui_options": dict(GUI_OPTION_DEFAULTS, gpu_split_mode="row"),
+    })["gpu_split_mode"] == "layer"
+
+
+def test_gui_runtime_profiles_resolve_accelerated_and_cpu_qualification_once_per_version():
+    engines = {"llamacpp": object(), "vllm": object()}
+    calls = []
+
+    def build(engine, tests, **kwargs):
+        calls.append((engine, tests, kwargs))
+        cpu_only = kwargs["cpu_only"]
+        return {
+            "backend": "cpu" if cpu_only else "cuda",
+            "engine_support": {
+                "support_level": "unverified" if cpu_only else "supported",
+                "runtime_version": kwargs.get("runtime_version") or "1.0",
+            },
+        }
+
+    profiles = runtime_profiles_for_engines(
+        engines, {"backend": "cuda"}, profile_builder=build,
+    )
+    assert profiles["llamacpp"]["accelerated"]["support_level"] == "supported"
+    assert profiles["llamacpp"]["cpu"]["support_level"] == "unverified"
+    assert profiles["vllm"]["runtime_backend"] == "cuda"
+    assert [call[2]["engine_name"] for call in calls] == [
+        "llamacpp", "llamacpp", "vllm", "vllm",
+    ]
+    assert calls[1][2]["runtime_version"] == "1.0"
+
+
+def test_pending_gui_qualification_profiles_never_claim_support():
+    profiles = pending_qualification_profiles(["llamacpp", "vllm"])
+    assert profiles["llamacpp"]["accelerated"]["support_level"] == "unverified"
+    assert profiles["vllm"]["cpu"]["support_level"] == "unverified"
+    assert profiles["vllm"]["runtime_backend"] is None
+    assert "Checking" in profiles["vllm"]["accelerated"]["caveat"]
+    assert "could not be determined" in pending_qualification_profiles(
+        ["vllm"], failed=True,
+    )["vllm"]["accelerated"]["caveat"]
+
+
+def test_cpu_only_selection_uses_cpu_qualification_profile():
+    profiles = {
+        "vllm": {
+            "accelerated": {"support_level": "supported"},
+            "cpu": {"support_level": "unverified"},
+        },
+    }
+    assert qualification_profiles_for_selection(
+        profiles, ["vllm"], cpu_only=False,
+    )["vllm"]["support_level"] == "supported"
+    assert qualification_profiles_for_selection(
+        profiles, ["vllm"], cpu_only=True,
+    )["vllm"]["support_level"] == "unverified"
+
+
+def test_split_modes_use_runtime_backend_intersection_and_cpu_constraint():
+    setup = {"gpu": {"devices": [
+        {"backend": "cuda"}, {"backend": "cuda"},
+    ]}}
+    profiles = {
+        "llamacpp": {"runtime_backend": "cuda"},
+        "vllm": {"runtime_backend": "vulkan"},
+    }
+    assert split_modes_for_runtime_profiles(
+        setup, ["llamacpp"], profiles, cpu_only=False,
+    ) == ("single", "layer", "tensor")
+    assert split_modes_for_runtime_profiles(
+        setup, ["llamacpp", "vllm"], profiles, cpu_only=False,
+    ) == ("layer",)
+    assert split_modes_for_runtime_profiles(
+        setup, ["llamacpp"], profiles, cpu_only=True,
+    ) == ("layer",)
+    assert split_modes_for_runtime_profiles(
+        setup, ["llamacpp"], pending_qualification_profiles(["llamacpp"]),
+        cpu_only=False,
+    ) == ("layer",)
+
+
+def test_split_mode_capability_is_unknown_until_selected_runtime_backends_resolve():
+    pending = pending_qualification_profiles(["llamacpp"])
+    failed = pending_qualification_profiles(["llamacpp"], failed=True)
+    resolved = {"llamacpp": {"runtime_backend": "cuda"}}
+
+    assert not split_mode_capability_known(["llamacpp"], pending, cpu_only=False)
+    assert not split_mode_capability_known(["llamacpp"], failed, cpu_only=False)
+    assert split_mode_capability_known(["llamacpp"], resolved, cpu_only=False)
+    assert split_mode_capability_known(["llamacpp"], pending, cpu_only=True)
+
+
+def test_split_mode_reconciliation_preserves_requested_mode_until_capability_is_known():
+    assert reconcile_gpu_split_mode("tensor", ("layer",), known=False) == "tensor"
+    assert reconcile_gpu_split_mode(
+        "tensor", ("single", "layer", "tensor"), known=True,
+    ) == "tensor"
+    assert reconcile_gpu_split_mode("tensor", ("layer",), known=True) == "layer"
+
+
+def test_split_mode_validation_defers_unknown_capability_and_rejects_known_mismatch():
+    assert gpu_split_mode_availability_error("tensor", ("layer",), known=False) is None
+    assert gpu_split_mode_availability_error(
+        "tensor", ("single", "layer", "tensor"), known=True,
+    ) is None
+    assert gpu_split_mode_availability_error(
+        "single", ("layer",), known=True,
+    ) == "Single GPU is unavailable for the detected GPU runtime and topology."
+    assert gpu_split_mode_availability_error(
+        "row", ("layer",), known=True,
+    ) == "row is unavailable for the detected GPU runtime and topology."
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_gui_qualification_profile_loader_always_returns_a_terminal_profile(fails):
+    output = queue.Queue()
+
+    class ImmediateThread:
+        def __init__(self, *, target, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    def load(_engines, _hardware):
+        if fails:
+            raise RuntimeError("probe failed")
+        return {"vllm": {
+            "accelerated": {"support_level": "supported", "caveat": "Qualified."},
+            "cpu": {"support_level": "unverified", "caveat": "Unverified."},
+            "runtime_backend": "cuda",
+        }}
+
+    start_qualification_profile_load(
+        {"vllm": object()}, {"backend": "cuda"}, output,
+        loader=load, thread_factory=ImmediateThread,
+    )
+    profile = output.get_nowait()["vllm"]
+    assert profile["accelerated"]["support_level"] == (
+        "unverified" if fails else "supported"
+    )
 
 
 def test_dual_gpu_modes_have_user_facing_labels_and_round_trip():
@@ -341,6 +495,20 @@ def test_open_path_command_uses_each_desktop_platform_launcher():
     assert open_path_command(path, "Darwin") == ["open", "/tmp/results"]
     assert open_path_command(path, "Linux") == ["xdg-open", "/tmp/results"]
     assert open_path_command(path, "Windows") == ["explorer", "/tmp/results"]
+
+
+def test_open_path_process_does_not_inherit_terminal_streams():
+    assert open_path_process_options("Linux") == {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "start_new_session": True,
+    }
+    assert open_path_process_options("Windows") == {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
 
 
 def test_launch_controlled_process_supplies_progress_environment(monkeypatch, tmp_path):

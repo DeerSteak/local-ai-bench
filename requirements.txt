@@ -2,7 +2,7 @@ psutil
 requests
 numpy
 tqdm
-huggingface_hub[cli]
+huggingface_hub
 py7zr
 packaging
 gguf

@@ -1,4 +1,6 @@
-from scripts.runtime.shared import _machine_identity, _nvidia_gpu_summary
+from scripts.runtime.shared import (
+    _machine_identity, _nvidia_gpu_summary, _rocm_gpu_summary, _windows_gpu_names,
+)
 
 
 def test_nvidia_summary_uses_first_name_and_aggregate_vram():
@@ -17,6 +19,30 @@ def test_nvidia_summary_does_not_report_partial_total():
     assert _nvidia_gpu_summary(output) == ("NVIDIA GPU", None)
 
 
+def test_rocm_summary_ignores_host_cpu_agent():
+    output = """
+Agent 1
+  Name:                    cpu
+  Marketing Name:          AMD Ryzen 7 5800XT 8-Core Processor
+  Device Type:             CPU
+Agent 2
+  Name:                    gfx1200
+  Marketing Name:          AMD Radeon RX 9060 XT
+  Device Type:             GPU
+"""
+    assert _rocm_gpu_summary(output) == "AMD Radeon RX 9060 XT"
+
+
+def test_rocm_summary_rejects_cpu_only_rocminfo():
+    output = """
+Agent 1
+  Name:                    cpu
+  Marketing Name:          AMD Ryzen 7 5800XT 8-Core Processor
+  Device Type:             CPU
+"""
+    assert _rocm_gpu_summary(output) is None
+
+
 def test_machine_identity_labels_ram_and_vram():
     assert _machine_identity("Intel CPU", "NVIDIA GPU", 64, 32) == (
         "Intel CPU / 64 GB RAM\nNVIDIA GPU / 32 GB VRAM"
@@ -27,3 +53,9 @@ def test_machine_identity_keeps_gpu_when_vram_is_unknown():
     assert _machine_identity("Intel CPU", "Unknown GPU", 64) == (
         "Intel CPU / 64 GB RAM\nUnknown GPU"
     )
+
+
+def test_windows_gpu_names_support_wsl_fallback_and_ignore_virtual_adapters():
+    assert _windows_gpu_names(
+        "Microsoft Basic Display Adapter\r\nAMD Radeon RX 9060 XT\r\n"
+    ) == ["AMD Radeon RX 9060 XT"]

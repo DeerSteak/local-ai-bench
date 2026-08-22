@@ -14,18 +14,22 @@ from typing import Callable
 
 import psutil
 
-from scripts.setup.vllm_install import VllmSupport, install_vllm
+from scripts.setup.vllm_install import (
+    VllmSupport, install_vllm, vllm_runtime_expectations, vllm_runtime_import_error,
+)
+from scripts.setup.intel_xpu_install import oneapi_environment
 from scripts.setup.archive_safety import safe_extract_tar, safe_extract_zip
 from scripts.setup.directory_transaction import DirectorySwapError, swap_staged_directory
 from scripts.setup.resumable_download import download_file
-from scripts.runtime import hardware
-from scripts.runtime.llamacpp_tools import cuda_architecture, find_nvcc
+from scripts.runtime import config, hardware
+from scripts.runtime.llamacpp_tools import (
+    cuda_architecture, find_nvcc, llamacpp_backend_error,
+)
 from scripts.setup.runtime_identity import RuntimeIdentity, parse_runtime_version, source_commit_version
 
 
 LLAMACPP_REPO = "https://github.com/ggml-org/llama.cpp"
 LLAMACPP_TARGETS = ("llama-server", "llama-bench", "llama-batched-bench")
-LLAMACPP_RELEASE_URL = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
 LLAMACPP_RELEASES_URL = "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=10"
 
 
@@ -34,6 +38,12 @@ class RuntimeUpdateResult:
     success: bool
     detail: str
     version: str | None = None
+
+
+@dataclass(frozen=True)
+class WindowsLlamacppRelease:
+    label: str
+    assets: tuple[dict, ...]
 
 
 class RuntimeUpdateControl:
@@ -212,10 +222,15 @@ def llamacpp_cmake_flags(backend: str, *, nvcc: str | None = None,
         return flags
     if backend == "rocm":
         return ["-DGGML_HIP=ON"]
+    if backend == "xpu":
+        return [
+            "-DGGML_SYCL=ON", "-DCMAKE_C_COMPILER=icx", "-DCMAKE_CXX_COMPILER=icpx",
+        ]
     return []
 
 
-def validate_llamacpp_build(source_dir: Path, *, run=subprocess.run) -> RuntimeUpdateResult:
+def validate_llamacpp_build(source_dir: Path, *, required_backend: str | None = None,
+                            env=None, run=subprocess.run) -> RuntimeUpdateResult:
     tools = {}
     for name in LLAMACPP_TARGETS:
         matches = [path for path in source_dir.rglob(name) if path.is_file()]
@@ -232,6 +247,12 @@ def validate_llamacpp_build(source_dir: Path, *, run=subprocess.run) -> RuntimeU
     output = (result.stdout or result.stderr or "").strip()
     if result.returncode != 0 or not output:
         return RuntimeUpdateResult(False, output or "Staged llama.cpp returned no version.")
+    backend_error = llamacpp_backend_error(
+        tools["llama-server"], required_backend, env=env, run=run,
+        context="staged llama.cpp build",
+    )
+    if backend_error:
+        return RuntimeUpdateResult(False, backend_error)
     identity = RuntimeIdentity(
         "llamacpp", "app_managed", str(tools["llama-server"]),
         parse_runtime_version(output), output,
@@ -296,14 +317,10 @@ def update_homebrew_llamacpp(location: str | Path | None, *, run=subprocess.run,
 
 
 def fetch_llamacpp_release(*, opener=urllib.request.urlopen) -> dict:
-    request = urllib.request.Request(
-        LLAMACPP_RELEASE_URL, headers={"Accept": "application/vnd.github+json"},
-    )
-    with opener(request, timeout=15) as response:
-        payload = json.load(response)
-    if not isinstance(payload, dict) or not isinstance(payload.get("assets"), list):
-        raise ValueError("GitHub returned invalid llama.cpp release metadata")
-    return payload
+    releases = fetch_llamacpp_releases(opener=opener)
+    if not releases:
+        raise ValueError("GitHub returned no published llama.cpp build releases")
+    return releases[0]
 
 
 def fetch_llamacpp_releases(*, opener=urllib.request.urlopen) -> list[dict]:
@@ -336,15 +353,31 @@ def fetch_llamacpp_release_tag(tag: str, *, opener=urllib.request.urlopen) -> di
     return payload
 
 
-def select_windows_llamacpp_assets(release: dict, max_cuda_version: str | None) -> list[dict]:
+def select_windows_llamacpp_release(release: dict, max_cuda_version: str | None, *,
+                                    intel_xpu: bool = False) -> WindowsLlamacppRelease | None:
     assets = release.get("assets", [])
+    if intel_xpu:
+        sycl = next((asset for asset in assets
+                     if "win-sycl-x64" in str(asset.get("name", "")).lower()
+                     and str(asset.get("name", "")).endswith(".zip")), None)
+        return WindowsLlamacppRelease("SYCL", (sycl,)) if sycl is not None else None
     cuda_pair = hardware.select_cuda_release_assets(assets, max_cuda_version)
     if cuda_pair is not None:
-        return [cuda_pair[0], cuda_pair[1]]
+        return WindowsLlamacppRelease(
+            f"CUDA {cuda_pair[2]}", (cuda_pair[0], cuda_pair[1]),
+        )
     vulkan = next((asset for asset in assets
                    if "win-vulkan-x64" in str(asset.get("name", "")).lower()
                    and str(asset.get("name", "")).endswith(".zip")), None)
-    return [vulkan] if vulkan is not None else []
+    return WindowsLlamacppRelease("Vulkan", (vulkan,)) if vulkan is not None else None
+
+
+def select_windows_llamacpp_assets(release: dict, max_cuda_version: str | None, *,
+                                   intel_xpu: bool = False) -> list[dict]:
+    selected = select_windows_llamacpp_release(
+        release, max_cuda_version, intel_xpu=intel_xpu,
+    )
+    return list(selected.assets) if selected is not None else []
 
 
 def select_macos_llamacpp_asset(release: dict, machine: str) -> dict | None:
@@ -441,6 +474,7 @@ def update_macos_llamacpp(target: Path, machine: str, *,
 
 
 def update_windows_llamacpp(target: Path, max_cuda_version: str | None, *,
+                            intel_xpu: bool = False,
                             release_fetcher=fetch_llamacpp_release,
                             downloader=download_file, extractor=safe_extract_zip,
                             run=subprocess.run, replace=os.replace, remove=shutil.rmtree,
@@ -457,7 +491,9 @@ def update_windows_llamacpp(target: Path, max_cuda_version: str | None, *,
     active_run = control.run if control is not None else run
     try:
         release = release_fetcher()
-        assets = select_windows_llamacpp_assets(release, max_cuda_version)
+        assets = select_windows_llamacpp_assets(
+            release, max_cuda_version, intel_xpu=intel_xpu,
+        )
         if not assets:
             return RuntimeUpdateResult(False, "The latest release has no compatible Windows asset.")
         downloads.mkdir(parents=True)
@@ -529,6 +565,11 @@ def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
         return RuntimeUpdateResult(False, "CUDA rebuild requires nvcc; the current runtime was preserved.")
     active_run = control.run if control is not None else run
     capability = detect_nvidia_compute_capability(run=active_run) if backend == "cuda" else None
+    build_env = oneapi_environment() if backend == "xpu" else None
+    if backend == "xpu" and build_env is None:
+        return RuntimeUpdateResult(
+            False, "Intel XPU rebuild requires the oneAPI environment; the current runtime was preserved.",
+        )
     token = token_factory()
     staged = target.with_name(f".{target.name}-update-{token}")
     backup = target.with_name(f".{target.name}-backup-{token}")
@@ -548,11 +589,13 @@ def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
             if cancelled := _cancelled(control):
                 return cancelled
             log(f"Running: {' '.join(command)}")
-            if active_run(command).returncode != 0:
+            if active_run(command, env=build_env).returncode != 0:
                 if cancelled := _cancelled(control):
                     return cancelled
                 return RuntimeUpdateResult(False, f"llama.cpp update command failed: {command[0]}")
-        validation = validate_llamacpp_build(staged, run=active_run)
+        validation = validate_llamacpp_build(
+            staged, required_backend=backend, env=build_env, run=active_run,
+        )
         if cancelled := _cancelled(control):
             return cancelled
         if not validation.success:
@@ -560,7 +603,9 @@ def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
         try:
             outcome = swap_staged_directory(
                 target, staged, backup, had_target=True,
-                validate=lambda path: validate_llamacpp_build(path, run=active_run),
+                validate=lambda path: validate_llamacpp_build(
+                    path, required_backend=backend, env=build_env, run=active_run,
+                ),
                 replace=replace, remove=remove,
             )
         except DirectorySwapError as exc:
@@ -598,13 +643,25 @@ def vllm_executable(venv_dir: Path, os_name: str = os.name) -> Path:
     return venv_dir / subdir / f"vllm{suffix}"
 
 
-def validate_vllm_environment(venv_dir: Path, *, run=subprocess.run,
-                              os_name: str = os.name) -> RuntimeUpdateResult:
+def validate_vllm_environment(venv_dir: Path, *, support: VllmSupport | None = None,
+                              run=subprocess.run, os_name: str = os.name) -> RuntimeUpdateResult:
     executable = vllm_executable(venv_dir, os_name)
     if not executable.is_file():
         return RuntimeUpdateResult(False, f"Staged vLLM executable is missing: {executable}")
+    expected_device, expected_runtime = vllm_runtime_expectations(
+        support.method if support else None,
+    )
+    runtime_error = vllm_runtime_import_error(
+        venv_dir, expected_device_type=expected_device,
+        expected_runtime=expected_runtime, run=run,
+    )
+    if runtime_error:
+        return RuntimeUpdateResult(False, f"Staged vLLM hardware validation failed: {runtime_error}")
     try:
-        result = run([str(executable), "--version"], capture_output=True, text=True, timeout=30)
+        result = run(
+            [str(executable), "--version"], capture_output=True, text=True,
+            timeout=config.VLLM_COLD_IMPORT_TIMEOUT,
+        )
     except (OSError, subprocess.SubprocessError) as exc:
         return RuntimeUpdateResult(False, f"Staged vLLM validation failed: {exc}")
     output = (result.stdout or result.stderr or "").strip()
@@ -637,7 +694,7 @@ def update_managed_vllm(support: VllmSupport, target: Path, *, log=print,
             return RuntimeUpdateResult(False, "The staged vLLM installation failed.")
         if cancelled := _cancelled(control):
             return cancelled
-        validation = validate_vllm_environment(staged, run=active_run)
+        validation = validate_vllm_environment(staged, support=support, run=active_run)
         if cancelled := _cancelled(control):
             return cancelled
         if not validation.success:
@@ -647,7 +704,9 @@ def update_managed_vllm(support: VllmSupport, target: Path, *, log=print,
         try:
             if not installer(support, log=log, run=active_run, venv_dir=target, **install_kwargs):
                 raise RuntimeError("The final vLLM installation failed.")
-            final_validation = validate_vllm_environment(target, run=active_run)
+            final_validation = validate_vllm_environment(
+                target, support=support, run=active_run,
+            )
             if not final_validation.success:
                 raise RuntimeError(final_validation.detail)
         except Exception as exc:

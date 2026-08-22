@@ -14,6 +14,7 @@ run_bench.bat [options]   # Windows
 
 --tests TESTS           Tests to run (default: all nine — see Flag details below)
 --engine ENGINE         Inference engine to benchmark, or 'all' (default: llamacpp)
+--ack-experimental-engine  Acknowledge an unqualified vLLM run
 --cpu-only              Force CPU-only inference for every engine-backed test
 --gpu-split-mode MODE   llama.cpp GPU mode: single, layer, or tensor (default: layer)
 --llamacpp-no-repack    Disable llama.cpp weight repacking (`-nr`; default: false)
@@ -37,6 +38,8 @@ run_bench.bat [options]   # Windows
 ```
 
 See [Flag details](#flag-details) below for what each flag actually does.
+
+When `--engine` includes vLLM, direct CLI runs require `--ack-experimental-engine` until that exact platform and runtime have passed complete smallest-model qualification. The graphical and terminal launchers resolve the installed runtime's exact qualification status and add the flag only after displaying an experimental-engine confirmation when one is required; CPU-only selection is evaluated as a distinct unqualified backend. The graphical launcher performs runtime probes in the background so its window remains responsive and Start remains usable; until a probe finishes, GPU split mode stays at the universally safe layer setting and vLLM requires the experimental confirmation. The terminal launcher prints a status line before probing. The resulting support caveat remains recorded in the run profile.
 
 ## Launch modes
 
@@ -166,7 +169,7 @@ The GUI's **Support Bundle** action creates a separate redacted `.labsupport` ar
 | `--list-models` | (flag) | off | Read-only inventory of installed catalog LLMs, embeddings, custom LLM folders, and catalog image checkpoints, then exit. It does not require or start an inference server. `--engine` selects the inventory (`all` lists each engine); image inventory always comes from Local AI Bench's managed `models/comfyui/` directory |
 | `--sample` | integer `N` | none (full bank) | Dev-only. Runs `mcq`/`math`/`reasoning`/`code`/`tool` against a deterministic N-question subset of each bank, selected round-robin across categories. Every category is represented only when N is at least that bank's category count. IDs are recorded under `sample_ids`; sampled and full-bank results are not comparable — see [bank versioning](workloads.md#bank-versioning) |
 | `--comfyui` | path | saved/system installation, then `./ComfyUI` | ComfyUI program directory or Windows portable root. Resolution otherwise uses `COMFYUI_DIR`, the path saved by setup, conventional user locations, and finally the managed copy. Image models remain under `models/comfyui/` regardless of this path. The launcher only passes this flag when `img` is among the selected tests — a path is rejected if it holds no ComfyUI, and a run without image tests has nothing to point it at |
-| `--out` | filename | `results/results_<hostname>_<timestamp>.json` | Overrides the main JSON path entirely. Accuracy answer sidecars and generated-image folders still go under the repository's `results/` directory, named from the main output's stem — see [Project Structure](project-structure.md) |
+| `--out` | filename | `results/results_<hostname>_<timestamp>.json` | Overrides the main JSON path entirely. Accuracy answer sidecars and generated-image folders are placed beside it and named from the main output's stem — see [Project Structure](project-structure.md) |
 | `--force-all` | (flag) | off | Disables the slow-TPS exits for single-shot LLM, conversation, and chat concurrency. It does not bypass timeouts, crashes, missing data, or load failures |
 | `--retry-crashed-models` | (flag) | off | Ignores workload crash-cache entries for this execution so every selected model is attempted again. It does not delete the cache, suppress a new crash, or bypass missing-model and load-failure handling |
 
@@ -239,6 +242,17 @@ bash run_bench.sh --tests llamabenchconc
 ```
 
 A full run takes several hours, depending on your hardware and which options you select.
+
+## Platform qualification
+
+Run the normal setup and benchmark paths with the required smallest-model selection:
+
+```bash
+./run_qualification.sh --list-targets
+./run_qualification.sh dgx-spark-vllm-cuda
+```
+
+The ordinary result JSON is the qualification evidence. See [Platform qualification](qualification.md).
 
 ## Comparing results
 

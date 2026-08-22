@@ -48,6 +48,24 @@ def sanitize_tps(tps: float, tokens: int, ttft: float, total: float) -> float:
     return tokens / decode_elapsed if decode_elapsed > 0 else 0
 
 
+def streamed_usage(chunk: dict, completion_tokens: int,
+                   prompt_tokens: int | None) -> tuple[int, int | None]:
+    usage = chunk.get("usage") or {}
+    completion = usage.get("completion_tokens")
+    prompt = usage.get("prompt_tokens")
+    return (completion_tokens if completion is None else completion,
+            prompt_tokens if prompt is None else prompt)
+
+
+def stream_timing(total: float, ttft: float | None,
+                  tokens: int) -> tuple[float, float, float, float]:
+    ttft = total if ttft is None else ttft
+    decode_seconds = max(total - ttft, 0)
+    raw_tps = tokens / decode_seconds if decode_seconds else 0
+    tps = sanitize_tps(raw_tps, tokens, ttft, total)
+    return ttft, decode_seconds, raw_tps, tps
+
+
 def tool_calls_from_fragments(tool_fragments: dict[int, dict]) -> list[dict]:
     """Assemble streamed tool-call fragments into [{"name", "arguments"}]."""
     calls = []

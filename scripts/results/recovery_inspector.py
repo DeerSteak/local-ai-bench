@@ -76,10 +76,12 @@ def workload_case_counts(plan, projection, stages) -> dict:
 
 
 def legacy_environment_identity(current_profile: dict, saved_profile) -> dict | None:
-    """Rebuild pre-fix identity using only the saved run timestamp."""
+    """Rebuild the environment shape written by an older suite."""
     if not isinstance(saved_profile, dict) or not isinstance(saved_profile.get("timestamp"), str):
         return None
     profile = {**current_profile, "timestamp": saved_profile["timestamp"]}
+    if "engine_support" not in saved_profile:
+        profile.pop("engine_support", None)
     return {"profile_sha256": sha256_json(profile)}
 
 
@@ -105,7 +107,9 @@ def current_resume_identity_for_result(result_path: Path, plan=None) -> dict:
     finally:
         store.close()
     engine = get_engine(plan.engine_name)
-    current_profile = build_execution_profile(engine, plan.tests, cpu_only=plan.cpu_only)
+    current_profile = build_execution_profile(
+        engine, plan.tests, cpu_only=plan.cpu_only, engine_name=plan.engine_name,
+    )
     current_identity = current_resume_identity(
         plan, profile=current_profile, engine=engine, event_path=journal_path,
     )
@@ -163,7 +167,9 @@ def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find
         if not isinstance(binary, (str, Path)):
             raise ValueError("vLLM bench runtime required by the saved plan was not found")
         extra["vllm-bench"] = Path(binary).resolve()
-    profile = profile or build_execution_profile(engine, plan.tests, cpu_only=plan.cpu_only)
+    profile = profile or build_execution_profile(
+        engine, plan.tests, cpu_only=plan.cpu_only, engine_name=plan.engine_name,
+    )
     return build_engine_resume_identity(
         plan, engine, model_families=families,
         include_engine_runtime=bool(stages & {

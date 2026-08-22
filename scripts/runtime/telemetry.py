@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import threading
 import time
-from typing import Any, Callable, Mapping, Protocol, Sequence
+from typing import Any, Callable, Iterator, Mapping, Protocol, Sequence
 
 import psutil
 
@@ -159,6 +159,27 @@ def _finite_nonnegative(value: object) -> float | None:
     return number if math.isfinite(number) and number >= 0 else None
 
 
+def _nvidia_scalar_values(output: str, unit: str,
+                          validator: Callable[[object], float | None]) -> list[float]:
+    values = []
+    for line in output.splitlines():
+        match = re.fullmatch(
+            rf"\s*([0-9.]+)\s*(?:{re.escape(unit)})?\s*", line, flags=re.IGNORECASE,
+        )
+        value = validator(match.group(1)) if match else None
+        if value is not None:
+            values.append(value)
+    return values
+
+
+def _json_object(output: str) -> dict | None:
+    try:
+        value = json.loads(output)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
 def parse_powermetrics_power(output: str) -> PowerReading | None:
     patterns = (
         r"Combined Power \(CPU \+ GPU \+ ANE\):\s*([0-9.]+)\s*(m?W)\b",
@@ -177,21 +198,13 @@ def parse_powermetrics_power(output: str) -> PowerReading | None:
 
 
 def parse_nvidia_power(output: str) -> PowerReading | None:
-    values = []
-    for line in output.splitlines():
-        match = re.fullmatch(r"\s*([0-9.]+)\s*(?:W)?\s*", line, flags=re.IGNORECASE)
-        value = _finite_nonnegative(match.group(1)) if match else None
-        if value is not None:
-            values.append(value)
+    values = _nvidia_scalar_values(output, "W", _finite_nonnegative)
     return PowerReading(sum(values), "nvidia-smi", "accelerator") if values else None
 
 
 def parse_rocm_power(output: str) -> PowerReading | None:
-    try:
-        payload = json.loads(output)
-    except (TypeError, json.JSONDecodeError):
-        return None
-    if not isinstance(payload, dict):
+    payload = _json_object(output)
+    if payload is None:
         return None
     keys = ("Average Graphics Package Power (W)", "Current Socket Graphics Package Power (W)")
     values = []
@@ -217,12 +230,7 @@ def _valid_millicelsius(value: object) -> float | None:
 
 
 def parse_nvidia_temperatures(output: str) -> TemperatureReading | None:
-    values = []
-    for line in output.splitlines():
-        match = re.fullmatch(r"\s*([0-9.]+)\s*(?:C)?\s*", line, flags=re.IGNORECASE)
-        value = _valid_temperature(match.group(1)) if match else None
-        if value is not None:
-            values.append(value)
+    values = _nvidia_scalar_values(output, "C", _valid_temperature)
     return TemperatureReading(gpu_die_c=max(values)) if values else None
 
 
@@ -257,11 +265,8 @@ def parse_nvidia_telemetry(output: str) -> NvidiaTelemetryReading | None:
 
 
 def parse_rocm_temperatures(output: str) -> TemperatureReading | None:
-    try:
-        payload = json.loads(output)
-    except (TypeError, json.JSONDecodeError):
-        return None
-    if not isinstance(payload, dict):
+    payload = _json_object(output)
+    if payload is None:
         return None
     die_values = []
     hotspot_values = []
@@ -662,7 +667,7 @@ def discover_power_source(platform_name: str | None = None, *, which_fn=shutil.w
         if adl_status.available:
             return adl_status
         failed_sources.append(adl_status)
-    if executable := which_fn("rocm-smi"):
+    if executable := hardware.rocm_executable("rocm-smi", which_fn=which_fn):
         try:
             result = run_fn(
                 [executable, "--showpower", "--json"], capture_output=True, text=True,
@@ -900,7 +905,8 @@ def discover_temperature_source(platform_name: str | None = None, *, which_fn=sh
         if result is not None and result.returncode == 0 and parse_nvidia_temperatures(result.stdout):
             sources["gpu_die_c"] = "nvidia-smi"
             locations["gpu_die_c"] = executable
-    if "gpu_die_c" not in sources and (executable := which_fn("rocm-smi")):
+    if "gpu_die_c" not in sources and (
+            executable := hardware.rocm_executable("rocm-smi", which_fn=which_fn)):
         try:
             result = run_fn(
                 [executable, "--showtemp", "--json"], capture_output=True, text=True,
@@ -1020,26 +1026,32 @@ def create_temperature_source(availability: TemperatureAvailability,
     return PollingTemperatureSource(availability, **kwargs)
 
 
+def _telemetry_windows(samples: Sequence[TelemetrySample]) \
+        -> Iterator[tuple[list[TelemetrySample], dict[str, Any]]]:
+    for name in dict.fromkeys(sample.window for sample in samples):
+        selected = [sample for sample in samples if sample.window == name]
+        yield selected, {
+            "name": name,
+            "sample_count": len(selected),
+            "duration_sec": max(
+                0.0, selected[-1].timestamp_sec - selected[0].timestamp_sec,
+            ) if selected else 0.0,
+        }
+
+
 def power_block(samples: Sequence[TelemetrySample], interval_sec: float,
                 availability: PowerAvailability, failed_samples: int) -> dict[str, Any]:
     windows = []
     idle_values = []
-    for name in dict.fromkeys(sample.window for sample in samples):
-        selected = [sample for sample in samples if sample.window == name]
+    for selected, window in _telemetry_windows(samples):
         values = [value for sample in selected
                   if (value := _finite_nonnegative(sample.power_watts)) is not None]
         energy = integrate_power_joules([
             (sample.timestamp_sec, sample.power_watts) for sample in selected
         ])
-        if name == "idle":
+        if window["name"] == "idle":
             idle_values.extend(values)
-        windows.append({
-            "name": name,
-            "sample_count": len(selected),
-            "duration_sec": (
-                max(0.0, selected[-1].timestamp_sec - selected[0].timestamp_sec)
-                if selected else 0.0
-            ),
+        window.update({
             "mean_watts": sum(values) / len(values) if values else None,
             "peak_watts": max(values) if values else None,
             "energy_joules": energy,
@@ -1048,6 +1060,7 @@ def power_block(samples: Sequence[TelemetrySample], interval_sec: float,
                 for sample in selected
             ],
         })
+        windows.append(window)
     all_values = [value for sample in samples
                   if (value := _finite_nonnegative(sample.power_watts)) is not None]
     measured_groups: list[list[TelemetrySample]] = []
@@ -1095,8 +1108,7 @@ def temperature_block(samples: Sequence[TelemetrySample], interval_sec: float,
                       availability: TemperatureAvailability,
                       channel_failures: Mapping[str, int]) -> dict[str, Any]:
     windows = []
-    for name in dict.fromkeys(sample.window for sample in samples):
-        selected = [sample for sample in samples if sample.window == name]
+    for selected, window in _telemetry_windows(samples):
         channels = {}
         for channel in TEMPERATURE_CHANNELS:
             values = [value for sample in selected
@@ -1107,28 +1119,22 @@ def temperature_block(samples: Sequence[TelemetrySample], interval_sec: float,
                 "final_c": values[-1] if values else None,
                 "valid_samples": len(values),
             }
-        windows.append({
-            "name": name,
-            "sample_count": len(selected),
-            "duration_sec": (
-                max(0.0, selected[-1].timestamp_sec - selected[0].timestamp_sec)
-                if selected else 0.0
-            ),
+        window.update({
             "channels": channels,
             "samples": [{
                 "timestamp_sec": sample.timestamp_sec,
                 **{channel: getattr(sample, channel) for channel in TEMPERATURE_CHANNELS},
             } for sample in selected],
         })
+        windows.append(window)
+    recorded = any(
+        getattr(sample, channel) is not None
+        for sample in samples for channel in TEMPERATURE_CHANNELS
+    )
     return {
-        "status": "recorded" if any(
-            getattr(sample, channel) is not None
-            for sample in samples for channel in TEMPERATURE_CHANNELS
-        ) else "unavailable",
+        "status": "recorded" if recorded else "unavailable",
         "reason": availability.reason or (
-            None if any(getattr(sample, channel) is not None
-                        for sample in samples for channel in TEMPERATURE_CHANNELS)
-            else "no valid temperature samples were recorded"
+            None if recorded else "no valid temperature samples were recorded"
         ),
         "windows": windows,
         "provenance": {
@@ -1193,7 +1199,7 @@ def query_gpu_usage(platform_name: str | None = None, run_fn=subprocess.run,
         command = [executable, "-r", "-d", "1", "-c", "AGXAccelerator"]
     elif executable := which_fn("nvidia-smi"):
         command = [executable, "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"]
-    elif executable := which_fn("rocm-smi"):
+    elif executable := hardware.rocm_executable("rocm-smi", which_fn=which_fn):
         command = [executable, "--showuse", "--json"]
     else:
         return None
@@ -1251,7 +1257,7 @@ def query_sampler_vram_usage(run_fn=subprocess.run, which_fn=shutil.which) -> tu
     if executable := which_fn("nvidia-smi"):
         command = [executable, "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"]
         source = "nvidia"
-    elif executable := which_fn("rocm-smi"):
+    elif executable := hardware.rocm_executable("rocm-smi", which_fn=which_fn):
         command = [executable, "--showmeminfo", "vram", "--json"]
         source = "rocm"
     else:
@@ -1393,11 +1399,28 @@ def memory_block(samples: Sequence[TelemetrySample], interval_sec: float,
     }
 
 
-def default_memory_sources(which_fn=shutil.which) -> dict[str, str]:
+def rocm_memory_is_discrete(run_fn=subprocess.run, which_fn=shutil.which) -> bool:
+    executable = hardware.rocm_executable("rocminfo", which_fn=which_fn)
+    if not executable:
+        return False
+    try:
+        result = run_fn(
+            [executable], capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if result.returncode:
+        return False
+    names = hardware.rocminfo_gpu_names(result.stdout)
+    return bool(names) and all(hardware.classify_gpu(name) == "discrete" for name in names)
+
+
+def default_memory_sources(which_fn=shutil.which, run_fn=subprocess.run) -> dict[str, str]:
     accelerator = "unsupported"
     if which_fn("nvidia-smi"):
         accelerator = "nvidia-smi"
-    elif which_fn("rocm-smi"):
+    elif hardware.rocm_executable("rocm-smi", which_fn=which_fn) \
+            and rocm_memory_is_discrete(run_fn, which_fn):
         accelerator = "rocm-smi"
     return {
         "host_ram_used_gb": "psutil",
@@ -1437,75 +1460,60 @@ def memory_ceiling_gb(sources: Mapping[str, str], run_fn=subprocess.run,
     return max(0.0, total - hardware.RAM_RESERVE_GB)
 
 
+def _nested_blocks(value: object, key: str,
+                   path: tuple[str, ...] = ()) -> Iterator[tuple[dict[str, Any], str]]:
+    if isinstance(value, list):
+        for index, child in enumerate(value):
+            yield from _nested_blocks(child, key, (*path, str(index)))
+        return
+    if not isinstance(value, dict):
+        return
+    block = value.get(key)
+    if isinstance(block, dict):
+        yield block, "/".join(path)
+    for child_key, child in value.items():
+        if child_key != key:
+            yield from _nested_blocks(child, key, (*path, str(child_key)))
+
+
 def derive_run_memory_summary(sections: Mapping[str, object]) -> dict[str, Any] | None:
     channels: dict[str, dict[str, Any]] = {}
     tightest = None
-
-    def visit(value: object, path: tuple[str, ...]) -> None:
-        nonlocal tightest
-        if isinstance(value, list):
-            for index, child in enumerate(value):
-                visit(child, (*path, str(index)))
-            return
-        if not isinstance(value, dict):
-            return
-        memory = value.get("memory")
-        if isinstance(memory, dict):
-            summary = memory.get("summary", {})
-            if isinstance(summary, dict):
-                for channel, values in summary.items():
-                    peak = values.get("peak_gb") if isinstance(values, dict) else None
-                    if not isinstance(peak, (int, float)):
-                        continue
-                    current = channels.setdefault(channel, {"peak_gb": peak})
-                    current["peak_gb"] = max(current["peak_gb"], peak)
-            headroom = memory.get("headroom", {})
-            absolute = headroom.get("absolute_gb") if isinstance(headroom, dict) else None
-            if isinstance(absolute, (int, float)) and (
-                    tightest is None or absolute < tightest["absolute_gb"]):
-                tightest = {
-                    "absolute_gb": absolute,
-                    "fraction": headroom.get("fraction"),
-                    "state": headroom.get("state"),
-                    "case_id": memory.get("case_id"),
-                    "case_path": "/".join(path),
-                }
-                if isinstance(headroom.get("basis_channel"), str):
-                    tightest["basis_channel"] = headroom["basis_channel"]
-        for key, child in value.items():
-            if key != "memory":
-                visit(child, (*path, str(key)))
-
-    visit(dict(sections), ())
+    for memory, case_path in _nested_blocks(dict(sections), "memory"):
+        summary = memory.get("summary", {})
+        if isinstance(summary, dict):
+            for channel, values in summary.items():
+                peak = values.get("peak_gb") if isinstance(values, dict) else None
+                if not isinstance(peak, (int, float)):
+                    continue
+                current = channels.setdefault(channel, {"peak_gb": peak})
+                current["peak_gb"] = max(current["peak_gb"], peak)
+        headroom = memory.get("headroom", {})
+        absolute = headroom.get("absolute_gb") if isinstance(headroom, dict) else None
+        if isinstance(absolute, (int, float)) and (
+                tightest is None or absolute < tightest["absolute_gb"]):
+            tightest = {
+                "absolute_gb": absolute,
+                "fraction": headroom.get("fraction"),
+                "state": headroom.get("state"),
+                "case_id": memory.get("case_id"),
+                "case_path": case_path,
+            }
+            if isinstance(headroom.get("basis_channel"), str):
+                tightest["basis_channel"] = headroom["basis_channel"]
     if not channels and tightest is None:
         return None
     return {"channels": channels, "tightest_headroom": tightest}
 
 
 def derive_run_power_summary(sections: Mapping[str, object]) -> dict[str, Any] | None:
-    cases = []
-
-    def visit(value: object, path: tuple[str, ...]) -> None:
-        if isinstance(value, list):
-            for index, child in enumerate(value):
-                visit(child, (*path, str(index)))
-            return
-        if not isinstance(value, dict):
-            return
-        power = value.get("power")
-        if isinstance(power, dict):
-            cases.append((power, "/".join(path)))
-        for key, child in value.items():
-            if key != "power":
-                visit(child, (*path, str(key)))
-
-    visit(dict(sections), ())
+    cases = list(_nested_blocks(dict(sections), "power"))
     if not cases:
         return None
-    scopes = sorted({power.get("scope") for power, _ in cases
-                     if isinstance(power.get("scope"), str)})
-    sources = sorted({power.get("source") for power, _ in cases
-                      if isinstance(power.get("source"), str)})
+    scopes = sorted({scope for power, _ in cases
+                     if isinstance((scope := power.get("scope")), str)})
+    sources = sorted({source for power, _ in cases
+                      if isinstance((source := power.get("source")), str)})
     energies = [value for power, _ in cases
                 if (value := _finite_nonnegative(power.get("energy_joules"))) is not None]
     idle = [value for power, _ in cases
@@ -1640,13 +1648,14 @@ class TelemetrySampler:
         temperature_uses_nvidia = isinstance(self.temperature_source, PollingTemperatureSource) \
             and "nvidia-smi" in self.temperature_source.availability.sources.values()
         memory_uses_nvidia = "nvidia-smi" in self.memory_sources.values()
+        memory_uses_rocm = "rocm-smi" in self.memory_sources.values()
         nvidia_captured = memory_uses_nvidia or power_uses_nvidia or temperature_uses_nvidia
         nvidia = self.nvidia_query_fn() if nvidia_captured else None
         vram = (
             (nvidia.memory_used_gb, nvidia.memory_total_gb)
             if memory_uses_nvidia and nvidia and nvidia.memory_used_gb is not None
             and nvidia.memory_total_gb is not None
-            else (None if memory_uses_nvidia else query_sampler_vram_usage())
+            else query_sampler_vram_usage() if memory_uses_rocm else None
         )
         if isinstance(self.temperature_source, PollingTemperatureSource):
             temperature = self.temperature_source.read(
@@ -1727,22 +1736,21 @@ class CaseTelemetry:
             memory_sources=self.sources,
         )
         self.ceiling_gb = memory_ceiling_gb(self.sources)
+        self._reset_cursors()
+        self.last_power: dict[str, Any] | None = None
+        self.last_temperature: dict[str, Any] | None = None
+
+    def _reset_cursors(self) -> None:
         self._cursor = 0
         self._failed_cursor = 0
         self._channel_failure_cursor = {channel: 0 for channel in MEMORY_CHANNELS}
         self._power_failure_cursor = 0
         self._temperature_failure_cursor = {channel: 0 for channel in TEMPERATURE_CHANNELS}
-        self.last_power: dict[str, Any] | None = None
-        self.last_temperature: dict[str, Any] | None = None
 
     def start(self) -> "CaseTelemetry":
         self.sampler.start()
         self.sampler.mark_window("idle")
-        self._cursor = 0
-        self._failed_cursor = 0
-        self._channel_failure_cursor = {channel: 0 for channel in MEMORY_CHANNELS}
-        self._power_failure_cursor = 0
-        self._temperature_failure_cursor = {channel: 0 for channel in TEMPERATURE_CHANNELS}
+        self._reset_cursors()
         self.last_power = None
         self.last_temperature = None
         return self

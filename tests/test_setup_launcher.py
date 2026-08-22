@@ -21,6 +21,26 @@ def test_setup_wrapper_only_offers_benchmark_after_setup_check_succeeds():
     assert "set -euo pipefail" in wrapper
 
 
+def test_linux_setup_refreshes_apt_only_before_resolving_missing_packages():
+    wrapper = (ROOT / "setup.sh").read_text()
+    refresh = 'sudo apt-get update -qq'
+    missing_headers = 'if [ ${#MISSING_HEADERS[@]} -gt 0 ]'
+    unversioned = 'for _package in python3-venv "python${PYTHON_SERIES}-venv"'
+    package_query = 'apt-cache show "$_package"'
+    assert wrapper.index(refresh) < wrapper.index(missing_headers)
+    assert wrapper.index(missing_headers) < wrapper.index('refresh_apt_metadata || exit 1')
+    assert wrapper.index(unversioned) < wrapper.index(package_query)
+    assert wrapper.count("refresh_apt_metadata || exit 1") == 2
+    assert 'verify Ubuntu\'s universe repository is enabled' in wrapper
+
+
+def test_setup_wrappers_do_not_offer_an_extra_run_for_qualification():
+    unix = (ROOT / "setup.sh").read_text()
+    windows = (ROOT / "setup.bat").read_text()
+    assert '== *" --qualification "*' in unix
+    assert 'if /i not "%~1"=="--qualification"' in windows
+
+
 def test_linux_desktop_launcher_is_repo_relative_and_forces_gui():
     launcher = (ROOT / "Setup Local AI Bench.desktop").read_text()
     assert launcher.startswith("[Desktop Entry]\n")

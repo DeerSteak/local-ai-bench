@@ -1098,7 +1098,8 @@ def test_is_connection_crash_false_for_unrelated_error():
     ("Available devices:\n", "cpu"),
 ])
 def test_backend_from_device_listing(listing, expected):
-    assert LlamaCppEngine._backend_from_device_listing(listing) == expected
+    from scripts.runtime.llamacpp_tools import llamacpp_backend_from_device_listing
+    assert llamacpp_backend_from_device_listing(listing) == expected
 
 
 def test_runtime_backend_uses_binary_device_listing_and_cpu_override(monkeypatch):
@@ -1112,6 +1113,29 @@ def test_runtime_backend_uses_binary_device_listing_and_cpu_override(monkeypatch
     engine = LlamaCppEngine()
     assert engine.runtime_backend("rocm") == "vulkan"
     assert engine.runtime_backend("rocm", cpu_only=True) == "cpu"
+
+
+def test_runtime_backend_sources_oneapi_for_xpu_probe_and_processes(monkeypatch):
+    environment = {"PATH": "/opt/intel/oneapi/bin", "LD_LIBRARY_PATH": "/opt/intel/lib"}
+    completed = type("Completed", (), {
+        "stdout": "Available devices:\n  SYCL0: Intel Arc Pro B65",
+        "stderr": "",
+        "returncode": 0,
+    })()
+    calls = []
+    monkeypatch.setattr(LlamaCppEngine, "_binary_path", staticmethod(lambda: "llama-server"))
+    monkeypatch.setattr(llamacpp_module, "oneapi_environment", lambda: environment)
+
+    def run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return completed
+
+    monkeypatch.setattr(llamacpp_module.subprocess, "run", run)
+    engine = LlamaCppEngine()
+
+    assert engine.runtime_backend("xpu") == "xpu"
+    assert engine.process_environment() == environment
+    assert calls[0][1]["env"] == environment
 
 
 def test_ensure_model_fast_path_does_not_probe_health(monkeypatch):
@@ -1179,6 +1203,7 @@ def test_ensure_model_ngl_lets_llama_server_fit_layers(monkeypatch, tmp_path, gp
 
     def fake_popen(args, **kwargs):
         captured_args["args"] = args
+        captured_args["env"] = kwargs.get("env")
         return Proc()
 
     model_path = tmp_path / "model.gguf"
@@ -1188,13 +1213,16 @@ def test_ensure_model_ngl_lets_llama_server_fit_layers(monkeypatch, tmp_path, gp
     monkeypatch.setattr(llamacpp_module.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(llamacpp_module.Shared, "_managed_procs", [])
     engine = LlamaCppEngine()
+    engine._process_env = {"ONEAPI": "ready"}
     monkeypatch.setattr(engine, "available", lambda: True)
+    monkeypatch.setattr(engine, "_fetch_props", lambda: {"model_path": model_path.name})
     engine._gpu_visible = gpu_visible
 
     engine._ensure_model("tag", 2048)
 
     args = captured_args["args"]
     assert args[args.index("-ngl") + 1] == expected_ngl
+    assert captured_args["env"] == {"ONEAPI": "ready"}
 
 
 @pytest.mark.parametrize(("n_parallel", "num_ctx", "expected_ctx_arg"), [
@@ -1224,6 +1252,7 @@ def test_ensure_model_always_pins_parallel_flag(monkeypatch, tmp_path, n_paralle
     monkeypatch.setattr(config, "LLAMACPP_NO_REPACK", True)
     engine = LlamaCppEngine()
     monkeypatch.setattr(engine, "available", lambda: True)
+    monkeypatch.setattr(engine, "_fetch_props", lambda: {"model_path": model_path.name})
 
     engine._ensure_model("tag", num_ctx, n_parallel=n_parallel)
 

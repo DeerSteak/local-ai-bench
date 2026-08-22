@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   parseJSON, parseResultsJSON, readNamedJSONSource, getRunReliabilityWarning,
+  getEngineSupport,
   getLlamaBenchMethodologyWarning,
   getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning,
   getNoRepackMethodologyWarning,
@@ -112,6 +113,26 @@ describe("getRunReliabilityWarning", () => {
   it("warns for malformed run metadata", () => {
     expect(getRunReliabilityWarning({ run: [] })).toContain("malformed");
     expect(getRunReliabilityWarning({ run: 0 })).toContain("malformed");
+  });
+});
+
+describe("getEngineSupport", () => {
+  it("reads a recorded derived support caveat", () => {
+    expect(getEngineSupport({ profile: { engine_support: {
+      support_level: "experimental", caveat: "Partial lifecycle evidence.",
+    } } })).toEqual({ level: "experimental", caveat: "Partial lifecycle evidence." });
+  });
+
+  it("keeps legacy and malformed files explicitly not recorded", () => {
+    expect(getEngineSupport({})).toEqual({
+      level: "not_recorded",
+      caveat: "Qualification status was not recorded by this suite version.",
+    });
+    expect(getEngineSupport({ profile: { engine_support: { support_level: "claimed" } } }))
+      .toEqual({
+        level: "not_recorded",
+        caveat: "Qualification status was not recorded by this suite version.",
+      });
   });
 });
 

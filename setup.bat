@@ -1,6 +1,6 @@
 @echo off
 :: setup.bat — local-ai-bench setup for Windows
-:: Usage: double-click or run from a terminal in the repo directory
+:: Usage: setup.bat [--qualification llamacpp^|vllm]
 
 setlocal EnableDelayedExpansion
 cd /d "%~dp0"
@@ -142,7 +142,8 @@ echo.
 echo   To run benchmarks:
 echo     run_bench.bat
 echo.
-set /p _REPLY="  Run the benchmark now? [y/N] "
+set "_REPLY=n"
+if /i not "%~1"=="--qualification" set /p _REPLY="  Run the benchmark now? [y/N] "
 echo.
 if /i "%_REPLY%"=="y"   call "%~dp0run_bench.bat"
 if /i "%_REPLY%"=="yes" call "%~dp0run_bench.bat"

@@ -21,6 +21,7 @@
 | `Launch Local AI Bench Dashboard.desktop` | Double-clickable Linux desktop launcher that builds, serves, and opens the dashboard |
 | `Launch Local AI Bench Dashboard.bat` | Double-clickable Windows launcher that builds, serves, and opens the dashboard |
 | `run_bench.sh` | Activates the venv; auto-selects GUI/terminal with no arguments or forwards benchmark arguments directly on Linux / macOS |
+| `run_qualification.sh` / `run_qualification.bat` | Thin platform launchers that run normal setup and the normal smallest-model benchmark |
 | `run_telemetry_trials.sh` | Resumable alternating telemetry-off/on qualification runner for memory and power on Linux / macOS |
 | `run_sustained_qualification_linux.sh` | Repeated ten-minute sustained-load evidence wrapper for Linux small systems |
 | `run_temperature_qualification_linux.sh` | Unattended Linux temperature observer-effect matrix across latency/sustained screens and all candidate intervals |
@@ -49,6 +50,7 @@
 | `docs/user-journey.md` | Complete discovery, project, execution, recovery, review, export, and escalation path |
 | `docs/recommendation-policy.md` | Consumer goals, evidence eligibility, fit, ranking, conflicts, and GPU/Mac workflows |
 | `docs/platform-tuning.md` | Neutral runtime settings, platform compatibility workarounds, and tuning-profile change rules |
+| `docs/strix-halo-troubleshooting-ubuntu-24.04.md` | Ubuntu OEM-kernel, inbox-driver, ROCm, DKMS recovery, and qualification runbook for Strix Halo |
 | `docs/acceptance-policies.md` | Versioned explicit threshold policy, evidence, and rejection semantics |
 | `docs/projects.md` | Local project workflows, portable configuration, baseline, and acceptance-policy behavior |
 | `docs/result-history.md` | Filesystem-owned result discovery, filtering, dashboard launch, and policy evaluation |
@@ -138,8 +140,10 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `workloads/sustained_benchmark.py` / `workloads/sustained_analysis.py` | Continuous-generation soak, aligned time windows, pure retention/onset classification, and sensor correlation |
 | `results/sustained_event_stage.py` | Request-level sustained journal and whole-soak recovery projection |
 | `results/content_store.py` | Atomic content-addressed storage and verified references for large local artifacts |
-| `runtime/runner_supervisor.py` | Fixed-command internal runner protocol, heartbeat monitoring, process ownership, and cancellation escalation |
+| `runtime/runner_supervisor.py` / `runtime/process_tree.py` | Fixed-command internal runner protocol, heartbeat monitoring, and descendant-aware cancellation escalation |
 | `runtime/workload_runner.py` / `runtime/supervised_stage.py` | Owned internal stage runner plus the parent supervisor service shared by normal and recovery execution |
+| `release/qualification.py` / `release/qualification_docs.py` | Evidence-derived platform support policy plus generated published matrices |
+| `release/qualification_run.py` / `release/qualification_targets.py` / `release/qualification_targets.ps1` / `release/qualification_setup.ps1` / `release/qualification_coverage.py` | Explicit platform selection, dependency-free Windows target parsing, setup evidence capture, normal benchmark launch, and smallest-model result validation |
 | `app/interface_mode.py` | Pure GUI/terminal/noninteractive selection for local desktop, SSH, and headless sessions |
 | `stage_registry.py` | Authoritative workload order, result section, model family, label, category, and native-engine ownership |
 | `app/orchestration.py` | Local run paths, stage execution, and engine/ComfyUI lifecycle coordination |
@@ -155,7 +159,9 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `setup/runtime_status.py` | Combined engine health, backend, dependency-stack, and WSL runtime status records |
 | `setup/model_compatibility.py` | Imported-model architecture metadata and read-only vLLM registry compatibility probes |
 | `setup/engine_selection.py` | Engine-picker rules and terminal interaction, including disabled engines and installation needs |
-| `setup/cuda_install.py` | WSL2-only CUDA toolkit plan and installer, so the llama.cpp source build is not silently CPU-only |
+| `setup/cuda_install.py` | Native Ubuntu NVIDIA driver bootstrap and WSL2-only CUDA toolkit installation, so qualification cannot silently build llama.cpp CPU-only |
+| `setup/rocm_install.py` | Pinned native-Linux and WSL2 ROCm qualification plans, platform gates, and privileged execution |
+| `setup/intel_xpu_install.py` | Native Ubuntu Intel GPU compute/oneAPI prerequisite plan, SYCL environment loading, and XPU probe |
 | `setup/vllm_install.py` | vLLM platform-support matrix, launcher/server discovery, interpreter/venv resolution, and the optional installer |
 | `setup/runtime_update.py` / `setup/directory_transaction.py` | Platform runtime updates plus the shared staged-directory swap and rollback transaction |
 | `setup/setup_selection.py` | Terminal model picker, fit-based defaults, input parsing, and destructive-cleanup isolation |
@@ -221,7 +227,7 @@ results/
   answers_tool_Mac_Studio_M4_Max_64_GB_20260711_090000.json
 ```
 
-Each auxiliary name is derived from the main results filename's stem by swapping `results_` for `images_` or `answers_<test>_` (`mcq`, `math`, `reasoning`, `code`, or `tool`). If the stem does not begin with `results_`, the auxiliary prefix is prepended instead. With the default output, this preserves the hostname and timestamp across the set. If `--out` places the main JSON elsewhere, only that main file follows the custom directory; images and answer sidecars still go under the repository's `results/` directory. See [CLI Reference](cli-reference.md).
+Each auxiliary name is derived from the main results filename's stem by swapping `results_` for `images_` or `answers_<test>_` (`mcq`, `math`, `reasoning`, `code`, or `tool`). If the stem does not begin with `results_`, the auxiliary prefix is prepended instead. With the default output, this preserves the hostname and timestamp across the set. If `--out` places the main JSON elsewhere, its journal, local context, images, and answer sidecars remain beside it. See [CLI Reference](cli-reference.md).
 
 `--engine all` (see [Engines](engines.md)) appends the engine name to the results filename's stem for each pass, so a run of the example above would produce `results_..._090000_llamacpp.json` (and one more per additional engine, once a second one is registered) side by side, each tagged internally with `"engine"`.
 
