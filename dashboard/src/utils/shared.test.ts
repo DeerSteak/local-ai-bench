@@ -287,6 +287,22 @@ describe("applyEngineLabels", () => {
     expect(applyEngineLabels(files)[0].hostname).toBe("host-a\nllama.cpp -nr 7000");
   });
 
+  it("distinguishes native MTP results from their baseline on the same system", () => {
+    const files: ResultsFile[] = [
+      {
+        id: 1, hostname: "host-a", engine: "vllm", engineVersion: "0.27.1",
+        data: { run: { effective_config: { mtp_enabled: false } } },
+      },
+      {
+        id: 2, hostname: "host-a", engine: "vllm", engineVersion: "0.27.1",
+        data: { run: { effective_config: { mtp_enabled: true } } },
+      },
+    ];
+    expect(applyEngineLabels(files).map(file => file.hostname)).toEqual([
+      "host-a\nvLLM 0.27.1", "host-a\nvLLM MTP on 0.27.1",
+    ]);
+  });
+
   it("omits no-repack from labels for workloads that do not consume it", () => {
     const files: ResultsFile[] = [{
       id: 1, hostname: "host-a", engine: "llamacpp", engineVersion: "7000",

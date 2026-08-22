@@ -160,6 +160,19 @@ export function engineLabel(engine: string | null | undefined): string {
   return labels[key] || String(engine || "");
 }
 
+export function engineRunLabel(file: ResultsFile, section?: string): string {
+  const displayEngine = engineLabel(file.engine);
+  if (file.engine === "llamacpp"
+      && !["llamabench", "vllmbench"].includes(section || "")
+      && file.data?.run?.effective_config?.llamacpp_no_repack === true) {
+    return `${displayEngine} -nr`;
+  }
+  if (file.engine === "vllm" && file.data?.run?.effective_config?.mtp_enabled === true) {
+    return `${displayEngine} MTP on`;
+  }
+  return displayEngine;
+}
+
 export function measuredCategoryAxisWidth(
   rows: ChartRow[], key: string, measure: (text: string) => number, tickSpace = 18,
 ): number {
@@ -171,11 +184,7 @@ export function measuredCategoryAxisWidth(
 export function applyEngineLabels<T extends ResultsFile>(files: T[], section?: string): T[] {
   const multiEngine = new Set(files.map(f => f.engine).filter(Boolean)).size > 1;
   return files.map(f => {
-    const noRepack = f.engine === "llamacpp"
-      && !["llamabench", "vllmbench"].includes(section || "")
-      && f.data?.run?.effective_config?.llamacpp_no_repack === true;
-    const displayEngine = engineLabel(f.engine);
-    const engine = noRepack ? `${displayEngine} -nr` : displayEngine;
+    const engine = engineRunLabel(f, section);
     const identity = (runtime: string) => {
   const runtimeLabel = [backendLabel(f.backend), runtime].filter(Boolean).join(" / ");
       return [f.hostname, runtimeLabel].filter(Boolean).join("\n");
