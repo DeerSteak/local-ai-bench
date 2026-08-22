@@ -473,7 +473,7 @@ For a one-person team, platform qualification uses the normal setup and benchmar
 
 # 9. Model catalog audit and refresh
 
-**Status: implementation complete; hardware validation pending.** The medium tier now uses Gemma 4 26B-A4B, Qwen 3.8 27B, and Nemotron 3.5 Lightning 30B-A3B. Gemma 3 27B, Qwen 3.6 35B-A3B, and Nemotron Cascade 2 remain dashboard-only legacy identities; Muse Glimmer remains available through custom import. The embedding lineup is unchanged, while Z-Image Turbo replaces SD3.5 Large. Native MTP comparison is implemented for the selected compatible llama.cpp and vLLM artifacts with engine-specific token maximums recorded in run-plan methodology identity.
+**Status: implementation complete; hardware validation pending.** The medium tier now uses Gemma 4 26B-A4B, Qwen 3.8 27B, and Nemotron 3.5 Lightning 30B-A3B. Gemma 3 27B, Qwen 3.6 35B-A3B, and Nemotron Cascade 2 remain dashboard-only legacy identities; Muse Glimmer remains available through custom import. The embedding lineup is unchanged, while Z-Image Turbo replaces SD3.5 Large. Native MTP comparison is implemented for the selected compatible llama.cpp and vLLM artifacts with engine-specific speculative depths recorded in run-plan methodology identity.
 
 ## Why this is ninth
 

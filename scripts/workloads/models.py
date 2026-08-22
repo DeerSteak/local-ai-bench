@@ -176,7 +176,7 @@ LLM_MODELS_XSMALL = sorted([
         "vllm_download_size": "~4.1 GB",
         "native_mtp":     {
             "llamacpp": {"num_speculative_tokens": 3},
-            "vllm": {"num_speculative_tokens": 1},
+            "vllm": {"num_speculative_tokens": 3},
         },
     },
 ], key=lambda m: m["params_b"])
@@ -210,7 +210,7 @@ LLM_MODELS_SMALL = sorted([
         "vllm_download_size": "~9.1 GB",
         "native_mtp":     {
             "llamacpp": {"num_speculative_tokens": 3},
-            "vllm": {"num_speculative_tokens": 1},
+            "vllm": {"num_speculative_tokens": 3},
         },
     },
     {
@@ -261,7 +261,7 @@ LLM_MODELS_MEDIUM = sorted([
                 "draft_file": "MTP/mtp-Qwen3.8-27B-Q4_0.gguf",
                 "draft_download_size": "~1.4 GB",
             },
-            "vllm": {"num_speculative_tokens": 1},
+            "vllm": {"num_speculative_tokens": 3},
         },
     },
     {

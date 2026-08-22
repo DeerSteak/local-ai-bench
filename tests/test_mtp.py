@@ -24,6 +24,21 @@ def test_catalog_marks_every_confirmed_native_mtp_artifact():
         "qwen3.8:27b-ud-q4_K_M",
         "nemotron3.5-lightning:30b-a3b-ud-q4_K_M",
     }
+    catalog = {model["tag"]: model for model in LLM_MODELS}
+    tags = (
+        "qwen3.5:4b-q4_K_M", "qwen3.5:9b-q4_K_M",
+        "qwen3.8:27b-ud-q4_K_M",
+        "nemotron3.5-lightning:30b-a3b-ud-q4_K_M",
+    )
+    configs = {tag: native_mtp_config(catalog[tag], "vllm") for tag in tags}
+    assert all(config is not None for config in configs.values())
+    assert {tag: config["num_speculative_tokens"] for tag, config in configs.items()
+            if config is not None} == {
+        "qwen3.5:4b-q4_K_M": 3,
+        "qwen3.5:9b-q4_K_M": 3,
+        "qwen3.8:27b-ud-q4_K_M": 3,
+        "nemotron3.5-lightning:30b-a3b-ud-q4_K_M": 1,
+    }
 
 
 @pytest.mark.parametrize("value", [None, {}, {"vllm": {}}, {"vllm": {"num_speculative_tokens": 0}},

@@ -158,7 +158,7 @@ def test_server_command_enables_native_mtp_with_compact_json(engine):
 def test_native_mtp_configuration_is_catalog_and_engine_specific(engine):
     engine.set_mtp_enabled(True)
     assert engine._native_mtp_config(TEST_TAG) == {
-        "method": "mtp", "num_speculative_tokens": 1,
+        "method": "mtp", "num_speculative_tokens": 3,
     }
     assert engine._native_mtp_config(TEST_TAG, embedding=True) is None
     with pytest.raises(RuntimeError, match="does not support native MTP"):

@@ -12,7 +12,7 @@ Power telemetry is opt-in until each source and the combined sampler pass the sh
 
 Run-plan schema 5 adds the resolved sampler profile to methodology identity. Text generation pins temperature `0`, top-k `0`, top-p `1`, min-p `0`, repetition penalty `1`, presence and frequency penalties `0`, seed `0`, and empty logit bias across llama.cpp and vLLM; llama.cpp additionally pins its engine-specific samplers to neutral values. Managed vLLM servers ignore repository `generation_config.json` defaults. Changing any control creates a distinct methodology identity and cannot pool with this baseline.
 
-Run-plan schema 6 adds the exact per-model native MTP maximum and embedded/separate predictor mode to methodology identity. These values are pinned per selected engine artifact rather than treated as model-family defaults, so an MTP policy change creates a distinct plan and cannot be resumed or pooled as the prior method.
+Run-plan schema 6 adds the exact per-model native MTP speculative depth and embedded/separate predictor mode to methodology identity. These values are pinned per selected engine artifact rather than treated as model-family defaults, so an MTP policy change creates a distinct plan and cannot be resumed or pooled as the prior method.
 
 ## Supported workload scope
 
