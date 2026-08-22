@@ -3,17 +3,21 @@
 import argparse
 import json
 from pathlib import Path
+import re
 
 from scripts.setup.model_import import inspect_repository, preferred_variant
 
 
-AUDIT_SCHEMA_VERSION = 1
+AUDIT_SCHEMA_VERSION = 2
+CANDIDATE_SCHEMA_VERSION = 2
+VLLM_4BIT_METHODS = {"awq", "bitsandbytes", "compressed-tensors", "gptq"}
 DEFAULT_CANDIDATES = Path(__file__).with_name("model_catalog_candidates.json")
 
 
 def load_candidate_register(path: Path = DEFAULT_CANDIDATES) -> list[dict]:
     value = json.loads(Path(path).read_text(encoding="utf-8"))
-    if value.get("schema_version") != 1 or not isinstance(value.get("candidates"), list):
+    if value.get("schema_version") != CANDIDATE_SCHEMA_VERSION \
+            or not isinstance(value.get("candidates"), list):
         raise ValueError("unsupported model-candidate register")
     candidates = value["candidates"]
     ids = [candidate.get("id") for candidate in candidates]
@@ -36,6 +40,8 @@ def load_candidate_register(path: Path = DEFAULT_CANDIDATES) -> list[dict]:
             raise ValueError(f"candidate requires an upstream source: {candidate.get('id')}")
         if candidate["family"] != "image" and not isinstance(sources.get("gguf"), str):
             raise ValueError(f"candidate requires a GGUF source: {candidate.get('id')}")
+        if candidate["family"] == "llm" and not isinstance(sources.get("vllm"), str):
+            raise ValueError(f"LLM candidate requires a vLLM source: {candidate.get('id')}")
         if candidate.get("gguf_provenance") not in {None, "publisher_exact_variant"}:
             raise ValueError(f"invalid GGUF provenance: {candidate.get('id')}")
         pipeline = sources.get("pipeline")
@@ -97,6 +103,34 @@ def _json_object(value) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+def _is_q4_gguf_artifact(artifact: dict) -> bool:
+    return re.search(r"(?:^|[-_.])Q4(?:[-_.]|$)", str(artifact.get("label", "")).upper()) \
+        is not None
+
+
+def _quantization_metadata(config: dict) -> dict | None:
+    quantization = _json_object(config.get("quantization_config"))
+    if not quantization:
+        return None
+    method = quantization.get("quant_method") or quantization.get("method")
+    bits = quantization.get("bits")
+    if bits is None and quantization.get("load_in_4bit") is True:
+        bits = 4
+    groups = _json_object(quantization.get("config_groups"))
+    group_bits = {
+        _json_object(_json_object(group).get("weights")).get("num_bits")
+        for group in groups.values()
+    }
+    group_bits.discard(None)
+    if bits is None and len(group_bits) == 1:
+        bits = group_bits.pop()
+    return {
+        "method": method,
+        "bits": bits,
+        "format": quantization.get("format") or quantization.get("checkpoint_format"),
+    }
+
+
 def _configuration_metadata(repo: str, revision: str, files: set[str], read_json) -> dict:
     config = _json_object(
         read_json(repo, revision, "config.json") if "config.json" in files else {}
@@ -143,6 +177,7 @@ def _configuration_metadata(repo: str, revision: str, files: set[str], read_json
         "publisher_sampling": {
             key: generation[key] for key in sorted(sampling_keys) if key in generation
         },
+        "quantization": _quantization_metadata(config),
         "pipeline_class": pipeline.get("_class_name"),
     }
 
@@ -162,6 +197,8 @@ def audit_repository(repo: str, role: str, *, api, inspect_fn=inspect_repository
         "pipeline_tag": getattr(info, "pipeline_tag", None),
         "library_name": getattr(info, "library_name", None),
         "custom_code": "custom_code" in (getattr(info, "tags", None) or []),
+        "downloads": getattr(info, "downloads", None),
+        "likes": getattr(info, "likes", None),
     }
     file_records = _files(info)
     try:
@@ -171,7 +208,7 @@ def audit_repository(repo: str, role: str, *, api, inspect_fn=inspect_repository
     except Exception as exc:
         record["configuration"] = None
         record["configuration_error"] = type(exc).__name__
-    if role == "upstream":
+    if role in {"upstream", "vllm"}:
         variant = inspection.vllm_variant
         if variant:
             record["artifact"] = {
@@ -252,6 +289,25 @@ def source_status(candidate: dict, sources: dict) -> tuple[str, list[str]]:
             reasons.append("GGUF provenance does not identify the selected upstream repository")
         if gguf["artifact"] is None:
             reasons.append("GGUF artifact could not be resolved")
+        elif candidate["family"] == "llm" and not _is_q4_gguf_artifact(gguf["artifact"]):
+            reasons.append("GGUF artifact is not a 4-bit Q4 variant")
+        if candidate["family"] == "llm":
+            vllm = sources["vllm"]
+            if vllm["private"] or vllm["gated"]:
+                reasons.append("vLLM repository is not publicly accessible")
+            if not vllm["license"]:
+                reasons.append("vLLM license is not declared")
+            elif upstream["license"] and vllm["license"] != upstream["license"]:
+                reasons.append("vLLM and upstream licenses do not match")
+            if upstream["repo"] not in vllm["base_models"]:
+                reasons.append("vLLM provenance does not identify the selected upstream repository")
+            if vllm["artifact"] is None:
+                reasons.append("vLLM artifact could not be resolved")
+            configuration = vllm.get("configuration")
+            quantization = configuration.get("quantization") if configuration else None
+            if not quantization or quantization.get("method") not in VLLM_4BIT_METHODS \
+                    or quantization.get("bits") != 4:
+                reasons.append("vLLM artifact is not a supported 4-bit quantization")
     else:
         pipeline = sources.get("pipeline") or []
         if not pipeline:

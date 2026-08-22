@@ -25,6 +25,10 @@ def candidate(family="llm", status="source_ready"):
                 "repo": "owner/model-gguf", "revision": "b" * 40,
                 "artifact": {"files": ["model.gguf"]},
             },
+            "vllm": {
+                "repo": "quants/model-awq", "revision": "c" * 40,
+                "artifact": {"files": ["model.safetensors"]},
+            },
         },
     }
 

@@ -54,7 +54,7 @@ class ScreenSpec:
 
 def load_source_audit(path: Path = DEFAULT_AUDIT) -> dict:
     value = json.loads(Path(path).read_text(encoding="utf-8"))
-    if value.get("schema_version") != 1 or not isinstance(value.get("candidates"), list):
+    if value.get("schema_version") != 2 or not isinstance(value.get("candidates"), list):
         raise ValueError("unsupported model source audit")
     return value
 
@@ -87,7 +87,9 @@ def build_screen_spec(candidate: dict, engine: str, output_root: Path,
         if candidate["id"] != "z-image-turbo" or not files:
             raise ValueError("image candidate needs a supported fixed ComfyUI workflow")
     else:
-        role = "gguf" if engine == "llamacpp" else "upstream"
+        role = "gguf" if engine == "llamacpp" else (
+            "vllm" if family == "llm" else "upstream"
+        )
         source = candidate["sources"].get(role)
         artifact = source.get("artifact") if isinstance(source, dict) else None
         if not isinstance(artifact, dict) or not artifact.get("files"):

@@ -64,7 +64,8 @@
       "source_reasons": [
         "upstream other license requires review",
         "upstream LLM has no chat template",
-        "GGUF provenance does not identify the selected upstream repository"
+        "GGUF provenance does not identify the selected upstream repository",
+        "vLLM provenance does not identify the selected upstream repository"
       ],
       "source_status": "blocked"
     },
@@ -89,17 +90,6 @@
       ],
       "source_reasons": [],
       "source_status": "source_ready"
-    },
-    {
-      "family": "llm",
-      "id": "nemotron-nano-9b-v2",
-      "screens": [],
-      "source_reasons": [
-        "upstream other license requires review",
-        "upstream requires custom code review",
-        "GGUF license is not declared"
-      ],
-      "source_status": "blocked"
     },
     {
       "family": "embedding",

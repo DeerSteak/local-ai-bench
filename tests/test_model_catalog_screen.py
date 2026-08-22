@@ -31,6 +31,10 @@ def candidate(*, status="source_ready", family="llm"):
             "gguf": {
                 "repo": "owner/model-gguf", "revision": "b" * 40, "artifact": artifact,
             },
+            "vllm": {
+                "repo": "quants/model-awq", "revision": "c" * 40,
+                "artifact": {"files": ["model.safetensors"], "kind": "safetensors"},
+            },
         },
     }
 
@@ -83,7 +87,7 @@ def test_candidate_lookup_and_screen_plan_are_exact_and_side_effect_free(tmp_pat
     assert "--force-all" in llama.command
 
     vllm = build_screen_spec(record, "vllm", tmp_path, python_executable="python")
-    assert vllm.repo == "owner/model"
+    assert vllm.repo == "quants/model-awq"
     assert vllm.files == ("model.safetensors",)
     assert "--ack-experimental-engine" not in vllm.command
 
@@ -99,6 +103,10 @@ def test_candidate_lookup_and_screen_plan_are_exact_and_side_effect_free(tmp_pat
         "--publisher-sampling-profile",
         str(publisher.output_path.with_name("publisher-sampling.json")),
     )
+
+    embedding = candidate(family="embedding")
+    embedding_vllm = build_screen_spec(embedding, "vllm", tmp_path)
+    assert embedding_vllm.repo == "owner/model"
 
 
 def test_screen_plan_refuses_blocked_and_unimplemented_candidates(tmp_path):

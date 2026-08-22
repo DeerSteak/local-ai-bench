@@ -35,12 +35,15 @@
             "num_experts_per_token": null,
             "num_hidden_layers": 64,
             "pipeline_class": null,
-            "publisher_sampling": {}
+            "publisher_sampling": {},
+            "quantization": null
           },
           "custom_code": false,
+          "downloads": 6320542,
           "gated": false,
           "library_name": null,
           "license": "apache-2.0",
+          "likes": 2568,
           "pipeline_tag": null,
           "private": false,
           "repo": "unsloth/Qwen3.8-27B-GGUF",
@@ -101,16 +104,81 @@
               "temperature": 1.0,
               "top_k": 20,
               "top_p": 0.95
-            }
+            },
+            "quantization": null
           },
           "custom_code": false,
+          "downloads": 2090699,
           "gated": false,
           "library_name": "transformers",
           "license": "apache-2.0",
+          "likes": 12048,
           "pipeline_tag": "image-text-to-text",
           "private": false,
           "repo": "Qwen/Qwen3.8-27B",
           "revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"
+        },
+        "vllm": {
+          "artifact": {
+            "files": [
+              "model-00001-of-00005.safetensors",
+              "model-00002-of-00005.safetensors",
+              "model-00003-of-00005.safetensors",
+              "model-00004-of-00005.safetensors",
+              "model-00005-of-00005.safetensors"
+            ],
+            "kind": "safetensors",
+            "size": 21018000928,
+            "support_files": [
+              "chat_template.jinja",
+              "config.json",
+              "generation_config.json",
+              "merges.txt",
+              "model.safetensors.index.json",
+              "preprocessor_config.json",
+              "tokenizer.json",
+              "tokenizer_config.json",
+              "vocab.json"
+            ]
+          },
+          "base_models": [
+            "Qwen/Qwen3.8-27B"
+          ],
+          "configuration": {
+            "architectures": [
+              "Qwen3_5ForConditionalGeneration"
+            ],
+            "chat_template": "chat_template.jinja",
+            "context_tokens": 262144,
+            "dtype": "bfloat16",
+            "hidden_size": 5120,
+            "model_type": "qwen3_5",
+            "num_experts": null,
+            "num_experts_per_token": null,
+            "num_hidden_layers": 64,
+            "pipeline_class": null,
+            "publisher_sampling": {
+              "do_sample": true,
+              "temperature": 1.0,
+              "top_k": 20,
+              "top_p": 0.95
+            },
+            "quantization": {
+              "bits": 4,
+              "format": "pack-quantized",
+              "method": "compressed-tensors"
+            }
+          },
+          "custom_code": false,
+          "downloads": 384748,
+          "gated": false,
+          "library_name": "transformers",
+          "license": "apache-2.0",
+          "likes": 61,
+          "pipeline_tag": "image-text-to-text",
+          "private": false,
+          "repo": "cyankiwi/Qwen3.8-27B-AWQ-INT4",
+          "revision": "63768c10df38c0395e12ef49edac1bd539eaeeea"
         }
       },
       "status": "source_ready"
@@ -150,12 +218,15 @@
             "num_experts_per_token": null,
             "num_hidden_layers": null,
             "pipeline_class": null,
-            "publisher_sampling": {}
+            "publisher_sampling": {},
+            "quantization": null
           },
           "custom_code": false,
+          "downloads": 446479,
           "gated": false,
           "library_name": null,
           "license": "apache-2.0",
+          "likes": 318,
           "pipeline_tag": "image-text-to-text",
           "private": false,
           "repo": "meta-models/Muse-Glimmer-30B-GGUF",
@@ -198,16 +269,76 @@
               "temperature": 1.0,
               "top_k": 64,
               "top_p": 0.95
-            }
+            },
+            "quantization": null
           },
           "custom_code": false,
+          "downloads": 517564,
           "gated": false,
           "library_name": "transformers",
           "license": "apache-2.0",
+          "likes": 1744,
           "pipeline_tag": "image-text-to-text",
           "private": false,
           "repo": "meta-models/Muse-Glimmer-30B",
           "revision": "a4e59da52a7bc87ae7251dd5545c0dd437c44b68"
+        },
+        "vllm": {
+          "artifact": {
+            "files": [
+              "model-00001-of-00005.safetensors",
+              "model-00002-of-00005.safetensors",
+              "model-00003-of-00005.safetensors",
+              "model-00004-of-00005.safetensors",
+              "model-00005-of-00005.safetensors"
+            ],
+            "kind": "safetensors",
+            "size": 22207974924,
+            "support_files": [
+              "chat_template.jinja",
+              "config.json",
+              "generation_config.json",
+              "model.safetensors.index.json",
+              "processor_config.json",
+              "tokenizer.json",
+              "tokenizer_config.json"
+            ]
+          },
+          "base_models": [
+            "meta-models/Muse-Glimmer-30B"
+          ],
+          "configuration": {
+            "architectures": [
+              "MuseGlimmerForConditionalGeneration"
+            ],
+            "chat_template": "chat_template.jinja",
+            "context_tokens": 131072,
+            "dtype": "bfloat16",
+            "hidden_size": 6656,
+            "model_type": "muse_glimmer",
+            "num_experts": null,
+            "num_experts_per_token": null,
+            "num_hidden_layers": 52,
+            "pipeline_class": null,
+            "publisher_sampling": {
+              "do_sample": false
+            },
+            "quantization": {
+              "bits": 4,
+              "format": null,
+              "method": "bitsandbytes"
+            }
+          },
+          "custom_code": false,
+          "downloads": 16407,
+          "gated": false,
+          "library_name": "transformers",
+          "license": "apache-2.0",
+          "likes": 11,
+          "pipeline_tag": "image-text-to-text",
+          "private": false,
+          "repo": "unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit",
+          "revision": "ecedda395d4d099b477d135a9a573eedaa5a7aad"
         }
       },
       "status": "source_ready"
@@ -222,7 +353,8 @@
       "reasons": [
         "upstream other license requires review",
         "upstream LLM has no chat template",
-        "GGUF provenance does not identify the selected upstream repository"
+        "GGUF provenance does not identify the selected upstream repository",
+        "vLLM provenance does not identify the selected upstream repository"
       ],
       "role": "Newer NVIDIA sparse medium-tier coverage",
       "sources": {
@@ -249,12 +381,15 @@
             "num_experts_per_token": null,
             "num_hidden_layers": null,
             "pipeline_class": null,
-            "publisher_sampling": {}
+            "publisher_sampling": {},
+            "quantization": null
           },
           "custom_code": false,
+          "downloads": 117506,
           "gated": false,
           "library_name": null,
           "license": "other",
+          "likes": 25,
           "pipeline_tag": "text-generation",
           "private": false,
           "repo": "ggml-org/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
@@ -303,16 +438,76 @@
             "num_experts_per_token": 6,
             "num_hidden_layers": 52,
             "pipeline_class": null,
-            "publisher_sampling": {}
+            "publisher_sampling": {},
+            "quantization": null
           },
           "custom_code": false,
+          "downloads": 14556,
           "gated": false,
           "library_name": "transformers",
           "license": "other",
+          "likes": 18,
           "pipeline_tag": "text-generation",
           "private": false,
           "repo": "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16",
           "revision": "434456c9a6753f29d24e23c95d622aaf17111b3b"
+        },
+        "vllm": {
+          "artifact": {
+            "files": [
+              "model-00001-of-00005.safetensors",
+              "model-00002-of-00005.safetensors",
+              "model-00003-of-00005.safetensors",
+              "model-00004-of-00005.safetensors",
+              "model-00005-of-00005.safetensors"
+            ],
+            "kind": "safetensors",
+            "size": 18067131392,
+            "support_files": [
+              "chat_template.jinja",
+              "config.json",
+              "generation_config.json",
+              "model.safetensors.index.json",
+              "quantize_config.json",
+              "tokenizer.json",
+              "tokenizer_config.json"
+            ]
+          },
+          "base_models": [],
+          "configuration": {
+            "architectures": [
+              "NemotronHForCausalLM"
+            ],
+            "chat_template": "chat_template.jinja",
+            "context_tokens": 262144,
+            "dtype": "bfloat16",
+            "hidden_size": 2688,
+            "model_type": "nemotron_h",
+            "num_experts": null,
+            "num_experts_per_token": 6,
+            "num_hidden_layers": null,
+            "pipeline_class": null,
+            "publisher_sampling": {
+              "do_sample": true,
+              "temperature": 1.0,
+              "top_p": 0.95
+            },
+            "quantization": {
+              "bits": 4,
+              "format": "gemm",
+              "method": "awq"
+            }
+          },
+          "custom_code": false,
+          "downloads": 826,
+          "gated": false,
+          "library_name": null,
+          "license": "other",
+          "likes": 0,
+          "pipeline_tag": null,
+          "private": false,
+          "repo": "Local-Axiom-AI/Nemotron-3.5-Lightning-awq",
+          "revision": "1ff11a32e2d8009ea1920c8d0c19e90a3f66f778"
         }
       },
       "status": "blocked"
@@ -350,12 +545,15 @@
             "num_experts_per_token": null,
             "num_hidden_layers": null,
             "pipeline_class": null,
-            "publisher_sampling": {}
+            "publisher_sampling": {},
+            "quantization": null
           },
           "custom_code": false,
+          "downloads": 60133,
           "gated": false,
           "library_name": null,
           "license": "apache-2.0",
+          "likes": 79,
           "pipeline_tag": "image-text-to-text",
           "private": false,
           "repo": "ggml-org/gemma-4-26B-A4B-it-GGUF",
@@ -400,70 +598,21 @@
               "temperature": 1.0,
               "top_k": 64,
               "top_p": 0.95
-            }
+            },
+            "quantization": null
           },
           "custom_code": false,
+          "downloads": 9084565,
           "gated": false,
           "library_name": "transformers",
           "license": "apache-2.0",
+          "likes": 1422,
           "pipeline_tag": "image-text-to-text",
           "private": false,
           "repo": "google/gemma-4-26B-A4B-it",
           "revision": "4d7ae4984b7db7de8f8457170b3f1a419ee76d52"
-        }
-      },
-      "status": "source_ready"
-    },
-    {
-      "family": "llm",
-      "id": "nemotron-nano-9b-v2",
-      "incumbents": [
-        "granite4.1:8b-q4_K_M",
-        "qwen3.5:9b-q4_K_M"
-      ],
-      "name": "NVIDIA Nemotron Nano 9B v2",
-      "reasons": [
-        "upstream other license requires review",
-        "upstream requires custom code review",
-        "GGUF license is not declared"
-      ],
-      "role": "NVIDIA small-tier coverage",
-      "sources": {
-        "gguf": {
-          "artifact": {
-            "files": [
-              "nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q4_K_M.gguf"
-            ],
-            "kind": "gguf",
-            "label": "nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q4_K_M.gguf",
-            "size": 6525629280
-          },
-          "base_models": [
-            "nvidia/NVIDIA-Nemotron-Nano-9B-v2"
-          ],
-          "configuration": {
-            "architectures": [],
-            "chat_template": null,
-            "context_tokens": null,
-            "dtype": null,
-            "hidden_size": null,
-            "model_type": null,
-            "num_experts": null,
-            "num_experts_per_token": null,
-            "num_hidden_layers": null,
-            "pipeline_class": null,
-            "publisher_sampling": {}
-          },
-          "custom_code": false,
-          "gated": false,
-          "library_name": null,
-          "license": null,
-          "pipeline_tag": "text-generation",
-          "private": false,
-          "repo": "bartowski/nvidia_NVIDIA-Nemotron-Nano-9B-v2-GGUF",
-          "revision": "b2daccafb3d123ea94653720a0db1f5db9c698ff"
         },
-        "upstream": {
+        "vllm": {
           "artifact": {
             "files": [
               "model-00001-of-00004.safetensors",
@@ -472,46 +621,58 @@
               "model-00004-of-00004.safetensors"
             ],
             "kind": "safetensors",
-            "size": 17776492512,
+            "size": 17191345100,
             "support_files": [
+              "chat_template.jinja",
               "config.json",
               "generation_config.json",
               "model.safetensors.index.json",
-              "special_tokens_map.json",
+              "processor_config.json",
               "tokenizer.json",
               "tokenizer_config.json"
             ]
           },
           "base_models": [
-            "nvidia/NVIDIA-Nemotron-Nano-12B-v2",
-            "nvidia/NVIDIA-Nemotron-Nano-12B-v2-Base"
+            "google/gemma-4-26B-A4B-it"
           ],
           "configuration": {
             "architectures": [
-              "NemotronHForCausalLM"
+              "Gemma4ForConditionalGeneration"
             ],
-            "chat_template": "tokenizer_config.json",
-            "context_tokens": 131072,
+            "chat_template": "chat_template.jinja",
+            "context_tokens": 262144,
             "dtype": "bfloat16",
-            "hidden_size": 4480,
-            "model_type": "nemotron_h",
-            "num_experts": null,
+            "hidden_size": 2816,
+            "model_type": "gemma4",
+            "num_experts": 128,
             "num_experts_per_token": null,
-            "num_hidden_layers": 56,
+            "num_hidden_layers": 30,
             "pipeline_class": null,
-            "publisher_sampling": {}
+            "publisher_sampling": {
+              "do_sample": true,
+              "temperature": 1.0,
+              "top_k": 64,
+              "top_p": 0.95
+            },
+            "quantization": {
+              "bits": 4,
+              "format": "pack-quantized",
+              "method": "compressed-tensors"
+            }
           },
-          "custom_code": true,
+          "custom_code": false,
+          "downloads": 2671723,
           "gated": false,
           "library_name": "transformers",
-          "license": "other",
-          "pipeline_tag": "text-generation",
+          "license": "apache-2.0",
+          "likes": 93,
+          "pipeline_tag": "image-text-to-text",
           "private": false,
-          "repo": "nvidia/NVIDIA-Nemotron-Nano-9B-v2",
-          "revision": "6533e8de2c68e4536bf7c411d7a3ce5734111476"
+          "repo": "cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit",
+          "revision": "0ef577a5710035bd2d3a3f27e4f5cb2e86a9a9ba"
         }
       },
-      "status": "blocked"
+      "status": "source_ready"
     },
     {
       "family": "embedding",
@@ -550,12 +711,15 @@
             "num_experts_per_token": null,
             "num_hidden_layers": null,
             "pipeline_class": null,
-            "publisher_sampling": {}
+            "publisher_sampling": {},
+            "quantization": null
           },
           "custom_code": false,
+          "downloads": 924,
           "gated": false,
           "library_name": null,
           "license": "gemma",
+          "likes": 0,
           "pipeline_tag": "feature-extraction",
           "private": false,
           "repo": "cstr/embeddinggemma-300m-GGUF",
@@ -582,9 +746,11 @@
           "configuration": null,
           "configuration_error": "GatedRepoError",
           "custom_code": false,
+          "downloads": 2657439,
           "gated": "manual",
           "library_name": "sentence-transformers",
           "license": "gemma",
+          "likes": 1850,
           "pipeline_tag": "sentence-similarity",
           "private": false,
           "repo": "google/embeddinggemma-300m",
@@ -627,12 +793,15 @@
             "num_experts_per_token": null,
             "num_hidden_layers": null,
             "pipeline_class": null,
-            "publisher_sampling": {}
+            "publisher_sampling": {},
+            "quantization": null
           },
           "custom_code": false,
+          "downloads": 89416,
           "gated": false,
           "library_name": null,
           "license": "apache-2.0",
+          "likes": 563,
           "pipeline_tag": null,
           "private": false,
           "repo": "Qwen/Qwen3-Embedding-0.6B-GGUF",
@@ -670,12 +839,15 @@
             "num_experts_per_token": null,
             "num_hidden_layers": 28,
             "pipeline_class": null,
-            "publisher_sampling": {}
+            "publisher_sampling": {},
+            "quantization": null
           },
           "custom_code": false,
+          "downloads": 7206735,
           "gated": false,
           "library_name": "sentence-transformers",
           "license": "apache-2.0",
+          "likes": 1161,
           "pipeline_tag": "feature-extraction",
           "private": false,
           "repo": "Qwen/Qwen3-Embedding-0.6B",
@@ -718,12 +890,15 @@
             "num_experts_per_token": null,
             "num_hidden_layers": null,
             "pipeline_class": null,
-            "publisher_sampling": {}
+            "publisher_sampling": {},
+            "quantization": null
           },
           "custom_code": false,
+          "downloads": 30813,
           "gated": false,
           "library_name": "transformers",
           "license": "apache-2.0",
+          "likes": 120,
           "pipeline_tag": null,
           "private": false,
           "repo": "Qwen/Qwen3-Embedding-4B-GGUF",
@@ -763,12 +938,15 @@
             "num_experts_per_token": null,
             "num_hidden_layers": 36,
             "pipeline_class": null,
-            "publisher_sampling": {}
+            "publisher_sampling": {},
+            "quantization": null
           },
           "custom_code": false,
+          "downloads": 4056154,
           "gated": false,
           "library_name": "sentence-transformers",
           "license": "apache-2.0",
+          "likes": 311,
           "pipeline_tag": "feature-extraction",
           "private": false,
           "repo": "Qwen/Qwen3-Embedding-4B",
@@ -868,12 +1046,15 @@
             "num_experts_per_token": null,
             "num_hidden_layers": null,
             "pipeline_class": "Flux2KleinPipeline",
-            "publisher_sampling": {}
+            "publisher_sampling": {},
+            "quantization": null
           },
           "custom_code": false,
+          "downloads": 526832,
           "gated": false,
           "library_name": "diffusers",
           "license": "apache-2.0",
+          "likes": 874,
           "pipeline_tag": "image-to-image",
           "private": false,
           "repo": "black-forest-labs/FLUX.2-klein-4B",
@@ -973,12 +1154,15 @@
             "num_experts_per_token": null,
             "num_hidden_layers": null,
             "pipeline_class": "ZImagePipeline",
-            "publisher_sampling": {}
+            "publisher_sampling": {},
+            "quantization": null
           },
           "custom_code": false,
+          "downloads": 804129,
           "gated": false,
           "library_name": "diffusers",
           "license": "apache-2.0",
+          "likes": 5131,
           "pipeline_tag": "text-to-image",
           "private": false,
           "repo": "Tongyi-MAI/Z-Image-Turbo",
@@ -988,5 +1172,5 @@
       "status": "source_ready"
     }
   ],
-  "schema_version": 1
+  "schema_version": 2
 }

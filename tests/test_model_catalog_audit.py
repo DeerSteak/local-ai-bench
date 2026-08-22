@@ -13,13 +13,15 @@ from scripts.setup.model_import import ImportVariant, RepositoryInspection
 
 
 def info(*, repo="owner/model", sha="abc123", gated: bool | str = False, private=False,
-         license="apache-2.0", base_model=None, files=(), tags=()):
+         license="apache-2.0", base_model=None, files=(), tags=(),
+         downloads=123, likes=4):
     return SimpleNamespace(
         id=repo, sha=sha, gated=gated, private=private,
         card_data=SimpleNamespace(license=license, base_model=base_model),
         pipeline_tag="text-generation",
         library_name="transformers",
         tags=list(tags),
+        downloads=downloads, likes=likes,
         siblings=[SimpleNamespace(
             rfilename=name, size=size,
             lfs=SimpleNamespace(size=size, sha256=f"sha-{name}"),
@@ -51,29 +53,29 @@ def inspection(repo, *, vllm=True, gguf=True):
 def test_candidate_register_rejects_duplicate_ids_and_missing_sources(tmp_path):
     comparison = {"role": "role", "incumbents": ["incumbent"]}
     path = tmp_path / "candidates.json"
-    path.write_text(json.dumps({"schema_version": 1, "candidates": [
+    path.write_text(json.dumps({"schema_version": 2, "candidates": [
         {"id": "same", "family": "llm", **comparison,
-         "sources": {"upstream": "a/b", "gguf": "c/d"}},
+         "sources": {"upstream": "a/b", "gguf": "c/d", "vllm": "e/f"}},
         {"id": "same", "family": "image", **comparison, "sources": {"upstream": "e/f"}},
     ]}))
     with pytest.raises(ValueError, match="duplicate"):
         load_candidate_register(path)
 
-    path.write_text(json.dumps({"schema_version": 1, "candidates": [
+    path.write_text(json.dumps({"schema_version": 2, "candidates": [
         {"id": "embed", "family": "embedding", **comparison,
          "sources": {"upstream": "a/b"}},
     ]}))
     with pytest.raises(ValueError, match="GGUF"):
         load_candidate_register(path)
 
-    path.write_text(json.dumps({"schema_version": 1, "candidates": [
+    path.write_text(json.dumps({"schema_version": 2, "candidates": [
         {"id": "image", "family": "image", **comparison,
          "sources": {"upstream": "a/b"}},
     ]}))
     with pytest.raises(ValueError, match="pipeline"):
         load_candidate_register(path)
 
-    path.write_text(json.dumps({"schema_version": 1, "candidates": [{
+    path.write_text(json.dumps({"schema_version": 2, "candidates": [{
         "id": "embed", "family": "embedding", **comparison,
         "gguf_provenance": "assumed",
         "sources": {"upstream": "a/b", "gguf": "a/b-GGUF"},
@@ -81,10 +83,18 @@ def test_candidate_register_rejects_duplicate_ids_and_missing_sources(tmp_path):
     with pytest.raises(ValueError, match="GGUF provenance"):
         load_candidate_register(path)
 
-    path.write_text(json.dumps({"schema_version": 1, "candidates": [{
-        "id": "model", "family": "llm", "sources": {"upstream": "a/b", "gguf": "c/d"},
+    path.write_text(json.dumps({"schema_version": 2, "candidates": [{
+        "id": "model", "family": "llm",
+        "sources": {"upstream": "a/b", "gguf": "c/d", "vllm": "e/f"},
     }]}))
     with pytest.raises(ValueError, match="measurable role"):
+        load_candidate_register(path)
+
+    path.write_text(json.dumps({"schema_version": 2, "candidates": [{
+        "id": "model", "family": "llm", **comparison,
+        "sources": {"upstream": "a/b", "gguf": "c/d"},
+    }]}))
+    with pytest.raises(ValueError, match="vLLM source"):
         load_candidate_register(path)
 
 
@@ -97,6 +107,14 @@ def test_candidate_comparisons_reference_current_incumbents_in_the_same_family()
                    for incumbent in candidate["incumbents"])
 
 
+def test_llm_candidates_use_distinct_vllm_sources_and_drop_superseded_nano():
+    candidates = load_candidate_register(DEFAULT_CANDIDATES)
+    assert "nemotron-nano-9b-v2" not in {candidate["id"] for candidate in candidates}
+    for candidate in candidates:
+        if candidate["family"] == "llm":
+            assert candidate["sources"]["vllm"] != candidate["sources"]["upstream"]
+
+
 def test_repository_audit_records_exact_revision_and_artifact_identity():
     api = FakeApi({"owner/model": info(files=(("model.safetensors", 10),))})
     record = audit_repository(
@@ -107,6 +125,8 @@ def test_repository_audit_records_exact_revision_and_artifact_identity():
     assert record["revision"] == "abc123"
     assert record["license"] == "apache-2.0"
     assert record["base_models"] == []
+    assert record["downloads"] == 123
+    assert record["likes"] == 4
     assert record["artifact"] == {
         "kind": "safetensors", "files": ["model.safetensors"],
         "support_files": ["config.json"], "size": 10,
@@ -156,8 +176,14 @@ def test_source_status_surfaces_access_license_and_artifact_gates():
         "repo": "c/d", "revision": "def", "gated": False, "private": True,
         "license": "apache-2.0", "base_models": [], "artifact": None,
     }
+    vllm = {
+        "repo": "e/f", "revision": "ghi", "gated": False, "private": False,
+        "license": "apache-2.0", "base_models": [], "artifact": None,
+        "configuration": None,
+    }
     status, reasons = source_status(
-        {"id": "model", "family": "llm"}, {"upstream": missing, "gguf": gguf},
+        {"id": "model", "family": "llm"},
+        {"upstream": missing, "gguf": gguf, "vllm": vllm},
     )
     assert status == "blocked"
     assert reasons == [
@@ -168,6 +194,9 @@ def test_source_status_surfaces_access_license_and_artifact_gates():
         "GGUF repository is not publicly accessible",
         "GGUF provenance does not identify the selected upstream repository",
         "GGUF artifact could not be resolved",
+        "vLLM provenance does not identify the selected upstream repository",
+        "vLLM artifact could not be resolved",
+        "vLLM artifact is not a supported 4-bit quantization",
     ]
 
 
@@ -206,7 +235,7 @@ def test_full_audit_preserves_candidate_order_and_derives_status():
         candidates, api=api, inspect_fn=lambda repo, **kwargs: inspection(repo),
         read_json=lambda *_args: {},
     )
-    assert result["schema_version"] == 1
+    assert result["schema_version"] == 2
     assert result["candidates"][0]["id"] == "model"
     assert result["candidates"][0]["status"] == "source_ready"
 
@@ -239,8 +268,88 @@ def test_configuration_metadata_records_context_template_and_publisher_sampling(
         "num_hidden_layers": 40, "num_experts": 128, "num_experts_per_token": 4,
         "chat_template": "chat_template.jinja",
         "publisher_sampling": {"temperature": 0.7, "top_p": 0.9},
+        "quantization": None,
         "pipeline_class": None,
     }
+
+
+@pytest.mark.parametrize(("quantization", "expected"), [
+    ({"quant_method": "bitsandbytes", "load_in_4bit": True},
+     {"method": "bitsandbytes", "bits": 4, "format": None}),
+    ({"quant_method": "awq", "bits": 4, "checkpoint_format": "gemm"},
+     {"method": "awq", "bits": 4, "format": "gemm"}),
+    ({"quant_method": "compressed-tensors", "format": "pack-quantized",
+      "config_groups": {"group": {"weights": {"num_bits": 4}}}},
+     {"method": "compressed-tensors", "bits": 4, "format": "pack-quantized"}),
+])
+def test_configuration_metadata_normalizes_supported_four_bit_formats(quantization, expected):
+    api = FakeApi({"owner/model": info(files=(("config.json", 1),))})
+    record = audit_repository(
+        "owner/model", "vllm", api=api,
+        inspect_fn=lambda repo, **kwargs: inspection(repo),
+        read_json=lambda *_args: {"quantization_config": quantization},
+    )
+    assert record["configuration"]["quantization"] == expected
+
+
+def test_llm_source_status_requires_q4_gguf_and_provenanced_four_bit_vllm():
+    upstream = {
+        "repo": "owner/model", "private": False, "gated": False,
+        "license": "apache-2.0", "artifact": {"files": ["model.safetensors"]},
+        "configuration": {"chat_template": "chat_template.jinja"},
+        "custom_code": False,
+    }
+    gguf = {
+        "repo": "owner/model-GGUF", "private": False, "gated": False,
+        "license": "apache-2.0", "base_models": ["owner/model"],
+        "artifact": {"label": "Q4_K_M", "files": ["model-Q4_K_M.gguf"]},
+    }
+    vllm = {
+        "repo": "quants/model-awq", "private": False, "gated": False,
+        "license": "apache-2.0", "base_models": ["owner/model"],
+        "artifact": {"files": ["model.safetensors"]},
+        "configuration": {"quantization": {"method": "awq", "bits": 4}},
+    }
+    candidate = {"id": "model", "family": "llm"}
+    assert source_status(candidate, {
+        "upstream": upstream, "gguf": gguf, "vllm": vllm,
+    }) == ("source_ready", [])
+
+    gguf["artifact"]["label"] = "model-Q8_0.gguf"
+    vllm["configuration"]["quantization"] = {"method": None, "bits": 4}
+    vllm["base_models"] = []
+    assert source_status(candidate, {
+        "upstream": upstream, "gguf": gguf, "vllm": vllm,
+    }) == ("blocked", [
+        "GGUF artifact is not a 4-bit Q4 variant",
+        "vLLM provenance does not identify the selected upstream repository",
+        "vLLM artifact is not a supported 4-bit quantization",
+    ])
+
+
+def test_llm_source_status_rejects_mlx_quantization_metadata():
+    sources = {
+        "upstream": {
+            "repo": "owner/model", "private": False, "gated": False,
+            "license": "apache-2.0", "artifact": {"files": ["model.safetensors"]},
+            "configuration": {"chat_template": "chat_template.jinja"},
+            "custom_code": False,
+        },
+        "gguf": {
+            "repo": "owner/model-GGUF", "private": False, "gated": False,
+            "license": "apache-2.0", "base_models": ["owner/model"],
+            "artifact": {"label": "model-Q4_K_M.gguf", "files": ["model.gguf"]},
+        },
+        "vllm": {
+            "repo": "owner/model-MLX-4bit", "private": False, "gated": False,
+            "license": "apache-2.0", "base_models": ["owner/model"],
+            "artifact": {"files": ["model.safetensors"]},
+            "configuration": {"quantization": {"method": None, "bits": 4}},
+        },
+    }
+    assert source_status({"id": "model", "family": "llm"}, sources) == (
+        "blocked", ["vLLM artifact is not a supported 4-bit quantization"],
+    )
 
 
 def test_unreadable_gated_configuration_is_recorded_without_losing_source_identity():
