@@ -50,7 +50,8 @@ from scripts.setup.model_inventory import (
     find_non_catalog_model_dirs,
 )
 from scripts.setup.model_download import (
-    catalog_model_downloaded, download_hf_files, download_hf_snapshot,
+    catalog_model_downloaded, catalog_mtp_artifact_download_size,
+    catalog_mtp_artifact_downloaded, download_hf_files, download_hf_snapshot,
     provision_catalog_models,
 )
 from scripts.setup import llamacpp_install
@@ -985,6 +986,12 @@ def main() -> None:  # pragma: no cover - real interactive installer
                 m, engine, models_dir=config.MODELS_DIR, vllm_cache=VLLM_CACHE_HOME,
             ):
                 remaining_gb += hardware.parse_size_gb(engine_download_size(m, engine) or "")
+            if not catalog_mtp_artifact_downloaded(
+                m, engine, models_dir=config.MODELS_DIR,
+            ):
+                remaining_gb += hardware.parse_size_gb(
+                    catalog_mtp_artifact_download_size(m, engine) or ""
+                )
 
     remaining_gb += missing_download_size_gb(selected_images, image_asset)
 

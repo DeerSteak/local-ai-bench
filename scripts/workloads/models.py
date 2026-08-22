@@ -174,7 +174,10 @@ LLM_MODELS_XSMALL = sorted([
         "hf_file":        "Qwen_Qwen3.5-4B-Q4_K_M.gguf",
         "vllm_repo":      "cyankiwi/Qwen3.5-4B-AWQ-4bit",
         "vllm_download_size": "~4.1 GB",
-        "native_mtp":     {"vllm": {"num_speculative_tokens": 1}},
+        "native_mtp":     {
+            "llamacpp": {"num_speculative_tokens": 3},
+            "vllm": {"num_speculative_tokens": 1},
+        },
     },
 ], key=lambda m: m["params_b"])
 
@@ -205,7 +208,10 @@ LLM_MODELS_SMALL = sorted([
         "hf_file":        "Qwen_Qwen3.5-9B-Q4_K_M.gguf",
         "vllm_repo":      "cyankiwi/Qwen3.5-9B-AWQ-4bit",
         "vllm_download_size": "~9.1 GB",
-        "native_mtp":     {"vllm": {"num_speculative_tokens": 1}},
+        "native_mtp":     {
+            "llamacpp": {"num_speculative_tokens": 3},
+            "vllm": {"num_speculative_tokens": 1},
+        },
     },
     {
         "tag":            "gemma4:12b-it-q4_K_M",
@@ -248,7 +254,15 @@ LLM_MODELS_MEDIUM = sorted([
         "hf_file":        "Qwen3.8-27B-UD-Q4_K_M.gguf",
         "vllm_repo":      "cyankiwi/Qwen3.8-27B-AWQ-INT4",
         "vllm_download_size": "~21.0 GB",
-        "native_mtp":     {"vllm": {"num_speculative_tokens": 1}},
+        "native_mtp":     {
+            "llamacpp": {
+                "num_speculative_tokens": 3,
+                "draft_repo": "unsloth/Qwen3.8-27B-GGUF",
+                "draft_file": "MTP/mtp-Qwen3.8-27B-Q4_0.gguf",
+                "draft_download_size": "~1.4 GB",
+            },
+            "vllm": {"num_speculative_tokens": 1},
+        },
     },
     {
         "tag":            "nemotron3.5-lightning:30b-a3b-ud-q4_K_M",

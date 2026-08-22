@@ -7,7 +7,7 @@ from scripts.runtime.mtp import (
 from scripts.workloads.models import LLM_MODELS
 
 
-def test_catalog_marks_every_confirmed_native_vllm_mtp_artifact():
+def test_catalog_marks_every_confirmed_native_mtp_artifact():
     supported = {
         model["tag"] for model in native_mtp_models(LLM_MODELS, "vllm")
     }
@@ -18,7 +18,11 @@ def test_catalog_marks_every_confirmed_native_vllm_mtp_artifact():
         "nemotron3.5-lightning:30b-a3b-ud-q4_K_M",
         "nemotron-3-super:120b",
     }
-    assert not native_mtp_models(LLM_MODELS, "llamacpp")
+    assert {model["tag"] for model in native_mtp_models(LLM_MODELS, "llamacpp")} == {
+        "qwen3.5:4b-q4_K_M",
+        "qwen3.5:9b-q4_K_M",
+        "qwen3.8:27b-ud-q4_K_M",
+    }
 
 
 @pytest.mark.parametrize("value", [None, {}, {"vllm": {}}, {"vllm": {"num_speculative_tokens": 0}},
@@ -33,6 +37,29 @@ def test_native_mtp_config_returns_a_defensive_engine_specific_payload():
         "num_speculative_tokens": 2,
     }
     assert native_mtp_config({"native_mtp": source}, "llamacpp") is None
+
+
+def test_native_mtp_config_returns_validated_separate_draft_metadata():
+    source = {"llamacpp": {
+        "num_speculative_tokens": 3,
+        "draft_repo": "owner/model",
+        "draft_file": "MTP/draft.gguf",
+        "draft_download_size": "~1 GB",
+    }}
+    assert native_mtp_config({"native_mtp": source}, "llamacpp") == {
+        "num_speculative_tokens": 3,
+        "draft_repo": "owner/model",
+        "draft_file": "MTP/draft.gguf",
+    }
+
+
+@pytest.mark.parametrize("config", [
+    {"num_speculative_tokens": 3, "draft_repo": "owner/model"},
+    {"num_speculative_tokens": 3, "draft_file": "draft.gguf"},
+    {"num_speculative_tokens": 3, "draft_repo": "", "draft_file": "draft.gguf"},
+])
+def test_native_mtp_config_rejects_incomplete_separate_draft_metadata(config):
+    assert native_mtp_config({"native_mtp": {"llamacpp": config}}, "llamacpp") is None
 
 
 def test_mtp_mode_states_expand_comparison_mode():

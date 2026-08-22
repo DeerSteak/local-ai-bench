@@ -21,7 +21,16 @@ def native_mtp_config(model: dict, engine_name: str) -> dict | None:
     tokens = config.get("num_speculative_tokens")
     if not isinstance(tokens, int) or isinstance(tokens, bool) or tokens <= 0:
         return None
-    return {"num_speculative_tokens": tokens}
+    resolved: dict = {"num_speculative_tokens": tokens}
+    draft_repo = config.get("draft_repo")
+    draft_file = config.get("draft_file")
+    if draft_repo is not None or draft_file is not None:
+        if not isinstance(draft_repo, str) or not draft_repo.strip():
+            return None
+        if not isinstance(draft_file, str) or not draft_file.strip():
+            return None
+        resolved.update({"draft_repo": draft_repo, "draft_file": draft_file})
+    return resolved
 
 
 def native_mtp_models(models: Sequence[dict], engine_name: str) -> list[dict]:
