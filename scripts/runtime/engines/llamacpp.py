@@ -28,6 +28,7 @@ from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
 from scripts.setup.custom_models import custom_model
 from scripts.setup.intel_xpu_install import oneapi_environment
 from scripts.runtime.model_identity import model_tag_slug
+from scripts.runtime.mtp import native_mtp_config
 from scripts.runtime.generation_guard import looks_like_loop
 from scripts.runtime.crash_cache import record_crash
 from scripts.runtime.shared import (
@@ -70,10 +71,12 @@ class LlamaCppEngine(InferenceEngine):
         self._loaded_num_ctx: int | None = None
         self._loaded_embedding: bool | None = None
         self._loaded_n_parallel: int = 1
+        self._loaded_mtp_config: dict | None = None
         self._loaded_model_placement: dict = {}
         # Remembered for the lazy spawn in _ensure_model — no tag yet at start()/ensure_running() time.
         self._gpu_visible = True
         self._cpu_only_active = False
+        self._mtp_enabled = False
         self._process_env: dict[str, str] | None = None
         self._model_lock = threading.RLock()
 
@@ -110,6 +113,30 @@ class LlamaCppEngine(InferenceEngine):
 
     def model_artifacts_are_local(self) -> bool:
         return True
+
+    def set_mtp_enabled(self, enabled: bool) -> None:
+        self._mtp_enabled = bool(enabled)
+
+    def _native_mtp_config(self, tag: str, *, embedding: bool = False) -> dict | None:
+        if not self._mtp_enabled or embedding:
+            return None
+        model = next((model for model in LLM_MODELS if model["tag"] == tag), None)
+        if model is None:
+            raise RuntimeError(f"{tag} has no cataloged native MTP configuration for llama.cpp")
+        config = native_mtp_config(model, self.name)
+        if config is None:
+            raise RuntimeError(f"{tag} does not support native MTP with llama.cpp")
+        return config
+
+    def _mtp_draft_path(self, tag: str, mtp_config: dict | None) -> Path | None:
+        if mtp_config is None or "draft_file" not in mtp_config:
+            return None
+        path = self._models_dir() / self._slug(tag) / Path(mtp_config["draft_file"]).name
+        if not path.is_file():
+            raise RuntimeError(
+                f"{tag} native MTP predictor is missing at {path} — rerun setup to download it"
+            )
+        return path
 
     def compatibility_metadata(self, tag: str) -> tuple[dict, str | None]:
         from scripts.setup.model_compatibility import gguf_metadata
@@ -256,6 +283,7 @@ class LlamaCppEngine(InferenceEngine):
         self._loaded_num_ctx = None
         self._loaded_embedding = None
         self._loaded_n_parallel = 1
+        self._loaded_mtp_config = None
         self._loaded_model_placement = {}
 
     def is_connection_crash(self, exc: Exception) -> bool:
@@ -287,6 +315,10 @@ class LlamaCppEngine(InferenceEngine):
         paths = self._resolve_model_files(tag)
         if paths is None:
             raise ValueError(f"cannot identify local model artifact for resume: {tag}")
+        mtp_config = self._native_mtp_config(tag)
+        draft_path = self._mtp_draft_path(tag, mtp_config)
+        if draft_path is not None:
+            paths.append(draft_path)
         return tuple(path.resolve() for path in paths)
 
     def resume_runtime_paths(self) -> dict[str, Path]:
@@ -433,11 +465,14 @@ class LlamaCppEngine(InferenceEngine):
                        n_parallel: int = 1, deadline: float | None = None) -> None:
         """Ensure llama-server is serving `tag` at `num_ctx`, respawning on any
         mismatch (model/context/mode/parallel-slots) — llama-server is single-model-per-process."""
-        want = (tag, num_ctx, embedding, n_parallel)
+        mtp_config = self._native_mtp_config(tag, embedding=embedding)
+        draft_path = self._mtp_draft_path(tag, mtp_config)
+        want = (tag, num_ctx, embedding, n_parallel, mtp_config)
 
         def ready():
             have = (self._loaded_tag, self._loaded_num_ctx,
-                    self._loaded_embedding, self._loaded_n_parallel)
+                    self._loaded_embedding, self._loaded_n_parallel,
+                    self._loaded_mtp_config)
             return want == have and self._proc is not None and self._proc.poll() is None
 
         if ready():
@@ -484,6 +519,13 @@ class LlamaCppEngine(InferenceEngine):
                 args += ["-c", str(num_ctx * n_parallel)]
             if embedding:
                 args += ["--embeddings", "--pooling", "mean"]
+            if mtp_config is not None:
+                args += [
+                    "--spec-type", "draft-mtp",
+                    "--spec-draft-n-max", str(mtp_config["num_speculative_tokens"]),
+                ]
+                if draft_path is not None:
+                    args += ["--spec-draft-model", str(draft_path)]
             # Always pinned, even at 1 — see docs/engines.md's "--parallel is always pinned".
             args += ["--parallel", str(n_parallel)]
 
@@ -522,6 +564,7 @@ class LlamaCppEngine(InferenceEngine):
                     self._loaded_num_ctx = num_ctx
                     self._loaded_embedding = embedding
                     self._loaded_n_parallel = n_parallel
+                    self._loaded_mtp_config = mtp_config
                     self._loaded_model_placement = self.parse_model_placement(
                         self.tail_log(self.SPAWN_LOG_LINES))
                     return

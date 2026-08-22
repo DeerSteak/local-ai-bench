@@ -36,6 +36,8 @@ def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
             f"{engine_name}:flash_attention=on",
             f"{engine_name}:repack={'disabled' if config.LLAMACPP_NO_REPACK else 'enabled'}",
         ))
+        if mtp_enabled and selected & TEXT_GENERATION_STAGES:
+            optimizations.append("llamacpp:native_mtp=on")
     if "vllmbench" in selected:
         optimizations.append(f"vllm:bench_iters={config.VLLMBENCH_ITERS}")
     if engine_name == "vllm" and selected & (ENGINE_STAGES | {"vllmbench"}):
