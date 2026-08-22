@@ -27,11 +27,13 @@ from scripts.setup.model_download import (
 )
 from scripts.setup.model_import import ImportVariant, inspect_repository
 from scripts.setup.runtime_identity import repository_revision
+from scripts.workloads.llm_conversation_benchmark import LLMConversationBenchmark
 
 
 DEFAULT_AUDIT = config.SCRIPT_DIR / "docs" / "model-catalog-source-audit-v6.json"
 DEFAULT_OUTPUT_ROOT = config.RESULTS_DIR / "catalog-audit"
 SCREEN_SCHEMA_VERSION = 1
+MIN_SCREEN_GENERATED_TOKENS = LLMConversationBenchmark.CONV_STEP_MIN
 
 
 @dataclass(frozen=True)
@@ -247,6 +249,22 @@ def compatibility_screen_errors(result: dict, spec: ScreenSpec) -> list[str]:
         for context in dict.fromkeys(labels):
             if not isinstance(model.get(context), dict) or model[context].get("valid_runs", 0) < 1:
                 errors.append(f"{label} {context} evidence is missing")
+        for context, case in model.items():
+            if not isinstance(case, dict) or case.get("valid_runs", 0) < 1:
+                errors.append(f"{label} {context} has no valid measurement")
+                continue
+            samples = case.get("valid_samples") or []
+            if not any(
+                isinstance(sample, dict)
+                and isinstance(sample.get("generated_tokens"), int)
+                and not isinstance(sample["generated_tokens"], bool)
+                and sample["generated_tokens"] >= MIN_SCREEN_GENERATED_TOKENS
+                for sample in samples
+            ):
+                errors.append(
+                    f"{label} {context} generated fewer than "
+                    f"{MIN_SCREEN_GENERATED_TOKENS} measurable tokens"
+                )
     return errors
 
 

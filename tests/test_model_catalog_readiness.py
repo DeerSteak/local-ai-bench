@@ -52,7 +52,7 @@ def write_screen(tmp_path: Path, record: dict, engine="llamacpp"):
     directory = tmp_path / "screen"
     directory.mkdir(parents=True)
     result_path = directory / "result.json"
-    sample = {"valid_runs": 1}
+    sample = {"valid_runs": 1, "valid_samples": [{"generated_tokens": 32}]}
     result = {
         "engine_version": "1.2.3",
         "profile": {"os": "Linux", "arch": "x86_64", "ram_gb": 32,

@@ -50,7 +50,7 @@ def spec(family="llm"):
 
 def complete_result(screen_spec):
     tag = screen_spec.tag
-    sample = {"valid_runs": 1}
+    sample = {"valid_runs": 1, "valid_samples": [{"generated_tokens": 32}]}
     return {
         "run": {
             "status": "complete",
@@ -204,6 +204,19 @@ def test_complete_screen_requires_recovery_preflight_sampling_and_both_context_p
         "resolved sampler identity is missing or incorrect",
         "chat formatting probe did not pass",
         "conversation 32K evidence is missing",
+    ]
+
+
+def test_complete_screen_rejects_short_or_invalid_checkpoint_output():
+    screen_spec = spec()
+    result = complete_result(screen_spec)
+    result["llm_conversation"][screen_spec.tag].update({
+        "8K": {"valid_runs": 0, "valid_samples": []},
+        "16K": {"valid_runs": 1, "valid_samples": [{"generated_tokens": 4}]},
+    })
+    assert compatibility_screen_errors(result, screen_spec) == [
+        "conversation 8K has no valid measurement",
+        "conversation 16K generated fewer than 32 measurable tokens",
     ]
 
 
