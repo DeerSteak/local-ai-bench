@@ -195,7 +195,7 @@ bash run_bench.sh --tests conv
 bash run_bench.sh --tests mcq math reasoning code tool
 
 # Cap at small-tier models and below — skips medium/large LLMs and
-# medium/large-tier image models (SD3.5 Large, Flux.1-dev, Flux.2-dev),
+# medium/large-tier image models (Z-Image Turbo, Flux.1-dev, Flux.2-dev),
 # leaving SD1.5 and SDXL for the image test
 bash run_bench.sh --maxtier small
 

@@ -261,9 +261,8 @@ Independently of that, if completing the downloads would leave less than 10% of 
 
 ## HuggingFace token
 
-Every LLM and embedding model is downloaded as a GGUF file from HuggingFace, resolved from the `hf_repo`/`hf_file` fields in `scripts/workloads/models.py` into `models/llamacpp/<tag-slug>/` (see [Engines](engines.md#llamacppengine)). Image checkpoints use the same HuggingFace download client but stay under `models/comfyui/`. Public repositories can be downloaded without an account or token. SD3.5 Large, Flux.1-dev, and Flux.2-dev are gated and require a free account, license acceptance, and an access token:
+Every LLM and embedding model is downloaded as a GGUF file from HuggingFace, resolved from the `hf_repo`/`hf_file` fields in `scripts/workloads/models.py` into `models/llamacpp/<tag-slug>/` (see [Engines](engines.md#llamacppengine)). Image pipelines use the same HuggingFace download client but keep their primary weights, text encoders, and VAEs in the matching managed subdirectories under `models/comfyui/`. Public repositories, including the complete Z-Image Turbo pipeline, can be downloaded without an account or token. Flux.1-dev and Flux.2-dev are gated and require a free account, license acceptance, and an access token:
 
-- https://huggingface.co/stabilityai/stable-diffusion-3.5-large
 - https://huggingface.co/black-forest-labs/FLUX.1-dev
 - https://huggingface.co/black-forest-labs/FLUX.2-dev
 

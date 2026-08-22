@@ -176,7 +176,7 @@ Measured generation results record requested, completed, and valid sample counts
 
 ## Image Generation
 
-Five models are tested at 1024×1024 and 1536×1536 — except Stable Diffusion 1.5, which uses 512×512 and 768×768 instead (see below). Any model whose checkpoint is absent from `models/comfyui/checkpoints/` is skipped automatically; setup downloads selected checkpoints there and configures the resolved ComfyUI installation to search that managed path.
+Five models are tested at 1024×1024 and 1536×1536 — except Stable Diffusion 1.5, which uses 512×512 and 768×768 instead (see below). Any model whose primary weights are absent from its managed `models/comfyui/` subdirectory is skipped automatically; setup downloads every selected pipeline asset and configures the resolved ComfyUI installation to search that managed path.
 
 Each measured run (`--runs`, default 3) uses a different seed, starting at 42 — an identical seed and workflow would let ComfyUI cache every node and return a cached result almost instantly instead of actually re-running generation. Every image model also gets exactly one warmup at its first resolution with seed 41; image generation does not use `--warmup`. Each generation gets twice `--timeout` (600 seconds by default).
 
@@ -184,19 +184,21 @@ Between models, ComfyUI is asked to unload whatever checkpoint it has resident (
 
 If a model's warmup crashes the ComfyUI process outright (e.g. a native segfault while loading text-encoder weights), the benchmark detects the dead server and restarts it before moving to the next model, so a crash on one checkpoint doesn't silently doom every remaining image model to an instant connection-refused failure. If ComfyUI can't be restarted at all, the run stops there and preserves whatever image results were already collected.
 
-| Model | Checkpoint | Steps | Size | Tier | HuggingFace login |
+| Model | Primary weights | Steps | Required downloads | Tier | HuggingFace login |
 |---|---|---|---|---|---|
 | Stable Diffusion 1.5 | `v1-5-pruned-emaonly.safetensors` | 20 | ~4.3 GB | xsmall | No |
 | SDXL | `sd_xl_base_1.0.safetensors` | 20 | ~7.0 GB | small | No |
-| SD3.5 Large | `sd3.5_large.safetensors` | 28 | ~16.5 GB | medium | Yes (free) |
-| Flux.1-dev | `flux1-dev.safetensors` | 20 | ~23.9 GB | large | Yes (free) |
-| Flux.2-dev | `flux2-dev.safetensors` | 28 | ~64.5 GB | large | Yes (free) |
+| Z-Image Turbo | `z_image_turbo_bf16.safetensors` | 8 | ~20.9 GB | medium | No |
+| Flux.1-dev | `flux1-dev.safetensors` | 20 | ~34.4 GB | large | Yes (free) |
+| Flux.2-dev | `flux2-dev.safetensors` | 28 | ~83.0 GB | large | Yes (free) |
 
 **Stable Diffusion 1.5** was trained at 512×512; testing it at the other models' 1024/1536 resolutions produces visibly degraded (duplicated-subject) output, so it gets its own native-range pair — 512×512 and 768×768 (the same 1.5x step used for everything else) — instead of the shared resolution list.
 
-`--maxtier` caps image models the same way it caps LLMs. `--image-models` then narrows that tier-capped list using the stable short IDs in the table (`sd15`, `sdxl`, `sd35-large`, `flux-dev`, `flux2-dev`) or case-sensitive wildcards such as `"sd*"` — see [CLI Reference](cli-reference.md).
+The required-download figures include the primary weights and every separate text encoder or VAE, with each file rounded up to the next 0.1 GB. Z-Image Turbo uses Comfy-Org's core-node workflow: its BF16 transformer under `diffusion_models/`, Qwen 3 4B text encoder under `text_encoders/`, shared `ae.safetensors` VAE, AuraFlow shift 3.0, eight `res_multistep` steps, CFG 1.0, and the `simple` scheduler. Its three files total about 20.7 GB before conservative per-file rounding.
 
-SD3.5 Large, Flux.1-dev, and Flux.2-dev require a free HuggingFace account and license acceptance — see [HuggingFace token](setup.md#huggingface-token) in the setup guide.
+`--maxtier` caps image models the same way it caps LLMs. `--image-models` then narrows that tier-capped list using the stable short IDs in the table (`sd15`, `sdxl`, `z-image-turbo`, `flux-dev`, `flux2-dev`) or case-sensitive wildcards such as `"sd*"` — see [CLI Reference](cli-reference.md).
+
+Flux.1-dev and Flux.2-dev require a free HuggingFace account and license acceptance — see [HuggingFace token](setup.md#huggingface-token) in the setup guide. Z-Image Turbo is public under Apache 2.0 and needs no account or token. SD3.5 Large was replaced in the active catalog but remains recognized by the dashboard so existing results continue to render.
 
 Generated sample images are saved under `results/images_<hostname>_<timestamp>/` — see [Project Structure](project-structure.md). If `--out` puts the main JSON elsewhere, the image folder remains under `results/` and is named from that output stem.
 
