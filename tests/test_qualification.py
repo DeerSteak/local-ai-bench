@@ -84,6 +84,25 @@ def test_reviewed_radeon_wsl2_qualification_is_supported_with_images():
 
 
 @pytest.mark.parametrize(("runtime", "runtime_version", "entry_id"), [
+    ("llamacpp", "0.1.2-dev", "ryzen-ai-halo-llamacpp-rocm"),
+    ("vllm", "0.27.1+rocm723", "ryzen-ai-halo-vllm-rocm"),
+])
+def test_reviewed_ryzen_ai_halo_qualifications_are_supported(
+        runtime, runtime_version, entry_id):
+    evidence = qualification_entry(
+        "linux", "x86_64", runtime, "rocm", runtime_version,
+        accelerator=(
+            "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S\n"
+            "AMD Radeon Graphics 125 GB"
+        ),
+    )
+    assert evidence is not None and evidence["id"] == entry_id
+    assert derive_support_level(evidence, "6.0-pre8") == "supported"
+    if runtime == "llamacpp":
+        assert derive_image_support_level(evidence, "6.0-pre8") == "supported"
+
+
+@pytest.mark.parametrize(("runtime", "runtime_version", "entry_id"), [
     ("llamacpp", "0.1.2-dev", "radeon-linux-llamacpp-rocm"),
     ("vllm", "0.27.1+rocm723", "radeon-linux-vllm-rocm"),
 ])
@@ -159,16 +178,6 @@ def test_reviewed_dgx_spark_vllm_qualification_is_supported():
     )
     assert evidence is not None and evidence["id"] == "dgx-spark-vllm-cuda"
     assert derive_support_level(evidence, "6.0-pre8") == "supported"
-
-
-def test_reviewed_ryzen_ai_halo_llamacpp_runtime_is_supported_without_images():
-    evidence = qualification_entry(
-        "linux", "x86_64", "llamacpp", "rocm", "0.1.2-dev",
-        accelerator="AMD Ryzen AI MAX+ 395 w/ Radeon 8060S 125 GB",
-    )
-    assert evidence is not None and evidence["id"] == "ryzen-ai-halo-llamacpp-rocm"
-    assert derive_support_level(evidence, "6.0-pre8") == "supported"
-    assert derive_image_support_level(evidence, "6.0-pre8") == "unverified"
 
 
 @pytest.mark.parametrize(("runtime", "runtime_version", "entry_id"), [

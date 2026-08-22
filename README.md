@@ -15,9 +15,9 @@ cd local-ai-bench
 
 | Platform | Script | What it can install |
 |---|---|---|
-| macOS | `bash setup.sh` | Homebrew, Python, llama.cpp (includes llama-bench, llama-batched-bench), ComfyUI |
-| Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench, llama-batched-bench), ComfyUI |
-| Windows | `setup.bat` | Python, llama.cpp (CUDA on NVIDIA, Vulkan otherwise; includes llama-bench and llama-batched-bench), ComfyUI portable |
+| macOS | `bash setup.sh` | Homebrew, Python, llama.cpp with Metal, and ComfyUI with MPS |
+| Linux / WSL2 / DGX Spark | `bash setup.sh` | Python, llama.cpp with the detected CUDA, ROCm, or SYCL/XPU backend, ComfyUI, and vLLM where the platform matrix below records support |
+| Windows | `setup.bat` | Python, llama.cpp with CUDA on NVIDIA, Vulkan on AMD, or SYCL/XPU on Intel, plus ComfyUI portable; see the Intel Smart App Control exception below |
 
 `setup.sh` / `setup.bat` first ensure Python and create or reuse `bench-env/`. The setup assistant then shows its installation plan for approval before installing Python packages, llama.cpp, or models, and opens an interactive model picker so you choose every model download before the unattended installation phase begins.
 
@@ -46,6 +46,40 @@ launch_dashboard.bat
 Desktop users can double-click **Launch Local AI Bench Dashboard** (`.command`, `.desktop`, or `.bat`) instead.
 
 For platform-specific notes, the HuggingFace token flow, and what setup actually installs, see [Setup](docs/setup.md).
+
+---
+
+## Qualified platforms
+
+Local AI Bench publishes support only after the ordinary benchmark completes every workload required for that exact platform, runtime version, backend, and accelerator. Sixteen of the seventeen original runtime targets are qualified for v6.0-pre8. The remaining target is Intel Arc Pro B65 with llama.cpp SYCL/XPU on Windows: enforced Smart App Control blocked the official runtime DLLs on the tested host, so that path is not supported there and remains unverified on other Windows systems.
+
+<!-- qualification-matrix:start -->
+16 of 17 target runtime combinations are supported by current evidence.
+
+| Target | Platform | Architecture | Runtime | Backend | Accelerator | Runtime support | ComfyUI images | Evidence |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `macos-m5-pro-llamacpp-metal` | macos | arm64 | llamacpp | metal | M5 Pro | Supported | Supported | 0.1.2-dev, 2026-08-18, suite 6.0-pre8 |
+| `geforce-windows-llamacpp-cuda` | windows | x86_64 | llamacpp | cuda | NVIDIA GeForce | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
+| `radeon-windows-llamacpp-vulkan` | windows | x86_64 | llamacpp | vulkan | AMD Radeon | Supported | Supported | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
+| `intel-arc-windows-llamacpp-sycl` | windows | x86_64 | llamacpp | xpu | B65 | Unverified | Unverified | No qualification record |
+| `geforce-wsl2-llamacpp-cuda` | wsl2 | x86_64 | llamacpp | cuda | NVIDIA GeForce | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
+| `geforce-wsl2-vllm-cuda` | wsl2 | x86_64 | vllm | cuda | NVIDIA GeForce | Supported | Not applicable | 0.27.1, 2026-08-19, suite 6.0-pre8 |
+| `radeon-wsl2-llamacpp-rocm` | wsl2 | x86_64 | llamacpp | rocm | Radeon RX 9060 XT | Supported | Supported | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
+| `nvidia-linux-llamacpp-cuda` | linux | x86_64 | llamacpp | cuda | NVIDIA | Supported | Supported | 0.1.2-dev, 2026-08-22, suite 6.0-pre8 |
+| `nvidia-linux-vllm-cuda` | linux | x86_64 | vllm | cuda | NVIDIA | Supported | Not applicable | 0.27.1, 2026-08-22, suite 6.0-pre8 |
+| `radeon-linux-llamacpp-rocm` | linux | x86_64 | llamacpp | rocm | Radeon RX 9060 XT | Supported | Supported | 0.1.2-dev, 2026-08-21, suite 6.0-pre8 |
+| `radeon-linux-vllm-rocm` | linux | x86_64 | vllm | rocm | Radeon RX 9060 XT | Supported | Not applicable | 0.27.1+rocm723, 2026-08-21, suite 6.0-pre8 |
+| `intel-arc-linux-llamacpp-sycl` | linux | x86_64 | llamacpp | xpu | 8086:e222 | Supported | Supported | 0.1.2-dev, 2026-08-21, suite 6.0-pre8 |
+| `intel-arc-linux-vllm-xpu` | linux | x86_64 | vllm | xpu | 8086:e222 | Supported | Not applicable | 0.27.1+xpu, 2026-08-21, suite 6.0-pre8 |
+| `ryzen-ai-halo-llamacpp-rocm` | linux | x86_64 | llamacpp | rocm | Radeon 8060S | Supported | Supported | 0.1.2-dev, 2026-08-21, suite 6.0-pre8 |
+| `ryzen-ai-halo-vllm-rocm` | linux | x86_64 | vllm | rocm | Radeon 8060S | Supported | Not applicable | 0.27.1+rocm723, 2026-08-21, suite 6.0-pre8 |
+| `dgx-spark-llamacpp-cuda` | linux | aarch64 | llamacpp | cuda | NVIDIA GB10 | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
+| `dgx-spark-vllm-cuda` | linux | aarch64 | vllm | cuda | NVIDIA GB10 | Supported | Not applicable | 0.27.1, 2026-08-19, suite 6.0-pre8 |
+<!-- qualification-matrix:end -->
+
+**Supported** means complete reviewed smallest-model evidence exists for the exact combination. **Experimental** means complete evidence exists but is stale. **Unverified** means no complete matching evidence has been recorded; it does not by itself mean the runtime is broken. ComfyUI image support is graded separately and is not applicable to vLLM.
+
+Qualification exercises every applicable workload with the smallest compatible LLM, embedding model, and, for llama.cpp, Stable Diffusion 1.5. It proves functional completion of the shipped setup and benchmark path, not full-catalog performance or full-bank accuracy. See [Platform qualification](docs/qualification.md) for the procedure, pass contract, artifact policy, and exact scope.
 
 ---
 

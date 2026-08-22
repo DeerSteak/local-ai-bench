@@ -328,23 +328,55 @@ QUALIFICATION_MATRIX: tuple[dict, ...] = (
         "runtime": "llamacpp",
         "runtime_version": "0.1.2-dev",
         "backend": "rocm",
-        "accelerator": "AMD Ryzen AI MAX+ 395 w/ Radeon 8060S 125 GB",
-        "qualified_at": "2026-08-20",
+        "accelerator": (
+            "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S\n"
+            "AMD Radeon Graphics 125 GB"
+        ),
+        "qualified_at": "2026-08-21",
         "suite_version": "6.0-pre8",
         "coverage": {
             "workloads": [
                 "llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool",
-                "conc_tool", "conc_chat", "sustained", "llamabench", "llamabenchconc",
+                "conc_tool", "conc_chat", "sustained", "llamabench", "llamabenchconc", "img",
             ],
-            "models": ["gemma3:1b-it-q4_K_M", "nomic-embed-text"],
+            "models": ["gemma3:1b-it-q4_K_M", "nomic-embed-text", "sd15"],
             "notes": (
-                "Smallest-model functional coverage for every llama.cpp workload using "
-                "native build 10486 (7acdbb1); ComfyUI image generation remains unverified."
+                "Smallest-model functional coverage for every compatible workload; "
+                "not performance qualification."
             ),
         },
         "evidence": [
             "qualification-evidence/ryzen-ai-halo-llamacpp-rocm/"
             "results_qualification_ryzen-ai-halo-llamacpp-rocm.json",
+        ],
+    },
+    {
+        "id": "ryzen-ai-halo-vllm-rocm",
+        "platform": "linux",
+        "architecture": "x86_64",
+        "runtime": "vllm",
+        "runtime_version": "0.27.1+rocm723",
+        "backend": "rocm",
+        "accelerator": (
+            "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S\n"
+            "AMD Radeon Graphics 125 GB"
+        ),
+        "qualified_at": "2026-08-21",
+        "suite_version": "6.0-pre8",
+        "coverage": {
+            "workloads": [
+                "llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool",
+                "conc_tool", "conc_chat", "sustained", "vllmbench",
+            ],
+            "models": ["granite4.1:3b-q4_K_M", "nomic-embed-text"],
+            "notes": (
+                "Smallest complete-model functional coverage for every compatible workload; "
+                "not performance qualification."
+            ),
+        },
+        "evidence": [
+            "qualification-evidence/ryzen-ai-halo-vllm-rocm/"
+            "results_qualification_ryzen-ai-halo-vllm-rocm.json",
         ],
     },
     {
@@ -464,9 +496,7 @@ QUALIFICATION_MATRIX: tuple[dict, ...] = (
         ],
     },
 )
-QUALIFICATION_TARGETS = tuple(
-    {key: value for key, value in target.items() if key != "id"} for target in TARGETS
-)
+QUALIFICATION_TARGETS = tuple(dict(target) for target in TARGETS)
 
 ENTRY_KEYS = {
     "id", "platform", "architecture", "runtime", "runtime_version", "backend",

@@ -7,25 +7,27 @@
 This generated matrix reports the current evidence-backed runtime and ComfyUI image status of each platform path. One qualification invocation may exercise both components, but each is graded independently; installation availability does not by itself establish support.
 
 <!-- qualification-matrix:start -->
-| Platform | Architecture | Runtime | Backend | Accelerator | Runtime support | ComfyUI images | Evidence |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| macos | arm64 | llamacpp | metal | M5 Pro | Supported | Supported | 0.1.2-dev, 2026-08-18, suite 6.0-pre8 |
-| windows | x86_64 | llamacpp | cuda | NVIDIA GeForce | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
-| windows | x86_64 | llamacpp | vulkan | AMD Radeon | Supported | Supported | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
-| windows | x86_64 | llamacpp | xpu | B65 | Unverified | Unverified | No qualification record |
-| wsl2 | x86_64 | llamacpp | cuda | NVIDIA GeForce | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
-| wsl2 | x86_64 | vllm | cuda | NVIDIA GeForce | Supported | Not applicable | 0.27.1, 2026-08-19, suite 6.0-pre8 |
-| wsl2 | x86_64 | llamacpp | rocm | Radeon RX 9060 XT | Supported | Supported | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
-| linux | x86_64 | llamacpp | cuda | NVIDIA | Supported | Supported | 0.1.2-dev, 2026-08-22, suite 6.0-pre8 |
-| linux | x86_64 | vllm | cuda | NVIDIA | Supported | Not applicable | 0.27.1, 2026-08-22, suite 6.0-pre8 |
-| linux | x86_64 | llamacpp | rocm | Radeon RX 9060 XT | Supported | Supported | 0.1.2-dev, 2026-08-21, suite 6.0-pre8 |
-| linux | x86_64 | vllm | rocm | Radeon RX 9060 XT | Supported | Not applicable | 0.27.1+rocm723, 2026-08-21, suite 6.0-pre8 |
-| linux | x86_64 | llamacpp | xpu | 8086:e222 | Supported | Supported | 0.1.2-dev, 2026-08-21, suite 6.0-pre8 |
-| linux | x86_64 | vllm | xpu | 8086:e222 | Supported | Not applicable | 0.27.1+xpu, 2026-08-21, suite 6.0-pre8 |
-| linux | x86_64 | llamacpp | rocm | Radeon 8060S | Supported | Unverified | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
-| linux | x86_64 | vllm | rocm | Radeon 8060S | Unverified | Not applicable | No qualification record |
-| linux | aarch64 | llamacpp | cuda | NVIDIA GB10 | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
-| linux | aarch64 | vllm | cuda | NVIDIA GB10 | Supported | Not applicable | 0.27.1, 2026-08-19, suite 6.0-pre8 |
+16 of 17 target runtime combinations are supported by current evidence.
+
+| Target | Platform | Architecture | Runtime | Backend | Accelerator | Runtime support | ComfyUI images | Evidence |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `macos-m5-pro-llamacpp-metal` | macos | arm64 | llamacpp | metal | M5 Pro | Supported | Supported | 0.1.2-dev, 2026-08-18, suite 6.0-pre8 |
+| `geforce-windows-llamacpp-cuda` | windows | x86_64 | llamacpp | cuda | NVIDIA GeForce | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
+| `radeon-windows-llamacpp-vulkan` | windows | x86_64 | llamacpp | vulkan | AMD Radeon | Supported | Supported | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
+| `intel-arc-windows-llamacpp-sycl` | windows | x86_64 | llamacpp | xpu | B65 | Unverified | Unverified | No qualification record |
+| `geforce-wsl2-llamacpp-cuda` | wsl2 | x86_64 | llamacpp | cuda | NVIDIA GeForce | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
+| `geforce-wsl2-vllm-cuda` | wsl2 | x86_64 | vllm | cuda | NVIDIA GeForce | Supported | Not applicable | 0.27.1, 2026-08-19, suite 6.0-pre8 |
+| `radeon-wsl2-llamacpp-rocm` | wsl2 | x86_64 | llamacpp | rocm | Radeon RX 9060 XT | Supported | Supported | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
+| `nvidia-linux-llamacpp-cuda` | linux | x86_64 | llamacpp | cuda | NVIDIA | Supported | Supported | 0.1.2-dev, 2026-08-22, suite 6.0-pre8 |
+| `nvidia-linux-vllm-cuda` | linux | x86_64 | vllm | cuda | NVIDIA | Supported | Not applicable | 0.27.1, 2026-08-22, suite 6.0-pre8 |
+| `radeon-linux-llamacpp-rocm` | linux | x86_64 | llamacpp | rocm | Radeon RX 9060 XT | Supported | Supported | 0.1.2-dev, 2026-08-21, suite 6.0-pre8 |
+| `radeon-linux-vllm-rocm` | linux | x86_64 | vllm | rocm | Radeon RX 9060 XT | Supported | Not applicable | 0.27.1+rocm723, 2026-08-21, suite 6.0-pre8 |
+| `intel-arc-linux-llamacpp-sycl` | linux | x86_64 | llamacpp | xpu | 8086:e222 | Supported | Supported | 0.1.2-dev, 2026-08-21, suite 6.0-pre8 |
+| `intel-arc-linux-vllm-xpu` | linux | x86_64 | vllm | xpu | 8086:e222 | Supported | Not applicable | 0.27.1+xpu, 2026-08-21, suite 6.0-pre8 |
+| `ryzen-ai-halo-llamacpp-rocm` | linux | x86_64 | llamacpp | rocm | Radeon 8060S | Supported | Supported | 0.1.2-dev, 2026-08-21, suite 6.0-pre8 |
+| `ryzen-ai-halo-vllm-rocm` | linux | x86_64 | vllm | rocm | Radeon 8060S | Supported | Not applicable | 0.27.1+rocm723, 2026-08-21, suite 6.0-pre8 |
+| `dgx-spark-llamacpp-cuda` | linux | aarch64 | llamacpp | cuda | NVIDIA GB10 | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
+| `dgx-spark-vllm-cuda` | linux | aarch64 | vllm | cuda | NVIDIA GB10 | Supported | Not applicable | 0.27.1, 2026-08-19, suite 6.0-pre8 |
 <!-- qualification-matrix:end -->
 
 ### Explicitly unsupported paths

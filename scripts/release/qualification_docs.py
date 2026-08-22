@@ -9,16 +9,20 @@ from scripts.runtime import config
 
 START_MARKER = "<!-- qualification-matrix:start -->"
 END_MARKER = "<!-- qualification-matrix:end -->"
-PUBLISHED_DOCS = ("docs/engines.md", "docs/setup.md")
+PUBLISHED_DOCS = ("README.md", "docs/engines.md", "docs/setup.md")
 
 
 def render_qualification_matrix(current_version: str) -> str:
+    rows = qualification_rows(current_version)
+    supported = sum(row["support_level"] == "supported" for row in rows)
     lines = [
         START_MARKER,
-        "| Platform | Architecture | Runtime | Backend | Accelerator | Runtime support | ComfyUI images | Evidence |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        f"{supported} of {len(rows)} target runtime combinations are supported by current evidence.",
+        "",
+        "| Target | Platform | Architecture | Runtime | Backend | Accelerator | Runtime support | ComfyUI images | Evidence |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
-    for row in qualification_rows(current_version):
+    for row in rows:
         evidence = (
             f"{row['runtime_version']}, {row['qualified_at']}, suite {row['suite_version']}"
             if row["qualified_at"] else "No qualification record"
@@ -32,7 +36,7 @@ def render_qualification_matrix(current_version: str) -> str:
                 image_support += " (stale)"
         accelerator = " / ".join(str(row["accelerator"]).splitlines())
         lines.append(
-            f"| {row['platform']} | {row['architecture']} | {row['runtime']} | "
+            f"| `{row['id']}` | {row['platform']} | {row['architecture']} | {row['runtime']} | "
             f"{row['backend']} | {accelerator} | {support} | {image_support} | {evidence} |"
         )
     lines.append(END_MARKER)
