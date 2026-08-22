@@ -22,7 +22,6 @@ import requests
 import psutil
 
 from scripts.runtime import config
-from scripts.runtime.sampling import baseline_sampling_payload
 from scripts.runtime.engines import openai_api
 from scripts.runtime.engines.chat_flow import chat_measurement, run_bounded_chat, validate_chat_budget
 from scripts.runtime.engines.base import (
@@ -920,7 +919,7 @@ class VllmEngine(InferenceEngine):
         model_load_sec = time.perf_counter() - operation_start
 
         payload = {
-            **baseline_sampling_payload(self.name),
+            **self.sampling_payload(),
             "model": self._loaded_model_id or self._repo(tag),
             "prompt": prompt,
             "max_tokens": config.GENERATE_MAX_TOKENS,
@@ -976,7 +975,7 @@ class VllmEngine(InferenceEngine):
                       deadline: float, num_predict: int,
                       check_loop: bool, budget_nudged: bool) -> dict:
         payload = {
-            **baseline_sampling_payload(self.name),
+            **self.sampling_payload(),
             "model": self._loaded_model_id or self._repo(tag),
             "messages": messages,
             "stream": True,

@@ -12,6 +12,8 @@ Power telemetry is opt-in until each source and the combined sampler pass the sh
 
 Run-plan schema 5 adds the resolved sampler profile to methodology identity. Text generation pins temperature `0`, top-k `0`, top-p `1`, min-p `0`, repetition penalty `1`, presence and frequency penalties `0`, seed `0`, and empty logit bias across llama.cpp and vLLM; llama.cpp additionally pins its engine-specific samplers to neutral values. Managed vLLM servers ignore repository `generation_config.json` defaults. Changing any control or selecting a future publisher profile creates a distinct methodology identity and cannot pool with this baseline.
 
+Publisher-recommended sampling is opt-in through `--publisher-sampling-profile`. Its schema-1 JSON must contain `name`, an exact `source.repo` and `source.revision`, and supported `controls`; unspecified supported controls resolve to the deterministic neutral values rather than engine defaults. The plan records the publisher controls, their canonical digest, the fully resolved semantic and engine controls, and methodology `publisher-v1`, so these results never pool with `neutral-v2`.
+
 ## Supported workload scope
 
 The commercially supported default workload set is single-shot LLM, conversation, embeddings, image generation, MCQ, math, reasoning, code, and tool accuracy. Native llama-bench throughput, native batched concurrency, HTTP tool concurrency, and HTTP chat concurrency remain opt-in diagnostic workloads: they are useful cross-checks and capacity evidence, but a default result is not incomplete merely because they were not selected. Developer `--sample` accuracy runs are non-comparable diagnostics and are not eligible for decision-grade acceptance.

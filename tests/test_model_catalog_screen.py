@@ -19,7 +19,13 @@ def candidate(*, status="source_ready", family="llm"):
             "upstream": {
                 "repo": "owner/model", "revision": "a" * 40,
                 "artifact": {"files": ["model.safetensors"], "kind": "safetensors"},
-                "configuration": {"context_tokens": 131072},
+                "configuration": {
+                    "context_tokens": 131072,
+                    "publisher_sampling": {
+                        "do_sample": True, "temperature": 1.0,
+                        "top_k": 20, "top_p": 0.95,
+                    },
+                },
             },
             "gguf": {
                 "repo": "owner/model-gguf", "revision": "b" * 40, "artifact": artifact,
@@ -33,6 +39,7 @@ def spec(family="llm"):
         "candidate", "Candidate", "llamacpp", "audit-candidate", family,
         "owner/model-gguf", "b" * 40, ("model.gguf",), 131072,
         Path("/tmp/result.json"), ("python", "-m", "scripts.app.benchmark"),
+        baseline_sampling_profile("llamacpp"),
     )
 
 
@@ -78,6 +85,19 @@ def test_candidate_lookup_and_screen_plan_are_exact_and_side_effect_free(tmp_pat
     assert vllm.repo == "owner/model"
     assert vllm.files == ("model.safetensors",)
     assert vllm.command[-1] == "--ack-experimental-engine"
+
+    publisher = build_screen_spec(
+        record, "llamacpp", tmp_path, python_executable="python",
+        publisher_sampling=True,
+    )
+    assert publisher.sampling_profile["profile"] == (
+        "publisher-recommended-v1:candidate"
+    )
+    assert publisher.output_path.parent.name == "publisher"
+    assert publisher.command[-2:] == (
+        "--publisher-sampling-profile",
+        str(publisher.output_path.with_name("publisher-sampling.json")),
+    )
 
 
 def test_screen_plan_refuses_blocked_and_unimplemented_candidates(tmp_path):
@@ -142,6 +162,18 @@ def test_complete_screen_requires_recovery_preflight_sampling_and_both_context_p
         "chat formatting probe did not pass",
         "conversation 32K evidence is missing",
     ]
+
+
+def test_complete_publisher_screen_requires_its_distinct_methodology_and_sampler(tmp_path):
+    screen_spec = build_screen_spec(
+        candidate(), "llamacpp", tmp_path, publisher_sampling=True,
+    )
+    result = complete_result(screen_spec)
+    result["run"]["plan"]["effective_config"].update({
+        "methodology_profile": "publisher-v1",
+        "sampling_profile": screen_spec.sampling_profile,
+    })
+    assert compatibility_screen_errors(result, screen_spec) == []
 
 
 def test_embedding_screen_requires_one_valid_measurement_without_sampler_claim():

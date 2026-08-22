@@ -40,6 +40,7 @@ from scripts.workloads.mcq_benchmark import MCQBenchmark
 from scripts.workloads.math_benchmark import MathBenchmark
 from scripts.workloads.methodology_profile import resolve_methodology_profile
 from scripts.runtime.network_policy import apply_offline_mode
+from scripts.runtime.sampling import load_publisher_sampling_profile
 from scripts.runtime.telemetry import (
     CaseTelemetry, derive_run_memory_summary, derive_run_power_summary,
     discover_power_source, discover_temperature_source, power_availability_dict,
@@ -803,6 +804,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         "--ack-experimental-engine", action="store_true",
         help="Acknowledge that selected experimental engines lack complete qualification.",
     )
+    parser.add_argument(
+        "--publisher-sampling-profile", type=Path,
+        help="Opt in to a source-pinned publisher sampling profile JSON. Results use a distinct "
+             "methodology identity and are not baseline-comparable.",
+    )
     args = parser.parse_args()
     if args.power_telemetry and not args.memory_telemetry:
         parser.error("--power-telemetry requires --memory-telemetry")
@@ -1072,7 +1078,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             engine_name=engine_name, tests=tests, cpu_only=args.cpu_only,
             vllm_kv_cache_dtype=vllm_kv_cache_dtype,
             vllm_launcher_args=vllm_launcher_args,
+            sampling_profile=(load_publisher_sampling_profile(
+                args.publisher_sampling_profile, engine_name,
+            ) if args.publisher_sampling_profile else None),
         )
+        if "sampling_profile" in methodology:
+            engine.set_sampling_profile(methodology["sampling_profile"])
         power_availability = discover_power_source() if args.power_telemetry else None
         temperature_availability = discover_temperature_source() \
             if temperature_telemetry_requested(tests) else None

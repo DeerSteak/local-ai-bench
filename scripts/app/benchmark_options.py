@@ -41,6 +41,9 @@ PUBLIC_OPTION_SCHEMA = {
         "boolean", "contextual", "equivalent", "Experimental-engine confirmation dialog",
         default=False,
     ),
+    "--publisher-sampling-profile": _spec(
+        "path", "developer-only", "excluded", "Catalog-audit methodology control",
+    ),
     "--llm-models": _spec("string-list", "guided", "exposed", "LLM model selection screen"),
     "--models": _spec("string-list", "guided", "equivalent", "Alias of --llm-models"),
     "--embedding-models": _spec("string-list", "guided", "exposed", "Embedding model selection screen"),

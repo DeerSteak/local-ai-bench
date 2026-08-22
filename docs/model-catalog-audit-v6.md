@@ -115,7 +115,7 @@ Image decisions use complete dependency size, peak memory, supported resolution,
 
 The comparable `deterministic-baseline-v1` sampler is implemented under methodology profile `neutral-v2`. It pins temperature zero; neutral top-k/top-p/min-p, presence penalty, frequency penalty, repetition penalty, seed, and logit bias across llama.cpp and vLLM; neutralizes llama.cpp-specific active samplers; and launches managed vLLM with repository generation defaults disabled. The semantic and engine-resolved controls are stored in run-plan schema 5 methodology identity before candidate performance runs begin.
 
-Publisher-recommended sampling will be optional, source-pinned to an exact model-card revision, and assigned a distinct methodology identity. Publisher-profile results will never pool with or replace deterministic-baseline evidence.
+Publisher-recommended sampling is optional through a schema-1 `--publisher-sampling-profile` file, source-pinned to an exact repository revision, fully resolved without engine defaults, and assigned `publisher-v1` methodology. The compatibility screen can generate and use this file with `--publisher-sampling`; publisher-profile results never pool with or replace deterministic-baseline evidence.
 
 ## Required report outputs
 

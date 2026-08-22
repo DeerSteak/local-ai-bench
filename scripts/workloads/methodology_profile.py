@@ -19,7 +19,8 @@ def effective_gpu_split_mode(cpu_only: bool) -> str:
 
 def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
                                 vllm_kv_cache_dtype: str = "auto",
-                                vllm_launcher_args: list[str] | None = None) -> dict:
+                                vllm_launcher_args: list[str] | None = None,
+                                sampling_profile: dict | None = None) -> dict:
     optimizations = []
     selected = set(tests)
     if engine_name == "llamacpp" and selected & ENGINE_STAGES:
@@ -62,5 +63,7 @@ def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
         "effective_optimizations": optimizations,
     }
     if engine_name in {"llamacpp", "vllm"} and selected & TEXT_GENERATION_STAGES:
-        resolved["sampling_profile"] = baseline_sampling_profile(engine_name)
+        resolved["sampling_profile"] = sampling_profile or baseline_sampling_profile(engine_name)
+        if sampling_profile is not None:
+            resolved["profile"] = "publisher-v1"
     return resolved

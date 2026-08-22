@@ -16,7 +16,7 @@ from scripts.results.result_store import atomic_write_json
 from scripts.runtime import config
 from scripts.runtime.log_redaction import redact_log_text
 from scripts.runtime.pause_control import write_pause_state
-from scripts.runtime.sampling import baseline_sampling_profile
+from scripts.runtime.sampling import baseline_sampling_profile, publisher_sampling_profile
 from scripts.setup.custom_models import custom_model
 from scripts.setup.model_download import (
     custom_model_artifacts_present, import_model, load_hf_token,
@@ -42,6 +42,7 @@ class ScreenSpec:
     context_tokens: int | None
     output_path: Path
     command: tuple[str, ...]
+    sampling_profile: dict
 
 
 def load_source_audit(path: Path = DEFAULT_AUDIT) -> dict:
@@ -59,7 +60,8 @@ def candidate_record(audit: dict, candidate_id: str) -> dict:
 
 
 def build_screen_spec(candidate: dict, engine: str, output_root: Path,
-                      *, python_executable=sys.executable) -> ScreenSpec:
+                      *, python_executable=sys.executable,
+                      publisher_sampling: bool = False) -> ScreenSpec:
     if candidate.get("status") != "source_ready":
         detail = "; ".join(candidate.get("reasons") or []) or "source audit is incomplete"
         raise ValueError(f"candidate is not source-ready: {detail}")
@@ -75,9 +77,20 @@ def build_screen_spec(candidate: dict, engine: str, output_root: Path,
         raise ValueError(f"candidate has no {engine} artifact")
     tag = f"audit-{candidate['id']}"
     revision = source["revision"]
-    output_path = Path(output_root) / candidate["id"] / engine / revision[:12] / "result.json"
+    output_dir = Path(output_root) / candidate["id"] / engine / revision[:12]
+    if publisher_sampling:
+        output_dir /= "publisher"
+    output_path = output_dir / "result.json"
     configuration = candidate["sources"]["upstream"].get("configuration") or {}
     context_tokens = configuration.get("context_tokens")
+    if publisher_sampling:
+        sampling = publisher_sampling_profile(
+            engine, name=candidate["id"], repo=candidate["sources"]["upstream"]["repo"],
+            revision=candidate["sources"]["upstream"]["revision"],
+            controls=configuration.get("publisher_sampling") or {},
+        )
+    else:
+        sampling = baseline_sampling_profile(engine)
     if family == "llm":
         context_cap = min(int(context_tokens or 32768), 32768)
         command = [
@@ -95,11 +108,16 @@ def build_screen_spec(candidate: dict, engine: str, output_root: Path,
         ]
     if engine == "vllm":
         command.append("--ack-experimental-engine")
+    if publisher_sampling:
+        command.extend((
+            "--publisher-sampling-profile",
+            str(output_path.with_name("publisher-sampling.json")),
+        ))
     return ScreenSpec(
         candidate["id"], candidate["name"], engine, tag, family,
         source["repo"], revision, tuple(artifact["files"]),
         context_tokens if isinstance(context_tokens, int) else None,
-        output_path, tuple(command),
+        output_path, tuple(command), sampling,
     )
 
 
@@ -145,10 +163,13 @@ def compatibility_screen_errors(result: dict, spec: ScreenSpec) -> list[str]:
     if not any(item.get("status") == "interrupted" for item in run.get("recovery_history", [])):
         errors.append("interrupt/resume evidence is missing")
     settings = run.get("plan", {}).get("effective_config", {})
-    if settings.get("methodology_profile") != "neutral-v2":
-        errors.append("neutral-v2 methodology is missing")
-    if spec.family == "llm" and settings.get("sampling_profile") != baseline_sampling_profile(
-            spec.engine):
+    expected_methodology = (
+        "publisher-v1" if spec.sampling_profile["profile"].startswith(
+            "publisher-recommended-v1:") else "neutral-v2"
+    )
+    if settings.get("methodology_profile") != expected_methodology:
+        errors.append(f"{expected_methodology} methodology is missing")
+    if spec.family == "llm" and settings.get("sampling_profile") != spec.sampling_profile:
         errors.append("resolved sampler identity is missing or incorrect")
     preflight = result.get("preflight", {}).get("models", {}).get(spec.tag, {})
     checks = {check.get("name"): check for check in preflight.get("checks", [])}
@@ -282,6 +303,16 @@ def _resume_screen(spec: ScreenSpec) -> int:  # pragma: no cover - real benchmar
 
 def execute_screen(spec: ScreenSpec, timeout: int) -> dict:  # pragma: no cover - real benchmark
     spec.output_path.parent.mkdir(parents=True, exist_ok=True)
+    if spec.sampling_profile["profile"].startswith("publisher-recommended-v1:"):
+        atomic_write_json(spec.output_path.with_name("publisher-sampling.json"), {
+            "schema_version": 1,
+            "name": spec.sampling_profile["profile"].split(":", 1)[1],
+            "source": {
+                "repo": spec.sampling_profile["source"]["repo"],
+                "revision": spec.sampling_profile["source"]["revision"],
+            },
+            "controls": spec.sampling_profile["publisher_controls"],
+        })
     import_status = ensure_candidate_import(spec)
     current = _read_result(spec.output_path)
     if current is None:
@@ -330,6 +361,7 @@ def main(argv=None) -> int:  # pragma: no cover - command entrypoint
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--interrupt-timeout", type=int, default=7200)
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--publisher-sampling", action="store_true")
     args = parser.parse_args(argv)
     audit = load_source_audit(args.audit)
     if args.list:
@@ -343,6 +375,7 @@ def main(argv=None) -> int:  # pragma: no cover - command entrypoint
         parser.error("--interrupt-timeout must be at least 120 seconds")
     spec = build_screen_spec(
         candidate_record(audit, args.candidate), args.engine, args.output_root,
+        publisher_sampling=args.publisher_sampling,
     )
     if not args.execute:
         print(json.dumps({

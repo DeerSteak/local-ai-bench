@@ -857,6 +857,27 @@ def test_runner_reapplies_vllm_cache_policy_for_its_runtime_backend():
     assert engine.configured == "cpu"
 
 
+def test_runner_restores_recorded_sampling_profile_on_engine():
+    from scripts.runtime.workload_runner import configure_runner_engine
+
+    class Engine:
+        profile = None
+
+        @staticmethod
+        def runtime_backend(hardware_backend, *, cpu_only=False):
+            return hardware_backend
+
+        def set_sampling_profile(self, profile):
+            self.profile = profile
+
+    profile = {"profile": "publisher-recommended-v1:model", "engine_controls": {}}
+    engine = Engine()
+    assert configure_runner_engine(
+        engine, "cuda", False, {"sampling_profile": profile},
+    ) == "auto"
+    assert engine.profile is profile
+
+
 def test_runner_initializes_runtime_without_cache_configuration_hook():
     from scripts.runtime.workload_runner import configure_runner_engine
 

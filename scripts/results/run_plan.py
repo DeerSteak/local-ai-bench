@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from scripts.results.canonical_json import canonical_json, sha256_json
-from scripts.runtime.sampling import baseline_sampling_profile
+from scripts.runtime.sampling import baseline_sampling_profile, sampling_profile_payload
 
 
 PLAN_SCHEMA_VERSION = 5
@@ -300,11 +300,12 @@ class RunPlan:
         if settings.get("gpu_split_mode", "layer") not in ("single", "layer", "tensor"):
             raise ValueError("invalid execution setting: gpu_split_mode")
         if "methodology_profile" in settings:
-            allowed_profiles = {"neutral-v1", "neutral-v2"}
+            allowed_profiles = {"neutral-v1", "neutral-v2", "publisher-v1"}
             if settings["methodology_profile"] not in allowed_profiles:
                 raise ValueError("invalid execution setting: methodology_profile")
-            if self.schema_version >= 5 and settings["methodology_profile"] != "neutral-v2":
-                raise ValueError("run-plan schema 5 requires neutral-v2 methodology")
+            if self.schema_version >= 5 and settings["methodology_profile"] not in {
+                    "neutral-v2", "publisher-v1"}:
+                raise ValueError("run-plan schema 5 requires a version 2 methodology")
             optimizations = settings.get("effective_optimizations")
             if (not isinstance(optimizations, list)
                     or any(not isinstance(value, str) or not value for value in optimizations)
@@ -322,9 +323,16 @@ class RunPlan:
             and bool(set(self.tests) & generation_stages)
             and "methodology_profile" in settings
         )
-        if requires_sampling and settings.get("sampling_profile") != baseline_sampling_profile(
-                self.engine_name):
-            raise ValueError("invalid execution setting: sampling_profile")
+        if requires_sampling:
+            sampling = settings.get("sampling_profile")
+            if settings.get("methodology_profile") == "neutral-v2":
+                if sampling != baseline_sampling_profile(self.engine_name):
+                    raise ValueError("invalid execution setting: sampling_profile")
+            elif settings.get("methodology_profile") == "publisher-v1":
+                if not isinstance(sampling, dict) or not str(sampling.get("profile", "")).startswith(
+                        "publisher-recommended-v1:") or not isinstance(sampling.get("source"), dict):
+                    raise ValueError("invalid execution setting: sampling_profile")
+                sampling_profile_payload(self.engine_name, sampling)
         for key in (
             "max_prompt_tokens", "sample_size", "concurrency_tool_context",
             "concurrency_chat_context", "concurrency_chat_soft_exit_floor",
