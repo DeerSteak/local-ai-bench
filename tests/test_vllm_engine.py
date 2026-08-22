@@ -95,6 +95,7 @@ def test_bare_serve_is_used_without_a_launcher(engine):
     command = engine.server_command("org/m", 4096)
     assert command[:3] == ["/usr/bin/vllm", "serve", "org/m"]
     assert "--port" in command
+    assert command[command.index("--generation-config") + 1] == "vllm"
 
 
 def test_fp8_cache_is_selected_only_for_supported_accelerator_backends(engine):
@@ -143,6 +144,29 @@ def test_cpu_offload_is_only_added_when_calibrated(engine):
 def test_server_command_accepts_an_explicit_chat_template(engine):
     command = engine.server_command("org/m", 4096, chat_template="/cache/chat_template.jinja")
     assert command[command.index("--chat-template") + 1] == "/cache/chat_template.jinja"
+
+
+def test_server_command_enables_native_mtp_with_compact_json(engine):
+    command = engine.server_command(
+        "org/m", 4096,
+        mtp_config={"method": "mtp", "num_speculative_tokens": 1},
+    )
+    assert command[command.index("--speculative-config") + 1] == \
+        '{"method":"mtp","num_speculative_tokens":1}'
+
+
+def test_native_mtp_configuration_is_catalog_and_engine_specific(engine):
+    engine.set_mtp_enabled(True)
+    assert engine._native_mtp_config(TEST_TAG) == {
+        "method": "mtp", "num_speculative_tokens": 3,
+    }
+    assert engine._native_mtp_config(TEST_TAG, embedding=True) is None
+    with pytest.raises(RuntimeError, match="does not support native MTP"):
+        engine._native_mtp_config("gemma3:1b-it-q4_K_M")
+
+
+def test_native_mtp_is_disabled_by_default(engine):
+    assert engine._native_mtp_config(TEST_TAG) is None
 
 
 def test_dgx_reserves_host_memory_on_unified_gb10():
@@ -372,6 +396,10 @@ def test_generate_counts_tokens_from_streamed_usage(engine, monkeypatch):
     assert captured["payload"]["stream_options"] == {"include_usage": True}
     assert isinstance(captured["payload"]["cache_salt"], str)
     assert len(captured["payload"]["cache_salt"]) >= 32
+    from scripts.runtime.sampling import baseline_sampling_payload
+    assert {
+        key: captured["payload"][key] for key in baseline_sampling_payload("vllm")
+    } == baseline_sampling_payload("vllm")
 
 
 def test_generate_uses_a_fresh_cache_salt_per_request(engine, monkeypatch):
@@ -437,6 +465,10 @@ def test_chat_uses_usage_for_tokens_and_prompt_count(engine, monkeypatch):
     assert (result.generated_tokens, result.prompt_tokens) == (5, 12)
     assert result.response_text == "Yes indeed"
     assert captured["path"] == "/v1/chat/completions"
+    from scripts.runtime.sampling import baseline_sampling_payload
+    assert {
+        key: captured["payload"][key] for key in baseline_sampling_payload("vllm")
+    } == baseline_sampling_payload("vllm")
 
 
 def test_chat_measurement_routes_the_combined_tps_through_sanitize_tps(engine, monkeypatch):
@@ -564,7 +596,7 @@ def test_max_context_length_falls_back_on_missing_or_broken_config(engine):
 
 
 def test_max_context_length_reads_a_nested_text_config(engine):
-    tag = "gemma3:27b-it-q4_K_M"
+    tag = "gemma4:26b-a4b-it-ud-q4_K_M"
     repo = engine._repo(tag).replace("/", "--")
     snapshot = engine._cache_home / "hub" / f"models--{repo}" / "snapshots" / "abc"
     snapshot.mkdir(parents=True)

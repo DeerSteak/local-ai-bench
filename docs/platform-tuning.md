@@ -1,15 +1,17 @@
 # Platform Tuning Profiles
 
-Local AI Bench 4.1 ships one comparison profile, `neutral-v1`. It does not silently select a vendor-optimized profile. Platform-specific installation and crash workarounds are kept separate from measurement tuning, while every measurement-affecting runtime setting used by a selected workload is recorded in the immutable run plan, its execution identity, result bundles, and decision reports.
+Version 6 uses comparison profile `neutral-v2`; the immutable 4.1 profile remains `neutral-v1`. The active profile does not silently select vendor-optimized or repository-provided sampling. Platform-specific installation and crash workarounds are kept separate from measurement tuning, while every measurement-affecting runtime and sampling setting used by a selected workload is recorded in the immutable run plan, its execution identity, result bundles, and decision reports.
 
 ## Active neutral settings
 
 | Setting | Scope | Rationale and compatibility bound | Verification |
 |---|---|---|---|
+| `deterministic-baseline-v1` sampler | Text-generation workloads on llama.cpp and vLLM | Pins shared greedy/neutral controls and engine-specific neutral llama.cpp modifiers; managed vLLM disables repository generation defaults | `test_sampling.py`, `test_llamacpp_engine.py`, `test_vllm_engine.py`, `test_methodology_profile.py`, `test_run_plan.py` |
 | llama.cpp batch size `512` | Engine-backed workloads | Fixed neutral request-processing setting for all supported llama.cpp backends | `test_llamacpp_engine.py`, `test_methodology_profile.py` |
 | llama.cpp KV cache `q8_0` with flash attention on | Engine-backed workloads | Fixed cache representation; flash attention is required by this quantized cache configuration | `test_llamacpp_engine.py`, `test_methodology_profile.py` |
 | llama.cpp GPU layers `auto` or `0` in CPU-only mode | Engine-backed workloads | Lets llama.cpp fit supported acceleration memory without an undisclosed vendor layer count; CPU-only is explicit | `test_llamacpp_engine.py`, `test_methodology_profile.py` |
-| Native llama.cpp GPU layers `999` or `0` in CPU-only mode | Native llama-bench workloads | Pins full-offload intent because llama-bench's default does not document equivalent semantics | `test_llamabench_benchmark.py`, `test_llamabench_concurrency_benchmark.py`, `test_methodology_profile.py` |
+| Native `llama-bench` GPU layers `999` or `0` in CPU-only mode | `llamabench` workload | Pins full-offload intent because llama-bench accepts only a numeric layer count and its default does not document equivalent semantics | `test_llamabench_benchmark.py`, `test_methodology_profile.py` |
+| Native `llama-batched-bench` GPU layers `auto` or `0` in CPU-only mode | `llamabenchconc` workload | Fits the concurrency sweep to available accelerator memory while preserving an explicit CPU-only mode | `test_llamabench_concurrency_benchmark.py`, `test_methodology_profile.py` |
 | ComfyUI dynamic VRAM disabled | Image workload | Compatibility workaround for unresolved combined-checkpoint streaming failures; applied uniformly rather than selected by vendor | `test_methodology_profile.py` and the documented runtime launch invariant |
 
 ## Compatibility behavior that is not a tuning profile

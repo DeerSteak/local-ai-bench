@@ -92,6 +92,33 @@ def test_trial_set_rejects_duplicate_files_and_no_common_metrics():
         build_trial_set([baseline], [candidate])
 
 
+def test_trial_set_explicitly_compares_different_model_ids():
+    baseline = trials([50, 51, 49, 50.5, 49.5])
+    candidate = trials([55, 56.1, 53.9, 55.55, 54.45])
+    for result in candidate:
+        result["llm"]["new-model"] = result["llm"].pop("model")
+        result["mcq"]["new-model"] = result["mcq"].pop("model")
+    artifact = build_trial_set(
+        baseline, candidate, baseline_model="model", candidate_model="new-model",
+    )
+    assert artifact["model_comparison"] == {
+        "baseline": "model", "candidate": "new-model",
+    }
+    assert artifact["comparison_mode"] == "paired"
+    assert artifact["rows"][0]["key"].startswith("llm/comparison-model/")
+    report = render_trial_set_markdown(artifact)
+    assert "`model` (baseline) versus `new-model` (candidate)" in report
+
+
+def test_model_comparison_requires_both_ids_and_matching_evidence():
+    with pytest.raises(ValueError, match="requires both"):
+        build_trial_set(trials([50]), trials([55]), baseline_model="model")
+    with pytest.raises(ValueError, match="no common"):
+        build_trial_set(
+            trials([50]), trials([55]), baseline_model="missing", candidate_model="model",
+        )
+
+
 def test_trial_set_cli_writes_a_versioned_artifact(tmp_path):
     baseline_paths = []
     candidate_paths = []
@@ -114,6 +141,22 @@ def test_trial_set_cli_writes_a_versioned_artifact(tmp_path):
     assert artifact["comparison_mode"] == "paired"
     assert len(artifact["source_sha256"]["baseline"]) == 5
     assert "95% change interval" in report.read_text(encoding="utf-8")
+
+
+def test_trial_set_cli_accepts_an_explicit_cross_model_mapping(tmp_path):
+    baseline = trials([50])[0]
+    candidate = trials([55])[0]
+    candidate["llm"]["new-model"] = candidate["llm"].pop("model")
+    baseline_path, candidate_path = tmp_path / "baseline.json", tmp_path / "candidate.json"
+    baseline_path.write_text(json.dumps(baseline))
+    candidate_path.write_text(json.dumps(candidate))
+    output = tmp_path / "comparison.json"
+    assert main([
+        "--baseline", str(baseline_path), "--candidate", str(candidate_path),
+        "--baseline-model", "model", "--candidate-model", "new-model",
+        "--out", str(output),
+    ]) == 0
+    assert json.loads(output.read_text())["model_comparison"]["candidate"] == "new-model"
 
 
 def test_trial_report_never_calls_a_missing_interval_reproducible():

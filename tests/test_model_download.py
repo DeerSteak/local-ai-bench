@@ -6,7 +6,9 @@ import pytest
 from scripts.setup.custom_models import load_custom_models
 from scripts.setup import model_download
 from scripts.setup.model_download import (
-    catalog_model_downloaded, download_hf_files, download_hf_snapshot,
+    catalog_model_downloaded, catalog_mtp_artifact_download_size,
+    catalog_mtp_artifact_downloaded,
+    download_hf_files, download_hf_snapshot,
     enough_disk_space, import_model, provision_catalog_models,
 )
 from scripts.setup.model_import import ImportVariant, inspect_repository
@@ -25,7 +27,6 @@ class FakeApi:
 def test_download_hf_files_uses_cli_and_flattens_nested_file(monkeypatch, tmp_path):
     destination = tmp_path / "models"
     source = destination / "nested" / "model.gguf"
-
     def run(_command, **_kwargs):
         source.parent.mkdir(parents=True)
         source.write_bytes(b"weights")
@@ -78,6 +79,39 @@ def test_catalog_model_downloaded_checks_llamacpp_files(monkeypatch, tmp_path):
     )
 
 
+def test_catalog_mtp_artifact_downloaded_checks_only_separate_draft(tmp_path):
+    embedded = {"tag": "embedded", "native_mtp": {
+        "llamacpp": {"num_speculative_tokens": 3},
+    }}
+    separate = {"tag": "separate", "native_mtp": {"llamacpp": {
+        "num_speculative_tokens": 3,
+        "draft_repo": "owner/model", "draft_file": "MTP/draft.gguf",
+    }}}
+    assert catalog_mtp_artifact_downloaded(
+        embedded, "llamacpp", models_dir=tmp_path,
+    ) is True
+    assert catalog_mtp_artifact_downloaded(
+        separate, "llamacpp", models_dir=tmp_path,
+    ) is False
+    destination = tmp_path / "llamacpp" / "separate"
+    destination.mkdir(parents=True)
+    (destination / "draft.gguf").touch()
+    assert catalog_mtp_artifact_downloaded(
+        separate, "llamacpp", models_dir=tmp_path,
+    ) is True
+
+
+def test_catalog_mtp_artifact_download_size_is_only_for_separate_drafts():
+    embedded = {"native_mtp": {"llamacpp": {"num_speculative_tokens": 3}}}
+    separate = {"native_mtp": {"llamacpp": {
+        "num_speculative_tokens": 3,
+        "draft_repo": "owner/model", "draft_file": "MTP/draft.gguf",
+        "draft_download_size": "~1.4 GB",
+    }}}
+    assert catalog_mtp_artifact_download_size(embedded, "llamacpp") is None
+    assert catalog_mtp_artifact_download_size(separate, "llamacpp") == "~1.4 GB"
+
+
 def test_provision_catalog_models_downloads_missing_llamacpp_model(monkeypatch, tmp_path):
     model = {
         "tag": "model", "label": "Model", "hf_repo": "owner/model",
@@ -100,6 +134,36 @@ def test_provision_catalog_models_downloads_missing_llamacpp_model(monkeypatch, 
     )
 
     assert downloads[0][0][0:2] == ("owner/model", "model.gguf")
+
+
+def test_provision_catalog_models_downloads_only_missing_llamacpp_mtp_draft(
+        monkeypatch, tmp_path):
+    model = {
+        "tag": "model", "label": "Model", "hf_repo": "owner/model",
+        "hf_file": "model.gguf", "download_size": "~10 GB",
+        "native_mtp": {"llamacpp": {
+            "num_speculative_tokens": 3,
+            "draft_repo": "owner/model", "draft_file": "MTP/draft.gguf",
+            "draft_download_size": "~1 GB",
+        }},
+    }
+    downloads = []
+    monkeypatch.setattr(model_download, "models_missing_engine_support", lambda *_args: [])
+    monkeypatch.setattr(model_download, "catalog_model_downloaded", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(model_download, "catalog_mtp_artifact_downloaded", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        model_download, "download_hf_files",
+        lambda *args, **kwargs: downloads.append((args, kwargs)) or True,
+    )
+
+    provision_catalog_models(
+        [model], ["llamacpp"], models_dir=tmp_path / "models",
+        vllm_cache=tmp_path / "cache", load_token=lambda: "token", issues=[],
+        info=lambda _msg: None, warn=lambda _msg: None,
+        fail=lambda _msg: None, ok=lambda _msg: None,
+    )
+
+    assert downloads[0][0][:2] == ("owner/model", "MTP/draft.gguf")
 
 
 def test_llamacpp_import_downloads_selected_files_and_registers(monkeypatch, tmp_path):

@@ -682,6 +682,7 @@ def test_embedding_runner_reconstructs_plan_and_commits_projection(monkeypatch, 
             "sample_size": None, "concurrency_tool_levels": [1],
             "concurrency_chat_levels": [1], "concurrency_tool_context": 512,
             "concurrency_chat_context": 1024, "concurrency_chat_soft_exit_floor": 1,
+            "mtp_enabled": False, "mtp_configurations": {},
         },
     )
     identity = {
@@ -736,6 +737,7 @@ def test_image_runner_uses_private_paths_and_commits_projection(monkeypatch, tmp
             "sample_size": None, "concurrency_tool_levels": [1],
             "concurrency_chat_levels": [1], "concurrency_tool_context": 512,
             "concurrency_chat_context": 1024, "concurrency_chat_soft_exit_floor": 1,
+            "mtp_enabled": False, "mtp_configurations": {},
         },
     )
     identity = {"plan_id": plan.plan_id, "artifacts": {}, "runtimes": {},
@@ -836,6 +838,27 @@ def test_runner_names_its_progress_events_with_the_plan_engine(monkeypatch, tmp_
     assert progress_events is not None
 
 
+def test_runner_uses_the_comparison_pass_progress_identity(monkeypatch, tmp_path):
+    from scripts.runtime import workload_runner
+
+    recorded = []
+    monkeypatch.setattr(workload_runner, "set_progress_engine", recorded.append)
+    monkeypatch.setattr(workload_runner, "load_runner_plan",
+                        lambda path, job_id: SimpleNamespace(
+                            engine_name="vllm", retry_crashed_models=False,
+                            effective_config={
+                                "offline": False,
+                                "progress_engine_name": "vllm · MTP on",
+                            }))
+    monkeypatch.setattr(workload_runner, "execute_llm_job", lambda *a, **k: None)
+    monkeypatch.setenv("LOCAL_AI_BENCH_RUNNER_TOKEN", "token")
+    assert workload_runner.main([
+        "--job-id", "j1", "--stage", "llm",
+        "--event-store", str(tmp_path / "events.sqlite3"),
+    ]) == 0
+    assert recorded == ["vllm · MTP on"]
+
+
 def test_runner_reapplies_vllm_cache_policy_for_its_runtime_backend():
     from scripts.runtime.workload_runner import configure_runner_engine
 
@@ -855,6 +878,46 @@ def test_runner_reapplies_vllm_cache_policy_for_its_runtime_backend():
     assert engine.configured == "cuda"
     assert configure_runner_engine(engine, "cuda", True) == "auto"
     assert engine.configured == "cpu"
+
+
+def test_runner_restores_recorded_sampling_profile_on_engine():
+    from scripts.runtime.workload_runner import configure_runner_engine
+    from scripts.runtime.sampling import baseline_sampling_profile
+
+    class Engine:
+        profile = None
+
+        @staticmethod
+        def runtime_backend(hardware_backend, *, cpu_only=False):
+            return hardware_backend
+
+        def set_sampling_profile(self, profile):
+            self.profile = profile
+
+    profile = baseline_sampling_profile("llamacpp")
+    engine = Engine()
+    assert configure_runner_engine(
+        engine, "cuda", False, {"sampling_profile": profile},
+    ) == "auto"
+    assert engine.profile is profile
+
+
+def test_runner_restores_recorded_mtp_mode_on_engine():
+    from scripts.runtime.workload_runner import configure_runner_engine
+
+    class Engine:
+        mtp_enabled = None
+
+        @staticmethod
+        def runtime_backend(hardware_backend, *, cpu_only=False):
+            return hardware_backend
+
+        def set_mtp_enabled(self, enabled):
+            self.mtp_enabled = enabled
+
+    engine = Engine()
+    assert configure_runner_engine(engine, "cuda", False, {"mtp_enabled": True}) == "auto"
+    assert engine.mtp_enabled is True
 
 
 def test_runner_initializes_runtime_without_cache_configuration_hook():

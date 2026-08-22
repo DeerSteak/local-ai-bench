@@ -9,8 +9,6 @@ export interface ResultsFile {
   engine?: string | null;
   engineVersion?: string | null;
   engineVersionRecorded?: boolean;
-  engineSupportLevel?: "supported" | "experimental" | "unverified" | "not_recorded";
-  engineSupportCaveat?: string;
   data: JsonRecord;
 }
 

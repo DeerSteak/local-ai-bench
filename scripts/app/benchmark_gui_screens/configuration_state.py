@@ -6,7 +6,8 @@ from scripts.app.benchmark_frontend import (
     parse_engine_selection,
 )
 from scripts.app.benchmark_gui_support import (
-    CUSTOM_PRESET, GPU_SPLIT_MODE_LABELS, preset_after_control_change, preset_control_values,
+    CUSTOM_PRESET, GPU_SPLIT_MODE_LABELS, MTP_MODE_LABELS,
+    preset_after_control_change, preset_control_values,
     reconcile_imported_model_state,
 )
 from scripts.app.model_import_dialog import show_model_import_dialog
@@ -78,7 +79,10 @@ class ConfigurationStateController:
         for value, variable in self.tg_vars.items():
             variable.set(value in values["tg_tokens"])
         for key, value in values["options"].items():
-            display_value = GPU_SPLIT_MODE_LABELS[value] if key == "gpu_split_mode" else value
+            display_value = (
+                GPU_SPLIT_MODE_LABELS[value] if key == "gpu_split_mode"
+                else MTP_MODE_LABELS[value] if key == "mtp" else value
+            )
             self.option_vars[key].set(display_value)
 
     def control_signature(self) -> tuple:

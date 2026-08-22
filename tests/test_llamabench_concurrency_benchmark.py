@@ -151,6 +151,14 @@ def test_build_command_cpu_only_ngl():
     assert cmd[cmd.index("--cache-type-k") + 1] == config.LLAMACPP_KV_CACHE_TYPE
 
 
+def test_build_command_accepts_auto_gpu_layers():
+    cmd = LBC.build_command(
+        "llama-batched-bench", Path("/models/x.gguf"), 4096, 512,
+        [128], [1], 2048, 512, "auto",
+    )
+    assert cmd[cmd.index("-ngl") + 1] == "auto"
+
+
 def test_build_command_can_disable_repacking(monkeypatch):
     monkeypatch.setattr(config, "LLAMACPP_NO_REPACK", True)
     cmd = LBC.build_command(
@@ -548,7 +556,7 @@ def test_run_one_model_failure_does_not_stop_the_rest(fake_engine, monkeypatch):
     assert "entries" in result["good"]
 
 
-def test_run_passes_full_offload_ngl_by_default(fake_engine, monkeypatch):
+def test_run_passes_auto_gpu_layers_by_default(fake_engine, monkeypatch):
     captured = {}
 
     def fake_run_one(cls, binary, model_path, ctx_size, pp, tg, npl, batch_size, ubatch_size,
@@ -558,7 +566,7 @@ def test_run_passes_full_offload_ngl_by_default(fake_engine, monkeypatch):
 
     monkeypatch.setattr(LBC, "run_one", classmethod(fake_run_one))
     LBC().run(fake_engine, _MODELS, cpu_only=False)
-    assert captured["ngl"] == config.LLAMABENCH_FULL_OFFLOAD_NGL
+    assert captured["ngl"] == config.LLAMABENCH_CONC_GPU_LAYERS
 
 
 def test_run_passes_zero_ngl_when_cpu_only(fake_engine, monkeypatch):

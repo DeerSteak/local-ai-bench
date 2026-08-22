@@ -63,25 +63,6 @@ export function getRunReliabilityWarning(data: JsonRecord | null | undefined): s
   return labels[run.status] || "This result has an unknown completion state.";
 }
 
-export function getEngineSupport(data: JsonRecord | null | undefined): {
-  level: "supported" | "experimental" | "unverified" | "not_recorded";
-  caveat: string;
-} {
-  const support = data?.profile?.engine_support;
-  const level = support?.support_level;
-  if (!["supported", "experimental", "unverified"].includes(level)) {
-    return {
-      level: "not_recorded",
-      caveat: "Qualification status was not recorded by this suite version.",
-    };
-  }
-  return {
-    level,
-    caveat: typeof support.caveat === "string" && support.caveat
-      ? support.caveat : "Qualification details were not recorded.",
-  };
-}
-
 export function getLlamaBenchMethodologyWarning(files: ResultsFile[]): string {
   const relevant = files.filter(file => Object.keys(file.data?.llamabench || {}).length > 0);
   if (relevant.length < 2) return "";
@@ -179,6 +160,21 @@ export function engineLabel(engine: string | null | undefined): string {
   return labels[key] || String(engine || "");
 }
 
+export function engineRunLabel(file: ResultsFile, section?: string): string {
+  const displayEngine = engineLabel(file.engine);
+  const labels = [displayEngine];
+  if (file.engine === "llamacpp"
+      && !["llamabench", "vllmbench"].includes(section || "")
+      && file.data?.run?.effective_config?.llamacpp_no_repack === true) {
+    labels.push("-nr");
+  }
+  if (["llamacpp", "vllm"].includes(file.engine || "")
+      && file.data?.run?.effective_config?.mtp_enabled === true) {
+    labels.push("MTP on");
+  }
+  return labels.filter(Boolean).join(" ");
+}
+
 export function measuredCategoryAxisWidth(
   rows: ChartRow[], key: string, measure: (text: string) => number, tickSpace = 18,
 ): number {
@@ -190,11 +186,7 @@ export function measuredCategoryAxisWidth(
 export function applyEngineLabels<T extends ResultsFile>(files: T[], section?: string): T[] {
   const multiEngine = new Set(files.map(f => f.engine).filter(Boolean)).size > 1;
   return files.map(f => {
-    const noRepack = f.engine === "llamacpp"
-      && !["llamabench", "vllmbench"].includes(section || "")
-      && f.data?.run?.effective_config?.llamacpp_no_repack === true;
-    const displayEngine = engineLabel(f.engine);
-    const engine = noRepack ? `${displayEngine} -nr` : displayEngine;
+    const engine = engineRunLabel(f, section);
     const identity = (runtime: string) => {
   const runtimeLabel = [backendLabel(f.backend), runtime].filter(Boolean).join(" / ");
       return [f.hostname, runtimeLabel].filter(Boolean).join("\n");

@@ -19,9 +19,6 @@ import psutil
 
 from scripts.runtime import config
 from scripts.runtime import hardware
-from scripts.runtime.shared import Shared
-
-
 MEMORY_CHANNELS = (
     "host_ram_used_gb", "process_rss_gb",
     "accelerator_memory_used_gb", "accelerator_memory_total_gb",
@@ -1201,6 +1198,11 @@ def query_gpu_usage(platform_name: str | None = None, run_fn=subprocess.run,
         command = [executable, "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"]
     elif executable := hardware.rocm_executable("rocm-smi", which_fn=which_fn):
         command = [executable, "--showuse", "--json"]
+    elif executable := which_fn("xpu-smi"):
+        command = [
+            executable, "--query-gpu=utilization.gpu",
+            "--format=csv,noheader,nounits",
+        ]
     else:
         return None
     try:
@@ -1247,10 +1249,7 @@ def query_gpu_process_memory(pid: int, run_fn=subprocess.run, which_fn=shutil.wh
 
 
 def query_vram_usage() -> tuple[float, float] | None:
-    snapshot = Shared.sample_memory_gb()
-    used = snapshot["gpu_vram_used_gb"]
-    total = snapshot["gpu_vram_total_gb"]
-    return (used, total) if used is not None and total is not None else None
+    return query_sampler_vram_usage()
 
 
 def query_sampler_vram_usage(run_fn=subprocess.run, which_fn=shutil.which) -> tuple[float, float] | None:
@@ -1260,13 +1259,19 @@ def query_sampler_vram_usage(run_fn=subprocess.run, which_fn=shutil.which) -> tu
     elif executable := hardware.rocm_executable("rocm-smi", which_fn=which_fn):
         command = [executable, "--showmeminfo", "vram", "--json"]
         source = "rocm"
+    elif executable := which_fn("xpu-smi"):
+        command = [
+            executable, "--query-gpu=memory.used,memory.total",
+            "--format=csv,noheader,nounits",
+        ]
+        source = "xpu"
     else:
         return None
     try:
         result = run_fn(command, capture_output=True, text=True, timeout=2, check=False)
         if result.returncode:
             return None
-        if source == "nvidia":
+        if source in {"nvidia", "xpu"}:
             pairs = [line.split(",") for line in result.stdout.splitlines() if "," in line]
             used = sum(float(pair[0].strip()) for pair in pairs) / 1024
             total = sum(float(pair[1].strip()) for pair in pairs) / 1024
@@ -1422,6 +1427,8 @@ def default_memory_sources(which_fn=shutil.which, run_fn=subprocess.run) -> dict
     elif hardware.rocm_executable("rocm-smi", which_fn=which_fn) \
             and rocm_memory_is_discrete(run_fn, which_fn):
         accelerator = "rocm-smi"
+    elif which_fn("xpu-smi"):
+        accelerator = "xpu-smi"
     return {
         "host_ram_used_gb": "psutil",
         "process_rss_gb": "psutil",
@@ -1450,7 +1457,7 @@ def memory_ceiling_gb(sources: Mapping[str, str], run_fn=subprocess.run,
         if result.returncode or not totals:
             return None
         return sum(max(0.0, total - hardware.VRAM_RESERVE_GB) for total in totals)
-    if accelerator == "rocm-smi":
+    if accelerator in {"rocm-smi", "xpu-smi"}:
         snapshot = query_vram_usage()
         return (snapshot[1] - hardware.VRAM_RESERVE_GB) if snapshot else None
     try:
@@ -1649,13 +1656,14 @@ class TelemetrySampler:
             and "nvidia-smi" in self.temperature_source.availability.sources.values()
         memory_uses_nvidia = "nvidia-smi" in self.memory_sources.values()
         memory_uses_rocm = "rocm-smi" in self.memory_sources.values()
+        memory_uses_xpu = "xpu-smi" in self.memory_sources.values()
         nvidia_captured = memory_uses_nvidia or power_uses_nvidia or temperature_uses_nvidia
         nvidia = self.nvidia_query_fn() if nvidia_captured else None
         vram = (
             (nvidia.memory_used_gb, nvidia.memory_total_gb)
             if memory_uses_nvidia and nvidia and nvidia.memory_used_gb is not None
             and nvidia.memory_total_gb is not None
-            else query_sampler_vram_usage() if memory_uses_rocm else None
+            else query_sampler_vram_usage() if memory_uses_rocm or memory_uses_xpu else None
         )
         if isinstance(self.temperature_source, PollingTemperatureSource):
             temperature = self.temperature_source.read(

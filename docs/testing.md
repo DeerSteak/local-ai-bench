@@ -113,7 +113,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 
 | Area | Test modules |
 |---|---|
-| Engine registry, shared llama.cpp tool discovery, OpenAI-compatible HTTP/SSE parsing, and adapters | [test_engines_registry.py](../tests/test_engines_registry.py), [test_llamacpp_tools.py](../tests/test_llamacpp_tools.py), [test_openai_api.py](../tests/test_openai_api.py), [test_llamacpp_engine.py](../tests/test_llamacpp_engine.py) |
+| Engine registry, shared llama.cpp tool discovery, sampler parity, OpenAI-compatible HTTP/SSE parsing, and adapters | [test_engines_registry.py](../tests/test_engines_registry.py), [test_llamacpp_tools.py](../tests/test_llamacpp_tools.py), [test_sampling.py](../tests/test_sampling.py), [test_openai_api.py](../tests/test_openai_api.py), [test_llamacpp_engine.py](../tests/test_llamacpp_engine.py), [test_vllm_engine.py](../tests/test_vllm_engine.py) |
 | Measurement contracts and validation | [test_engine_measurements.py](../tests/test_engine_measurements.py) |
 | Measured-call and accuracy orchestration | [test_shared_run_measured_calls.py](../tests/test_shared_run_measured_calls.py), [test_run_accuracy_benchmark.py](../tests/test_run_accuracy_benchmark.py) |
 | Crash caches and bank versions | [test_shared_crash_cache.py](../tests/test_shared_crash_cache.py), [test_shared_bank_versioning.py](../tests/test_shared_bank_versioning.py) |

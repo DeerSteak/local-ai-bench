@@ -98,6 +98,18 @@ def test_select_models_accepts_default_catalog_selection(monkeypatch, tmp_path):
     assert vllm_cleanup == []
 
 
+def test_select_models_displays_complete_z_image_pipeline_size(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(setup_selection, "find_non_catalog_model_dirs", lambda _path: [])
+    monkeypatch.setattr(setup_selection, "find_non_catalog_vllm_repos", lambda _path: [])
+    monkeypatch.setattr("builtins.input", lambda _prompt: "")
+
+    select_models(engines=("llamacpp",), vllm_cache_home=tmp_path, cancel=lambda: None)
+
+    z_image_line = next(line for line in capsys.readouterr().out.splitlines()
+                        if "Z-Image Turbo" in line)
+    assert "~20.9 GB" in z_image_line
+
+
 def test_select_models_delegates_cancel(monkeypatch, tmp_path):
     cancelled = []
     replies = iter(["q", ""])

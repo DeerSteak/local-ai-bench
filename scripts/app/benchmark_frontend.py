@@ -16,7 +16,6 @@ from scripts.app.benchmark_options import (
 )
 
 from scripts.runtime import config
-from scripts.runtime.execution_profile import build_execution_profile
 from scripts.runtime.comfyui_installation import find_comfyui_installation
 from scripts.stage_registry import (
     CONCURRENCY_TESTS, LLM_TESTS, STAGE_SPECS, engine_incompatible_tests,
@@ -25,7 +24,6 @@ from scripts.runtime.engines import engine_names, get_engine
 from scripts.setup.model_inventory import build_model_inventory
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
 from scripts.runtime.shared import Shared
-from scripts.release.qualification import experimental_acknowledgement_required
 from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config
 
 
@@ -166,6 +164,7 @@ def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
             missing = set(GUI_OPTION_DEFAULTS) - set(options)
             if missing <= {
                 "offline", "memory_telemetry", "power_telemetry", "gpu_split_mode",
+                "mtp",
                 "retry_crashed_models",
                 "llamacpp_no_repack",
                 "sustained_duration", "ambient_temp_c",
@@ -241,6 +240,7 @@ def frontend_state_from_run_plan(plan: RunPlan, gui_options: dict | None = None)
         "accuracy_timeout_seconds": "acc_timeout",
         "accuracy_token_budget": "acc_token_budget", "cpu_only": "cpu_only",
         "gpu_split_mode": "gpu_split_mode", "force_all": "force_all",
+        "mtp_enabled": "mtp",
         "llamacpp_no_repack": "llamacpp_no_repack",
         "retry_crashed_models": "retry_crashed_models", "offline": "offline",
         "memory_telemetry": "memory_telemetry", "power_telemetry": "power_telemetry",
@@ -248,7 +248,9 @@ def frontend_state_from_run_plan(plan: RunPlan, gui_options: dict | None = None)
     }
     for plan_key, option_key in option_mapping.items():
         if plan_key in effective:
-            options[option_key] = effective[plan_key]
+            options[option_key] = (
+                "on" if effective[plan_key] else "off"
+            ) if plan_key == "mtp_enabled" else effective[plan_key]
     models = plan.models
     llm_models = []
     for family in ("llm", "concurrency"):
@@ -724,12 +726,9 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
                             benchmark_path: Path | None = None,
                             max_prompt_tokens: int | None = None,
                             tg_tokens: list[int] | None = None,
-                            gui_options: dict | None = None,
-                            acknowledge_experimental_engine: bool = False) -> list[str]:
+                            gui_options: dict | None = None) -> list[str]:
     benchmark_target = [str(benchmark_path)] if benchmark_path else ["-m", "scripts.app.benchmark"]
     command = [python_executable, *benchmark_target, "--engine", engine_name]
-    if acknowledge_experimental_engine:
-        command.append("--ack-experimental-engine")
     # Sending a path for a ComfyUI that was never installed fails validation, and without
     # image tests there is nothing for it to point at anyway.
     if "img" in tests:
@@ -749,6 +748,7 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
         if "sustained" in tests and gui_options["ambient_temp_c"] is not None:
             command.extend(["--ambient-temp-c", str(gui_options["ambient_temp_c"])])
         command.extend(["--gpu-split-mode", gui_options["gpu_split_mode"]])
+        command.extend(["--mtp", gui_options["mtp"]])
         if gui_options["cpu_only"]:
             command.append("--cpu-only")
         if gui_options["llamacpp_no_repack"]:
@@ -816,8 +816,7 @@ def run_frontend(input_fn=input, output_fn=Shared.plain_output, process_runner=N
                  python_executable: str = sys.executable,
                  benchmark_path: Path | None = None,
                  clear_fn=Shared.clear_terminal,
-                 state_path: Path | None = None,
-                 support_profile_builder=build_execution_profile) -> int:
+                 state_path: Path | None = None) -> int:
     process_runner = process_runner or subprocess.run
     system = system or platform.system()
     state_path = state_path or FRONTEND_STATE_PATH
@@ -882,22 +881,6 @@ def run_frontend(input_fn=input, output_fn=Shared.plain_output, process_runner=N
             selected_engine, comfyui_dir, tests, model_entries, output_fn,
             max_prompt_tokens=max_prompt_tokens, tg_tokens=tg_tokens,
         )
-        acknowledge_experimental = False
-        if selected_engine == "vllm":
-            output_fn("Checking exact vLLM qualification status…")
-            support_profile = support_profile_builder(
-                selected_engine_instance, tests, cpu_only=False,
-                engine_name=selected_engine,
-            )["engine_support"]
-            profiles = {selected_engine: support_profile}
-            if experimental_acknowledgement_required([selected_engine], profiles):
-                output_fn(support_profile["caveat"])
-                acknowledgement = read_choice(
-                    "Acknowledge this experimental vLLM run? [y/N]", input_fn, output_fn,
-                ).lower()
-                if acknowledgement not in ("y", "yes"):
-                    raise FrontendCancelled
-                acknowledge_experimental = True
         confirmation = read_choice("Start this benchmark? [Y/n]", input_fn, output_fn).lower()
         if confirmation not in ("", "y", "yes"):
             raise FrontendCancelled
@@ -912,7 +895,6 @@ def run_frontend(input_fn=input, output_fn=Shared.plain_output, process_runner=N
             selected_engine, comfyui_dir, tests, model_entries,
             python_executable=python_executable, benchmark_path=benchmark_path,
             max_prompt_tokens=max_prompt_tokens, tg_tokens=tg_tokens,
-            acknowledge_experimental_engine=acknowledge_experimental,
         )
         output_fn("Launching benchmark.py with the confirmed selection.")
         result = process_runner(command)

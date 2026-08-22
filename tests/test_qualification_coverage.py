@@ -164,4 +164,4 @@ def test_vllm_coverage_uses_vllmbench_without_engine_independent_images(tmp_path
     tests = command[command.index("--tests") + 1:command.index("--llm-models")]
     assert "vllmbench" in tests
     assert "img" not in tests
-    assert "--ack-experimental-engine" in command
+    assert "--ack-experimental-engine" not in command

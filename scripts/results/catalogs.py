@@ -5,7 +5,7 @@ from copy import deepcopy
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
 
 
-CATALOG_VERSION = "1"
+CATALOG_VERSION = "2"
 
 HARDWARE_CATALOG = (
     {"id": "apple-mac-mini-m4-pro-2024", "vendor": "Apple", "product": "Mac mini (M4 Pro, 2024)", "kind": "system", "memory_architecture": "unified", "memory_gb_options": [24, 48, 64], "accelerator": "Apple M4 Pro GPU", "source": "https://www.apple.com/mac-mini/specs/", "qualification": "unqualified"},

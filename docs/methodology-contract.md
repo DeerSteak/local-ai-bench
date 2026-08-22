@@ -4,11 +4,15 @@
 
 This document defines the Local AI Bench 4.1 neutral methodology. A result is comparable only when its application/result schema, workload behavior, model/runtime identity, effective configuration, and relevant question-bank versions are compatible. The exact export boundary is frozen in [Result compatibility v4.1](result-compatibility-v4.1.md).
 
-The active comparison profile is `neutral-v1`. Its effective runtime optimizations are recorded in the run plan and report; platform compatibility workarounds are not silently treated as vendor tuning. See [Platform Tuning Profiles](platform-tuning.md).
+The Version 6 active comparison profile is `neutral-v2`; `neutral-v1` remains the immutable 4.1 historical profile. The active profile records its effective runtime optimizations and fully resolved `deterministic-baseline-v1` sampling controls in the run plan and report, so repository defaults and engine defaults cannot silently alter comparable decoding. See [Platform Tuning Profiles](platform-tuning.md).
 
 Qualified 0.5-second memory sampling is enabled by default and does not change the performance methodology identity. A telemetry-on result remains comparable with a telemetry-off result when every other identity-bearing setting matches; other sampling intervals retain distinct identities unless separately qualified.
 
 Power telemetry is opt-in until each source and the combined sampler pass the shared repeated-trial observer-effect policy. Its interval, normalized source, and measurement scope are identity-bearing in run-plan schema 4; results with different power sources or scopes cannot be pooled merely because both report watts or joules.
+
+Run-plan schema 5 adds the resolved sampler profile to methodology identity. Text generation pins temperature `0`, top-k `0`, top-p `1`, min-p `0`, repetition penalty `1`, presence and frequency penalties `0`, seed `0`, and empty logit bias across llama.cpp and vLLM; llama.cpp additionally pins its engine-specific samplers to neutral values. Managed vLLM servers ignore repository `generation_config.json` defaults. Changing any control creates a distinct methodology identity and cannot pool with this baseline.
+
+Run-plan schema 6 adds the exact per-model native MTP speculative depth and embedded/separate predictor mode to methodology identity. These values are pinned per selected engine artifact rather than treated as model-family defaults, so an MTP policy change creates a distinct plan and cannot be resumed or pooled as the prior method.
 
 ## Supported workload scope
 

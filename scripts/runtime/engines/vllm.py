@@ -39,6 +39,7 @@ from scripts.setup.vllm_install import (
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
 from scripts.runtime.generation_guard import looks_like_loop
 from scripts.runtime.crash_cache import record_crash
+from scripts.runtime.mtp import native_mtp_config
 from scripts.runtime.shared import EngineLoopDetected, EngineTimeout, Shared
 
 
@@ -178,11 +179,26 @@ class VllmEngine(InferenceEngine):
         self._loaded_embedding: bool | None = None
         self._loaded_n_parallel: int = 1
         self._loaded_tool_parser: str | None = None
+        self._loaded_mtp_config: dict | None = None
         self._loaded_cpu_offload_gb = 0
         self._gpu_visible = True
         self._kv_cache_dtype = "auto"
         self._cpu_offload_gb: dict[str, int] = self._load_offload_cache()
         self._model_lock = threading.RLock()
+
+    def set_mtp_enabled(self, enabled: bool) -> None:
+        self._mtp_enabled = bool(enabled)
+
+    def _native_mtp_config(self, tag: str, *, embedding: bool = False) -> dict | None:
+        if not getattr(self, "_mtp_enabled", False) or embedding:
+            return None
+        model = next((model for model in LLM_MODELS if model["tag"] == tag), None)
+        if model is None:
+            raise RuntimeError(f"{tag} has no cataloged native MTP configuration for vLLM")
+        mtp_config = native_mtp_config(model, self.name)
+        if mtp_config is None:
+            raise RuntimeError(f"{tag} does not support native MTP with vLLM")
+        return {"method": "mtp", **mtp_config}
 
     @property
     def _local_runtime(self) -> str | None:
@@ -500,6 +516,7 @@ class VllmEngine(InferenceEngine):
         self._loaded_embedding = None
         self._loaded_n_parallel = 1
         self._loaded_tool_parser = None
+        self._loaded_mtp_config = None
         self._loaded_cpu_offload_gb = 0
 
     def _wait_for_launcher_shutdown(self, timeout: int) -> None:
@@ -713,9 +730,11 @@ class VllmEngine(InferenceEngine):
     def server_command(self, repo: str, num_ctx: int | None, *, embedding: bool = False,
                        n_parallel: int = 1, tool_parser: str | None = None,
                        cpu_offload_gb: int = 0,
-                       chat_template: str | None = None) -> list[str]:
+                       chat_template: str | None = None,
+                       mtp_config: dict | None = None) -> list[str]:
         """Argv serving `repo` from the managed runtime, with a platform launcher fallback."""
         options = ["--served-model-name", repo,
+                    "--generation-config", "vllm",
                     "--max-num-seqs", str(n_parallel),
                     "--gpu-memory-utilization", str(self._gpu_memory_utilization)]
         if self._kv_cache_dtype != "auto" and not embedding:
@@ -732,6 +751,8 @@ class VllmEngine(InferenceEngine):
         if tool_parser:
             # tool_calls stay empty unless the frontend parser is enabled explicitly.
             options += ["--enable-auto-tool-choice", "--tool-call-parser", tool_parser]
+        if mtp_config:
+            options += ["--speculative-config", json.dumps(mtp_config, separators=(",", ":"))]
         if self._executable:
             return [self._executable, "serve", repo, "--host", "127.0.0.1",
                     "--port", str(config.VLLM_PORT), *options]
@@ -743,11 +764,13 @@ class VllmEngine(InferenceEngine):
                        n_parallel: int = 1, deadline: float | None = None,
                        tool_parser: str | None = None) -> None:
         """Ensure vLLM is serving `tag`, respawning on any mismatch — one model per process."""
-        want = (tag, num_ctx, embedding, n_parallel, tool_parser)
+        mtp_config = self._native_mtp_config(tag, embedding=embedding)
+        want = (tag, num_ctx, embedding, n_parallel, tool_parser, mtp_config)
 
         def ready():
             have = (self._loaded_tag, self._loaded_num_ctx, self._loaded_embedding,
-                    self._loaded_n_parallel, self._loaded_tool_parser)
+                    self._loaded_n_parallel, self._loaded_tool_parser,
+                    self._loaded_mtp_config)
             return want == have and self._proc is not None and self._proc.poll() is None
 
         if ready():
@@ -764,6 +787,10 @@ class VllmEngine(InferenceEngine):
                 # serves one fixed model, so reject requests that would mislabel its results.
                 if not self.available():
                     raise RuntimeError(f"vLLM server at {self._server_url} is not reachable")
+                if mtp_config:
+                    raise RuntimeError(
+                        "native MTP cannot be verified or configured on an external vLLM server"
+                    )
                 model_ids = self._served_model_ids()
                 if model_ids is None:
                     raise RuntimeError(
@@ -777,6 +804,7 @@ class VllmEngine(InferenceEngine):
                 self._loaded_model_id = model_id
                 self._loaded_embedding, self._loaded_n_parallel = embedding, n_parallel
                 self._loaded_tool_parser = tool_parser
+                self._loaded_mtp_config = None
                 self._loaded_cpu_offload_gb = 0
                 return
 
@@ -811,6 +839,7 @@ class VllmEngine(InferenceEngine):
                     repo, context_limit, embedding=embedding, n_parallel=n_parallel,
                     tool_parser=tool_parser, cpu_offload_gb=cpu_offload_gb,
                     chat_template=self._chat_template_argument(tag),
+                    mtp_config=mtp_config,
                 )
                 log_fh = tempfile.NamedTemporaryFile(
                     mode="w", suffix="-vllm-server.log", delete=False)
@@ -847,6 +876,7 @@ class VllmEngine(InferenceEngine):
                         self._loaded_embedding = embedding
                         self._loaded_n_parallel = n_parallel
                         self._loaded_tool_parser = tool_parser
+                        self._loaded_mtp_config = mtp_config
                         self._loaded_cpu_offload_gb = cpu_offload_gb
                         if cpu_offload_gb and self._cpu_offload_gb.get(offload_key) != cpu_offload_gb:
                             self._cpu_offload_gb[offload_key] = cpu_offload_gb
@@ -918,10 +948,10 @@ class VllmEngine(InferenceEngine):
         model_load_sec = time.perf_counter() - operation_start
 
         payload = {
+            **self.sampling_payload(),
             "model": self._loaded_model_id or self._repo(tag),
             "prompt": prompt,
             "max_tokens": config.GENERATE_MAX_TOKENS,
-            "temperature": 0.0,
             "stream": True,
             "stream_options": {"include_usage": True},
             "cache_salt": secrets.token_urlsafe(32),
@@ -974,9 +1004,9 @@ class VllmEngine(InferenceEngine):
                       deadline: float, num_predict: int,
                       check_loop: bool, budget_nudged: bool) -> dict:
         payload = {
+            **self.sampling_payload(),
             "model": self._loaded_model_id or self._repo(tag),
             "messages": messages,
-            "temperature": 0.0,
             "stream": True,
             "stream_options": {"include_usage": True},
         }

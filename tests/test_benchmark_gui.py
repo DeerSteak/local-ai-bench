@@ -26,9 +26,10 @@ from scripts.app.benchmark_gui import (
     history_row_height,
     launch_controlled_process, open_path_command, parse_progress_line,
     normalize_gui_option_values, prepare_benchmark_launch, restored_tg_tokens,
-    pending_qualification_profiles, qualification_profiles_for_selection,
+    pending_runtime_profiles,
     process_completion_state, resolve_engine_selection,
     resolve_engine_names,
+    selected_catalog_models,
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
     query_gpu_process_memory, query_gpu_usage,
     query_vram_usage, show_vram_usage,
@@ -41,7 +42,7 @@ from scripts.app.benchmark_gui import (
     reconcile_gpu_split_mode, resource_usage_rows, runtime_profiles_for_engines,
     split_mode_capability_known, split_modes_for_runtime_profiles,
     system_memory_usage,
-    start_qualification_profile_load,
+    start_runtime_profile_load,
     windows_host_utc_offset_minutes,
     update_progress_metrics, workload_preflight_errors,
 )
@@ -73,57 +74,32 @@ def test_effective_gui_options_preserves_known_split_modes_and_defaults_unknown_
     })["gpu_split_mode"] == "layer"
 
 
-def test_gui_runtime_profiles_resolve_accelerated_and_cpu_qualification_once_per_version():
-    engines = {"llamacpp": object(), "vllm": object()}
+def test_gui_runtime_profiles_probe_only_each_engine_backend():
     calls = []
 
-    def build(engine, tests, **kwargs):
-        calls.append((engine, tests, kwargs))
-        cpu_only = kwargs["cpu_only"]
-        return {
-            "backend": "cpu" if cpu_only else "cuda",
-            "engine_support": {
-                "support_level": "unverified" if cpu_only else "supported",
-                "runtime_version": kwargs.get("runtime_version") or "1.0",
-            },
-        }
+    class Engine:
+        def __init__(self, backend):
+            self.backend = backend
+
+        def runtime_backend(self, hardware_backend, *, cpu_only):
+            calls.append((hardware_backend, cpu_only))
+            return self.backend
 
     profiles = runtime_profiles_for_engines(
-        engines, {"backend": "cuda"}, profile_builder=build,
+        {"llamacpp": Engine("cuda"), "vllm": Engine("cpu")}, {"backend": "cuda"},
     )
-    assert profiles["llamacpp"]["accelerated"]["support_level"] == "supported"
-    assert profiles["llamacpp"]["cpu"]["support_level"] == "unverified"
-    assert profiles["vllm"]["runtime_backend"] == "cuda"
-    assert [call[2]["engine_name"] for call in calls] == [
-        "llamacpp", "llamacpp", "vllm", "vllm",
-    ]
-    assert calls[1][2]["runtime_version"] == "1.0"
-
-
-def test_pending_gui_qualification_profiles_never_claim_support():
-    profiles = pending_qualification_profiles(["llamacpp", "vllm"])
-    assert profiles["llamacpp"]["accelerated"]["support_level"] == "unverified"
-    assert profiles["vllm"]["cpu"]["support_level"] == "unverified"
-    assert profiles["vllm"]["runtime_backend"] is None
-    assert "Checking" in profiles["vllm"]["accelerated"]["caveat"]
-    assert "could not be determined" in pending_qualification_profiles(
-        ["vllm"], failed=True,
-    )["vllm"]["accelerated"]["caveat"]
-
-
-def test_cpu_only_selection_uses_cpu_qualification_profile():
-    profiles = {
-        "vllm": {
-            "accelerated": {"support_level": "supported"},
-            "cpu": {"support_level": "unverified"},
-        },
+    assert profiles == {
+        "llamacpp": {"runtime_backend": "cuda"},
+        "vllm": {"runtime_backend": "cpu"},
     }
-    assert qualification_profiles_for_selection(
-        profiles, ["vllm"], cpu_only=False,
-    )["vllm"]["support_level"] == "supported"
-    assert qualification_profiles_for_selection(
-        profiles, ["vllm"], cpu_only=True,
-    )["vllm"]["support_level"] == "unverified"
+    assert calls == [("cuda", False), ("cuda", False)]
+
+
+def test_pending_gui_runtime_profiles_do_not_guess_a_backend():
+    assert pending_runtime_profiles(["llamacpp", "vllm"]) == {
+        "llamacpp": {"runtime_backend": None},
+        "vllm": {"runtime_backend": None},
+    }
 
 
 def test_split_modes_use_runtime_backend_intersection_and_cpu_constraint():
@@ -144,18 +120,16 @@ def test_split_modes_use_runtime_backend_intersection_and_cpu_constraint():
         setup, ["llamacpp"], profiles, cpu_only=True,
     ) == ("layer",)
     assert split_modes_for_runtime_profiles(
-        setup, ["llamacpp"], pending_qualification_profiles(["llamacpp"]),
+        setup, ["llamacpp"], pending_runtime_profiles(["llamacpp"]),
         cpu_only=False,
     ) == ("layer",)
 
 
 def test_split_mode_capability_is_unknown_until_selected_runtime_backends_resolve():
-    pending = pending_qualification_profiles(["llamacpp"])
-    failed = pending_qualification_profiles(["llamacpp"], failed=True)
+    pending = pending_runtime_profiles(["llamacpp"])
     resolved = {"llamacpp": {"runtime_backend": "cuda"}}
 
     assert not split_mode_capability_known(["llamacpp"], pending, cpu_only=False)
-    assert not split_mode_capability_known(["llamacpp"], failed, cpu_only=False)
     assert split_mode_capability_known(["llamacpp"], resolved, cpu_only=False)
     assert split_mode_capability_known(["llamacpp"], pending, cpu_only=True)
 
@@ -182,7 +156,7 @@ def test_split_mode_validation_defers_unknown_capability_and_rejects_known_misma
 
 
 @pytest.mark.parametrize("fails", [False, True])
-def test_gui_qualification_profile_loader_always_returns_a_terminal_profile(fails):
+def test_gui_runtime_profile_loader_always_returns_a_terminal_profile(fails):
     output = queue.Queue()
 
     class ImmediateThread:
@@ -195,20 +169,13 @@ def test_gui_qualification_profile_loader_always_returns_a_terminal_profile(fail
     def load(_engines, _hardware):
         if fails:
             raise RuntimeError("probe failed")
-        return {"vllm": {
-            "accelerated": {"support_level": "supported", "caveat": "Qualified."},
-            "cpu": {"support_level": "unverified", "caveat": "Unverified."},
-            "runtime_backend": "cuda",
-        }}
+        return {"vllm": {"runtime_backend": "cuda"}}
 
-    start_qualification_profile_load(
+    start_runtime_profile_load(
         {"vllm": object()}, {"backend": "cuda"}, output,
         loader=load, thread_factory=ImmediateThread,
     )
-    profile = output.get_nowait()["vllm"]
-    assert profile["accelerated"]["support_level"] == (
-        "unverified" if fails else "supported"
-    )
+    assert output.get_nowait()["vllm"]["runtime_backend"] == (None if fails else "cuda")
 
 
 def test_dual_gpu_modes_have_user_facing_labels_and_round_trip():
@@ -349,12 +316,14 @@ def test_normalize_gui_option_values_converts_controls_and_trims_paths():
     raw = {
         **GUI_OPTION_DEFAULTS, "runs": "5", "timeout": "bad",
         "gpu_split_mode": "Tensor parallel (experimental)", "out": " result.json ",
+        "mtp": "Both",
         "comfyui": " /ComfyUI ",
     }
     options = normalize_gui_option_values(raw)
     assert options["runs"] == 5
     assert options["timeout"] == "bad"
     assert options["gpu_split_mode"] == "tensor"
+    assert options["mtp"] == "both"
     assert options["out"] == "result.json"
     assert options["comfyui"] == "/ComfyUI"
 
@@ -423,6 +392,32 @@ def test_prepare_benchmark_launch_requires_a_selected_model(tmp_path):
     )
     assert isinstance(preparation, BenchmarkLaunchError)
     assert any("model" in error.lower() for error in preparation.errors)
+
+
+def test_prepare_benchmark_launch_rejects_non_mtp_workloads_before_progress(tmp_path):
+    entries = [MenuEntry(
+        "qwen3.5:4b-q4_K_M", "Qwen", "llm", "LLM", True,
+    )]
+    preparation = prepare_benchmark_launch(
+        engine="llamacpp", tests=["llm", "img"], entries=entries,
+        max_prompt_tokens=None, tg_tokens=[],
+        gui_options=dict(GUI_OPTION_DEFAULTS, mtp="on"),
+        selected_preset="Custom", detected_tools={"llama-server": "/bin/server"},
+        found_comfyui=tmp_path, detected_comfyui=tmp_path,
+    )
+    assert isinstance(preparation, BenchmarkLaunchError)
+    assert any("cannot run non-MTP workloads: img" in error for error in preparation.errors)
+
+
+def test_selected_catalog_models_limits_mtp_progress_to_checked_entries():
+    entries = [
+        MenuEntry("qwen3.5:4b-q4_K_M", "MTP", "llm", "LLM", False),
+        MenuEntry("gemma3:1b-it-q4_K_M", "Plain", "llm", "LLM", True),
+        MenuEntry("custom", "Custom", "custom", "Custom", True),
+    ]
+    assert [model["tag"] for model in selected_catalog_models(entries)] == [
+        "gemma3:1b-it-q4_K_M",
+    ]
 
 
 def test_resolve_engine_names_restores_default_without_model_checks():
@@ -1012,15 +1007,16 @@ def test_vram_line_only_applies_to_discrete_memory_devices(monkeypatch):
     assert show_vram_usage([
         {"name": "AMD Radeon Pro W7900", "vendor": "amd", "vram_gb": 48},
     ])
+    assert show_vram_usage([
+        {"name": "Intel Arc Pro B65", "vendor": "intel", "vram_gb": 24},
+    ])
     assert not show_vram_usage([
         {"name": "AMD Radeon Graphics", "vendor": "amd", "vram_gb": 2},
         {"name": "NVIDIA GB10", "vendor": "nvidia", "vram_gb": None},
     ])
 
     monkeypatch.setattr(
-        Shared, "sample_memory_gb", staticmethod(lambda: {
-            "gpu_vram_used_gb": 10.25, "gpu_vram_total_gb": 24.0,
-        }),
+        "scripts.runtime.telemetry.query_sampler_vram_usage", lambda: (10.25, 24.0),
     )
     assert query_vram_usage() == (10.25, 24.0)
     assert resource_usage_rows(None, None, 0, None, None) == {

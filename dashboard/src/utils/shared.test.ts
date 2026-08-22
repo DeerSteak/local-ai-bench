@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   parseJSON, parseResultsJSON, readNamedJSONSource, getRunReliabilityWarning,
-  getEngineSupport,
   getLlamaBenchMethodologyWarning,
   getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning,
   getNoRepackMethodologyWarning,
@@ -113,26 +112,6 @@ describe("getRunReliabilityWarning", () => {
   it("warns for malformed run metadata", () => {
     expect(getRunReliabilityWarning({ run: [] })).toContain("malformed");
     expect(getRunReliabilityWarning({ run: 0 })).toContain("malformed");
-  });
-});
-
-describe("getEngineSupport", () => {
-  it("reads a recorded derived support caveat", () => {
-    expect(getEngineSupport({ profile: { engine_support: {
-      support_level: "experimental", caveat: "Partial lifecycle evidence.",
-    } } })).toEqual({ level: "experimental", caveat: "Partial lifecycle evidence." });
-  });
-
-  it("keeps legacy and malformed files explicitly not recorded", () => {
-    expect(getEngineSupport({})).toEqual({
-      level: "not_recorded",
-      caveat: "Qualification status was not recorded by this suite version.",
-    });
-    expect(getEngineSupport({ profile: { engine_support: { support_level: "claimed" } } }))
-      .toEqual({
-        level: "not_recorded",
-        caveat: "Qualification status was not recorded by this suite version.",
-      });
   });
 });
 
@@ -306,6 +285,33 @@ describe("applyEngineLabels", () => {
       data: { run: { effective_config: { llamacpp_no_repack: true } } },
     }];
     expect(applyEngineLabels(files)[0].hostname).toBe("host-a\nllama.cpp -nr 7000");
+  });
+
+  it("distinguishes native MTP results for every compatible engine", () => {
+    const files: ResultsFile[] = [
+      {
+        id: 1, hostname: "host-a", engine: "vllm", engineVersion: "0.27.1",
+        data: { run: { effective_config: { mtp_enabled: false } } },
+      },
+      {
+        id: 2, hostname: "host-a", engine: "vllm", engineVersion: "0.27.1",
+        data: { run: { effective_config: { mtp_enabled: true } } },
+      },
+      {
+        id: 3, hostname: "host-b", engine: "llamacpp", engineVersion: "10488",
+        data: { run: { effective_config: { mtp_enabled: false } } },
+      },
+      {
+        id: 4, hostname: "host-b", engine: "llamacpp", engineVersion: "10488",
+        data: { run: { effective_config: {
+          mtp_enabled: true, llamacpp_no_repack: true,
+        } } },
+      },
+    ];
+    expect(applyEngineLabels(files).map(file => file.hostname)).toEqual([
+      "host-a\nvLLM 0.27.1", "host-a\nvLLM MTP on 0.27.1",
+      "host-b\nllama.cpp 10488", "host-b\nllama.cpp -nr MTP on 10488",
+    ]);
   });
 
   it("omits no-repack from labels for workloads that do not consume it", () => {

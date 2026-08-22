@@ -52,24 +52,6 @@
 .gpuMetadata { margin-top: 6px; }
 .gpuMetadata span { background: #dcecff; color: #174a82; }
 
-.support {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin-top: 10px;
-  padding: 8px 10px;
-  border-left: 4px solid #8c959f;
-  border-radius: 5px;
-  background: #f0f3f6;
-  color: #57606a;
-  font: 12px 'IBM Plex Mono', monospace;
-}
-
-.support strong { color: #34445d; text-transform: capitalize; }
-.support[data-state="supported"] { border-left-color: #1a7f37; background: #dafbe1; }
-.support[data-state="experimental"] { border-left-color: #bf8700; background: #fff8c5; }
-.support[data-state="unverified"] { border-left-color: #cf222e; background: #ffebe9; }
-
 .headroom {
   display: flex;
   flex-wrap: wrap;
