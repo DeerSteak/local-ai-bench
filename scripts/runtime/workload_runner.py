@@ -121,19 +121,6 @@ def apply_runner_settings(settings: dict) -> None:
         config.RUN_TIMEOUT = settings["run_timeout_seconds"]
 
 
-def resolve_runner_image_models(identities: list[dict], catalog_models=IMAGE_MODELS) -> list[dict]:
-    catalog = {model["short"]: model for model in catalog_models}
-    models = []
-    for identity in identities:
-        model = identity if identity.get("audit_candidate") is True else catalog.get(
-            identity["short"]
-        )
-        if model is None:
-            raise ValueError(f"image model is absent from the catalog: {identity['short']}")
-        models.append(model)
-    return models
-
-
 def emit(kind: str, **details) -> None:
     payload = {
         "ownership_token": os.environ.get("LOCAL_AI_BENCH_RUNNER_TOKEN"),
@@ -627,7 +614,13 @@ def execute_image_job(path, job_id, *, benchmark_factory: Callable[[], Any] = Im
     settings = plan.effective_config
     apply_runner_settings(settings)
     config.N_RUNS = settings["runs"]
-    models = resolve_runner_image_models(plan.models["images"])
+    catalog = {model["short"]: model for model in IMAGE_MODELS}
+    models = []
+    for identity in plan.models["images"]:
+        model = catalog.get(identity["short"])
+        if model is None:
+            raise ValueError(f"image model is absent from the catalog: {identity['short']}")
+        models.append(model)
     context = load_local_execution_context(path, job_id)
 
     def notify(_section):

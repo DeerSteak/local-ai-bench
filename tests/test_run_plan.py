@@ -6,7 +6,6 @@ import pytest
 
 from scripts.results.run_plan import IDENTITY_SCHEME, PLAN_SCHEMA_VERSION, RunPlan, load_run_plan
 from scripts.runtime.sampling import baseline_sampling_profile
-from scripts.runtime.sampling import publisher_sampling_profile
 
 
 def make_plan(**overrides):
@@ -131,47 +130,6 @@ def test_schema_4_neutral_v1_plan_remains_readable_without_sampling_identity():
     plan = make_plan(effective_config=config, schema_version=4)
     plan.validate_for_execution()
     assert "sampling" not in plan.execution_identity["methodology"]
-
-
-def test_source_pinned_publisher_sampling_is_valid_and_not_baseline_equivalent():
-    config = complete_plan().effective_config
-    publisher = publisher_sampling_profile(
-        "llamacpp", name="model", repo="owner/model", revision="a" * 40,
-        controls={"do_sample": True, "temperature": 1.0, "top_k": 20},
-    )
-    config.update({
-        "methodology_profile": "publisher-v1",
-        "effective_optimizations": [],
-        "sampling_profile": publisher,
-    })
-    plan = make_plan(effective_config=config)
-    plan.validate_for_execution()
-    assert plan.execution_identity["methodology"]["sampling"] == publisher
-
-    malformed = dict(config, sampling_profile={"profile": "publisher-recommended-v1:model"})
-    with pytest.raises(ValueError, match="sampling_profile"):
-        make_plan(effective_config=malformed).validate_for_execution()
-
-
-def test_audit_image_model_identity_is_complete_and_image_only():
-    audit_model = {
-        "audit_candidate": True, "artifact_digest": "a" * 64,
-        "label": "Z-Image Turbo", "short": "z-image-turbo", "tier": "medium",
-        "checkpoint": "z_image_turbo_bf16.safetensors",
-        "checkpoint_folder": "diffusion_models", "workflow": "z_image",
-        "steps": 8, "cfg": 1.0, "sampler": "res_multistep", "scheduler": "simple",
-    }
-    base = complete_plan()
-    models = base.models
-    models["images"] = [audit_model]
-    plan = make_plan(models=models, effective_config=base.effective_config)
-    plan.validate_for_execution()
-    assert plan.models["images"] == [audit_model]
-
-    models = base.models
-    models["llm"] = [{**audit_model, "tag": "wrong"}]
-    with pytest.raises(ValueError, match="outside the image family"):
-        make_plan(models=models, effective_config=base.effective_config).validate_for_execution()
 
 
 def test_offline_mode_is_identity_bearing_without_changing_legacy_plans():

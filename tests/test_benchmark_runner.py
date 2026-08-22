@@ -3,8 +3,6 @@ import io
 import sys
 from types import SimpleNamespace
 
-import pytest
-
 from scripts.app.benchmark import (
     relay_runner_log, run_supervised_llm, run_supervised_stage,
     supervised_stage_runner, temperature_telemetry_requested,
@@ -771,18 +769,6 @@ def test_image_runner_uses_private_paths_and_commits_projection(monkeypatch, tmp
     ] == 2.0
 
 
-def test_image_runner_uses_complete_audit_identity_without_catalog_lookup():
-    from scripts.runtime.workload_runner import resolve_runner_image_models
-
-    candidate = {
-        "audit_candidate": True, "short": "z-image-turbo", "label": "Z-Image Turbo",
-        "checkpoint": "z.safetensors", "workflow": "z_image",
-    }
-    assert resolve_runner_image_models([candidate], catalog_models=[]) == [candidate]
-    with pytest.raises(ValueError, match="absent from the catalog"):
-        resolve_runner_image_models([{"short": "missing"}], catalog_models=[])
-
-
 def test_supervised_accuracy_projects_committed_question(monkeypatch, tmp_path):
     questions = [{
         "id": "q1", "category": "general", "choices": {"A": "x", "B": "y"},
@@ -873,6 +859,7 @@ def test_runner_reapplies_vllm_cache_policy_for_its_runtime_backend():
 
 def test_runner_restores_recorded_sampling_profile_on_engine():
     from scripts.runtime.workload_runner import configure_runner_engine
+    from scripts.runtime.sampling import baseline_sampling_profile
 
     class Engine:
         profile = None
@@ -884,7 +871,7 @@ def test_runner_restores_recorded_sampling_profile_on_engine():
         def set_sampling_profile(self, profile):
             self.profile = profile
 
-    profile = {"profile": "publisher-recommended-v1:model", "engine_controls": {}}
+    profile = baseline_sampling_profile("llamacpp")
     engine = Engine()
     assert configure_runner_engine(
         engine, "cuda", False, {"sampling_profile": profile},

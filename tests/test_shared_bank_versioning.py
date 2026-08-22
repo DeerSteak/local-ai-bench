@@ -25,14 +25,6 @@ def test_file_hash_is_short_hex():
     assert re.fullmatch(r"[0-9a-f]{12}", h)
 
 
-def test_full_file_sha256_is_available_for_artifact_integrity(tmp_path):
-    path = tmp_path / "artifact.bin"
-    path.write_bytes(b"artifact")
-    digest = Shared.file_sha256(path)
-    assert len(digest) == 64
-    assert Shared.file_hash(path) == digest[:12]
-
-
 # ── stratified_sample ──
 
 def _bank():

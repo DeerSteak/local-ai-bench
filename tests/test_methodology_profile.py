@@ -112,26 +112,6 @@ def test_text_sampling_profile_maps_to_the_selected_engine():
     assert "repetition_penalty" in vllm["engine_controls"]
 
 
-def test_publisher_sampling_has_distinct_methodology_identity():
-    sampling = {"profile": "publisher-recommended-v1:model", "engine_controls": {}}
-    profile = resolve_methodology_profile(
-        engine_name="llamacpp", tests=["llm"], cpu_only=False,
-        sampling_profile=sampling,
-    )
-    assert profile["profile"] == "publisher-v1"
-    assert profile["sampling_profile"] is sampling
-
-
-def test_publisher_sampling_is_not_claimed_for_non_generation_workloads():
-    sampling = {"profile": "publisher-recommended-v1:model", "engine_controls": {}}
-    profile = resolve_methodology_profile(
-        engine_name="llamacpp", tests=["emb"], cpu_only=False,
-        sampling_profile=sampling,
-    )
-    assert profile["profile"] == "neutral-v2"
-    assert "sampling_profile" not in profile
-
-
 def test_vllm_profile_records_one_cache_policy_for_server_and_native_workloads():
     profile = resolve_methodology_profile(
         engine_name="vllm", tests=["llm", "conv", "vllmbench"], cpu_only=False,

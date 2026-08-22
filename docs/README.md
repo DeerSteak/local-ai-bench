@@ -44,7 +44,6 @@ This index separates current user guidance, scientific contracts, developer refe
 | [Coordinator API](coordinator-api.md) | Versioned future localhost coordination contract |
 | [Workload Packs](workload-packs.md) | Pack validation and execution contract |
 | [Catalogs](catalogs.md) | Hardware and model catalog ownership |
-| [Version 6 Model Catalog Audit](model-catalog-audit-v6.md) | Active Milestone 9 rubric, incumbent roles, candidate register, and evidence plan |
 
 ## Security, privacy, and operations
 

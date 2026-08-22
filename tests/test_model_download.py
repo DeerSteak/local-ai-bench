@@ -25,10 +25,7 @@ class FakeApi:
 def test_download_hf_files_uses_cli_and_flattens_nested_file(monkeypatch, tmp_path):
     destination = tmp_path / "models"
     source = destination / "nested" / "model.gguf"
-    commands = []
-
-    def run(command, **_kwargs):
-        commands.append(command)
+    def run(_command, **_kwargs):
         source.parent.mkdir(parents=True)
         source.write_bytes(b"weights")
         return SimpleNamespace(returncode=0, stderr="", stdout="")
@@ -36,10 +33,7 @@ def test_download_hf_files_uses_cli_and_flattens_nested_file(monkeypatch, tmp_pa
     monkeypatch.setattr(model_download.shutil, "which", lambda name: f"/bin/{name}")
     monkeypatch.setattr(model_download.subprocess, "run", run)
 
-    assert download_hf_files(
-        "owner/model", "nested/model.gguf", destination, revision="a" * 40,
-    )
-    assert commands[0][-2:] == ["--revision", "a" * 40]
+    assert download_hf_files("owner/model", "nested/model.gguf", destination)
     assert (destination / "model.gguf").read_bytes() == b"weights"
     assert not source.exists()
 
@@ -52,11 +46,9 @@ def test_download_hf_files_falls_back_to_python_api(monkeypatch, tmp_path):
 
     assert download_hf_files(
         "owner/model", ["one.gguf", "two.gguf"], tmp_path, token="secret",
-        revision="a" * 40,
     )
     assert [call["filename"] for call in calls] == ["one.gguf", "two.gguf"]
     assert all(call["token"] == "secret" for call in calls)
-    assert all(call["revision"] == "a" * 40 for call in calls)
 
 
 def test_download_hf_snapshot_reports_both_failures(monkeypatch, tmp_path):

@@ -21,14 +21,7 @@ IMAGE_WORKFLOW_ASSETS = {
               ("vae", "flux2-vae.safetensors")),
     "sd3": (("clip", "clip_l.safetensors"), ("clip", "clip_g.safetensors"),
             ("clip", "t5xxl_fp16.safetensors")),
-    "z_image": (("text_encoders", "qwen_3_4b.safetensors"),
-                ("vae", "ae.safetensors")),
 }
-
-
-def image_checkpoint_path(model: dict, models_dir: Path | None = None) -> Path:
-    root = config.COMFYUI_MODELS_DIR if models_dir is None else Path(models_dir)
-    return root / model.get("checkpoint_folder", "checkpoints") / model["checkpoint"]
 
 
 def image_resume_artifacts(models: list[dict]) -> dict[str, Path]:
@@ -36,8 +29,7 @@ def image_resume_artifacts(models: list[dict]) -> dict[str, Path]:
     artifacts = {}
     for model in models:
         short = model["short"]
-        checkpoint = image_checkpoint_path(model)
-        paths = [("checkpoint", checkpoint.parent.name, checkpoint.name)]
+        paths = [("checkpoint", "checkpoints", model["checkpoint"])]
         paths.extend((f"{folder}:{name}", folder, name)
                      for folder, name in IMAGE_WORKFLOW_ASSETS.get(model["workflow"], ()))
         for logical, folder, name in paths:
@@ -217,45 +209,6 @@ class ImageBenchmark:
         }
 
     @staticmethod
-    def build_z_image_workflow(checkpoint, width, height, steps, cfg,
-                               sampler, scheduler, seed, prompt,
-                               filename_prefix="bench_z_image"):
-        """Z-Image Turbo graph matching Comfy-Org's fixed core-node workflow."""
-        return {
-            "1": {"class_type": "UNETLoader", "inputs": {
-                "unet_name": checkpoint, "weight_dtype": "default",
-            }},
-            "2": {"class_type": "CLIPLoader", "inputs": {
-                "clip_name": "qwen_3_4b.safetensors", "type": "lumina2",
-                "device": "default",
-            }},
-            "3": {"class_type": "VAELoader", "inputs": {"vae_name": "ae.safetensors"}},
-            "4": {"class_type": "CLIPTextEncode", "inputs": {
-                "text": prompt, "clip": ["2", 0],
-            }},
-            "5": {"class_type": "ConditioningZeroOut", "inputs": {
-                "conditioning": ["4", 0],
-            }},
-            "6": {"class_type": "EmptySD3LatentImage", "inputs": {
-                "width": width, "height": height, "batch_size": 1,
-            }},
-            "7": {"class_type": "ModelSamplingAuraFlow", "inputs": {
-                "model": ["1", 0], "shift": 3.0,
-            }},
-            "8": {"class_type": "KSampler", "inputs": {
-                "model": ["7", 0], "positive": ["4", 0], "negative": ["5", 0],
-                "latent_image": ["6", 0], "seed": seed, "steps": steps, "cfg": cfg,
-                "sampler_name": sampler, "scheduler": scheduler, "denoise": 1.0,
-            }},
-            "9": {"class_type": "VAEDecode", "inputs": {
-                "samples": ["8", 0], "vae": ["3", 0],
-            }},
-            "10": {"class_type": "SaveImage", "inputs": {
-                "images": ["9", 0], "filename_prefix": filename_prefix,
-            }},
-        }
-
-    @staticmethod
     def build_sd3_workflow(checkpoint, width, height, steps, cfg,
                            sampler, scheduler, seed, prompt, filename_prefix="bench_sd3"):
         """SD3.5 Large txt2img workflow. Checkpoint has UNet+VAE but not the
@@ -343,8 +296,6 @@ class ImageBenchmark:
             builder = ImageBenchmark.build_flux_workflow
         elif workflow_t == "flux2":
             builder = ImageBenchmark.build_flux2_workflow
-        elif workflow_t == "z_image":
-            builder = ImageBenchmark.build_z_image_workflow
         elif workflow_t == "sd3":
             builder = ImageBenchmark.build_sd3_workflow
         else:
@@ -467,6 +418,8 @@ class ImageBenchmark:
         results = journal.export() if journal else {}
         Shared.section("Image Generation via ComfyUI")
 
+        checkpoints_dir = config.COMFYUI_MODELS_DIR / "checkpoints"
+
         for model in image_models:
             label      = model["label"]
             checkpoint = model["checkpoint"]
@@ -486,7 +439,7 @@ class ImageBenchmark:
             telemetry_active = False
             segment_work = 0
             try:
-                ckpt_path = image_checkpoint_path(model)
+                ckpt_path = checkpoints_dir / checkpoint
                 if not ckpt_path.exists():
                     Shared.warn(f"{label}: checkpoint not found at {ckpt_path} — skipping")
                     Shared.log(f"Download and place at: {ckpt_path}")

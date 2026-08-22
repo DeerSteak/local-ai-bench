@@ -10,9 +10,7 @@ Qualified 0.5-second memory sampling is enabled by default and does not change t
 
 Power telemetry is opt-in until each source and the combined sampler pass the shared repeated-trial observer-effect policy. Its interval, normalized source, and measurement scope are identity-bearing in run-plan schema 4; results with different power sources or scopes cannot be pooled merely because both report watts or joules.
 
-Run-plan schema 5 adds the resolved sampler profile to methodology identity. Text generation pins temperature `0`, top-k `0`, top-p `1`, min-p `0`, repetition penalty `1`, presence and frequency penalties `0`, seed `0`, and empty logit bias across llama.cpp and vLLM; llama.cpp additionally pins its engine-specific samplers to neutral values. Managed vLLM servers ignore repository `generation_config.json` defaults. Changing any control or selecting a future publisher profile creates a distinct methodology identity and cannot pool with this baseline.
-
-Publisher-recommended sampling is opt-in through `--publisher-sampling-profile`. Its schema-1 JSON must contain `name`, an exact `source.repo` and `source.revision`, and supported `controls`; unspecified supported controls resolve to the deterministic neutral values rather than engine defaults. The plan records the publisher controls, their canonical digest, the fully resolved semantic and engine controls, and methodology `publisher-v1`, so these results never pool with `neutral-v2`.
+Run-plan schema 5 adds the resolved sampler profile to methodology identity. Text generation pins temperature `0`, top-k `0`, top-p `1`, min-p `0`, repetition penalty `1`, presence and frequency penalties `0`, seed `0`, and empty logit bias across llama.cpp and vLLM; llama.cpp additionally pins its engine-specific samplers to neutral values. Managed vLLM servers ignore repository `generation_config.json` defaults. Changing any control creates a distinct methodology identity and cannot pool with this baseline.
 
 ## Supported workload scope
 

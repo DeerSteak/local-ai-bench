@@ -97,11 +97,7 @@ def source_identity(repo_root: Path) -> dict:
 
 
 def model_identity(models: list[dict]) -> list[dict]:
-    keys = (
-        "tag", "short", "size_gb", "params_b", "audit_candidate", "artifact_digest",
-        "label", "tier", "checkpoint", "checkpoint_folder", "workflow", "steps", "cfg",
-        "sampler", "scheduler",
-    )
+    keys = ("tag", "short", "size_gb", "params_b")
     return [{key: model[key] for key in keys if key in model} for model in models]
 
 

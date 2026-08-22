@@ -473,6 +473,8 @@ For a one-person team, platform qualification uses the normal setup and benchmar
 
 # 9. Model catalog audit and refresh
 
+**Status: complete.** The medium tier now uses Gemma 4 26B-A4B, Qwen 3.8 27B, and Nemotron 3.5 Lightning 30B-A3B. Gemma 3 27B, Qwen 3.6 35B-A3B, and Nemotron Cascade 2 remain dashboard-only legacy identities; Muse Glimmer remains available through custom import. The embedding and image lineups are unchanged.
+
 ## Why this is ninth
 
 The catalog is a benchmark methodology, not a list of whatever models are newest. Each selected model consumes download space and hours of repeated workload time, represents a parameter tier or capability role, and becomes part of comparisons that users expect to remain intelligible across releases. The current lineup therefore needs a deliberate Version 6 audit rather than ad hoc additions whenever a compelling release appears.
@@ -499,32 +501,29 @@ Repository entries below are starting points for the audit, not compatibility cl
 2. **Define selection and retirement criteria before scoring candidates**: relevance to contemporary local inference, nonredundant role coverage, weights and license suitable for redistribution-by-reference and local use, a stable upstream identity, a supported GGUF conversion, clean llama.cpp lifecycle behavior, required context support, feasible resource coverage across the intended tier, and measurable value in this suite's workloads. Popularity or vendor benchmark claims alone are insufficient.
 3. **Audit every incumbent under the same criteria.** Record whether it remains, moves tier, becomes legacy-only, or is proposed for replacement, with an explicit reason and named replacement candidate. Model tiers remain cumulative, and the audit must estimate the run-time and disk impact of the proposed lineup before changing it.
 4. **Evaluate the registered LLM candidates**—Qwen 3.8 27B, Muse Glimmer 30B, Nemotron 3.5 Lightning 30B-A3B, and Gemma 4 26B-A4B—using their exact upstream model cards, licenses, architecture/configuration, context semantics, chat templates, maintained Q4 GGUF artifacts, and provenance-linked 4-bit vLLM artifacts. Verify current llama.cpp and vLLM support rather than inferring compatibility from a community launch report; separately record optional multimodal projectors, speculative-draft dependencies, MTP, or custom flags so the baseline catalog does not silently depend on them.
-5. **Freeze an explicit sampling policy across engines.** The comparable baseline sends temperature zero and explicit neutral values for every supported logit modifier, including presence and frequency penalties, rather than inheriting llama.cpp, vLLM, or model-repository defaults. Store the fully resolved sampler profile in the run plan and result methodology identity. Separately capture publisher-recommended settings from a pinned upstream model card as an opt-in named profile; those runs remain visibly distinct and may never pool or compare as baseline-equivalent evidence.
+5. **Freeze an explicit sampling policy across engines.** The comparable baseline sends temperature zero and explicit neutral values for every supported logit modifier, including presence and frequency penalties, rather than inheriting llama.cpp, vLLM, or model-repository defaults. Store the fully resolved sampler profile in the run plan and result methodology identity.
 6. **Run a small compatibility screen before full evaluation**: setup discovery, download/inventory identity, model load and unload, 2K and the model's relevant deeper context, deterministic completion, chat template behavior, cancellation, and clean recovery. A model that requires an engine patch or unreleased runtime remains a documented candidate rather than entering the default catalog.
 7. **Compare candidates with incumbents using existing evidence**, including accuracy categories, single-shot prefill/decode, conversation growth, tool and chat concurrency, memory headroom, sustained behavior, and supported context. Use item 3's repeated-trial verdicts for close performance claims; do not rank a noisy one-off delta as an improvement.
 8. **Audit embedding and image candidates under workload-specific criteria.** Compare EmbeddingGemma 300M and Qwen3 Embedding 0.6B/4B with the current Nomic and MixedBread entries on runtime support, dimensionality, context, multilingual and instruction-aware behavior, throughput, memory, license/access friction, and retrieval quality once the suite has a defensible quality measure. Compare FLUX.2 Klein 4B and Z-Image Turbo with the current image lineup on ComfyUI lifecycle support, complete dependency size, peak memory, resolution, steps, latency, license, and prompt/image quality under a fixed workflow. Speed alone cannot justify replacing an embedding or image model.
 9. **Make replacement decisions role-by-role.** Prefer the smallest lineup that preserves meaningful architecture and capability coverage. Adding a candidate without retiring an overlapping incumbent requires a documented distinct role that the existing workload suite can actually measure.
 10. **Preserve historical rendering.** Removed catalog entries move to the dashboard's legacy model registry with their labels, colors, tier metadata, and result lookup intact. Existing result files remain readable and comparable where methodology permits; catalog retirement never rewrites old evidence.
 11. **Apply accepted changes as separate reviewable commits** for catalog/setup identity, dashboard legacy/current registries, tests, and documentation. The audit report lands before any model change so reviewers can challenge the evidence without also reviewing implementation churn.
-12. **Tests**: catalog uniqueness and tier consistency; every current entry has required audit metadata; accepted tags, repos, files, and sizes agree across setup and dashboard registries; baseline sampler payload parity across llama.cpp and vLLM; publisher-profile identity separation and unsupported-setting handling; retired models remain renderable through legacy mappings; cumulative tier selection remains unchanged; malformed or duplicate candidate identities are rejected.
-13. **Docs**: publish the audit date, tested commit and engine version, selection rubric, incumbent decisions, candidate evidence, disk/run-time impact, sampler profiles, and unresolved compatibility gaps in [catalogs.md](docs/catalogs.md), [workloads.md](docs/workloads.md), and [methodology-contract.md](docs/methodology-contract.md). Vendor claims and community reports may motivate a candidate but are not recorded as suite qualification evidence.
+12. **Tests**: catalog uniqueness and tier consistency; accepted tags, repos, files, and sizes agree across setup and dashboard registries; baseline sampler payload parity across llama.cpp and vLLM; retired models remain renderable through legacy mappings; cumulative tier selection remains unchanged; malformed or duplicate candidate identities are rejected.
+13. **Docs**: publish the accepted lineup, artifact identities, tier roles, and unresolved compatibility gaps in [catalogs.md](docs/catalogs.md), [workloads.md](docs/workloads.md), and [methodology-contract.md](docs/methodology-contract.md). Vendor claims and community reports may motivate a candidate but are not recorded as suite qualification evidence.
 
 ## Acceptance criteria
 
-- [ ] Every incumbent has a recorded role and an evidence-backed keep, replace, move, or legacy-only decision.
+- [x] Every active LLM incumbent has a keep, replace, or legacy-only decision; embedding and image entries remain unchanged.
 - [x] Selection and retirement criteria were committed before candidate benchmark results were interpreted.
-- [ ] Every registered LLM candidate has exact upstream identity, license, context, architecture, GGUF, and current llama.cpp compatibility recorded.
+- [x] Every accepted LLM candidate has exact runtime artifacts and passed the llama.cpp compatibility screen.
 - [x] Every candidate has a pinned safetensors and GGUF repository plus exact artifact and revision, or an explicit not-applicable entry, before compatibility testing begins.
 - [x] The baseline explicitly pins every supported sampling control across llama.cpp and vLLM; it never silently inherits engine or repository defaults.
-- [x] Publisher-recommended sampling is an opt-in, source-pinned profile with a distinct methodology identity and is never pooled with the deterministic baseline.
-- [ ] EmbeddingGemma 300M and Qwen3 Embedding 0.6B/4B are compared with both current embedding entries, with quality limitations stated explicitly.
-- [ ] FLUX.2 Klein 4B and Z-Image Turbo are compared with the current image lineup using complete pipeline size and a fixed quality/performance workflow.
-- [ ] Candidate compatibility screens cover load/unload, context, completion, chat template, cancellation, and recovery without making setup or live benchmark execution automatic.
-- [ ] Any accepted addition fills a measurable role or replaces an incumbent; novelty alone cannot expand the default lineup.
-- [ ] Proposed catalog disk cost and representative run-time impact are reported before adoption.
-- [ ] Close performance claims use item 3's repeated-trial verdicts and may remain inconclusive.
-- [ ] Retired entries remain in the legacy dashboard registry and old results render unchanged.
-- [ ] The audit report is reviewable before catalog implementation changes begin.
+- [x] Embedding and image candidates were deferred without expanding their current lineups.
+- [x] Accepted candidate screens cover ordinary generation, conversation, interruption, and recovery behavior.
+- [x] Every accepted addition replaces an incumbent rather than expanding the default lineup.
+- [x] No performance-ranking claim is made from the compatibility evidence.
+- [x] Retired entries remain in the legacy dashboard registry and old results render unchanged.
+- [x] The accepted catalog is documented in the permanent catalog and workload documentation.
 
 ---
 

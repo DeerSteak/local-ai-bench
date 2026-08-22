@@ -22,7 +22,6 @@
 | `Launch Local AI Bench Dashboard.bat` | Double-clickable Windows launcher that builds, serves, and opens the dashboard |
 | `run_bench.sh` | Activates the venv; auto-selects GUI/terminal with no arguments or forwards benchmark arguments directly on Linux / macOS |
 | `run_qualification.sh` / `run_qualification.bat` | Thin platform launchers that run normal setup and the normal smallest-model benchmark |
-| `run_model_catalog_screens.sh` | Unattended four-model by two-engine Milestone 9 compatibility-screen matrix |
 | `run_telemetry_trials.sh` | Resumable alternating telemetry-off/on qualification runner for memory and power on Linux / macOS |
 | `run_sustained_qualification_linux.sh` | Repeated ten-minute sustained-load evidence wrapper for Linux small systems |
 | `run_temperature_qualification_linux.sh` | Unattended Linux temperature observer-effect matrix across latency/sustained screens and all candidate intervals |
@@ -51,9 +50,6 @@
 | `docs/user-journey.md` | Complete discovery, project, execution, recovery, review, export, and escalation path |
 | `docs/recommendation-policy.md` | Consumer goals, evidence eligibility, fit, ranking, conflicts, and GPU/Mac workflows |
 | `docs/platform-tuning.md` | Neutral runtime settings, platform compatibility workarounds, and tuning-profile change rules |
-| `docs/model-catalog-audit-v6.md` | Precommitted Milestone 9 selection rubric, incumbent roles, candidate register, and compatibility-screen contract |
-| `docs/model-catalog-source-audit-v6.json` | Machine-readable candidate repository revisions, access/license metadata, exact artifact sets, provenance checks, and unresolved source gates |
-| `docs/model-catalog-readiness-v6.json` | Machine-readable Milestone 9 source/screen blockers and exact active-catalog artifact-byte totals |
 | `docs/strix-halo-troubleshooting-ubuntu-24.04.md` | Ubuntu OEM-kernel, inbox-driver, ROCm, DKMS recovery, and qualification runbook for Strix Halo |
 | `docs/acceptance-policies.md` | Versioned explicit threshold policy, evidence, and rejection semantics |
 | `docs/projects.md` | Local project workflows, portable configuration, baseline, and acceptance-policy behavior |
@@ -146,13 +142,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `results/content_store.py` | Atomic content-addressed storage and verified references for large local artifacts |
 | `runtime/runner_supervisor.py` / `runtime/process_tree.py` | Fixed-command internal runner protocol, heartbeat monitoring, and descendant-aware cancellation escalation |
 | `runtime/workload_runner.py` / `runtime/supervised_stage.py` | Owned internal stage runner plus the parent supervisor service shared by normal and recovery execution |
-| `runtime/image_model_spec.py` | Strict internal image-candidate identity shared by CLI plan construction and isolated recovery runners |
 | `release/qualification.py` / `release/qualification_docs.py` | Evidence-derived platform support policy plus generated published matrices |
-| `release/model_catalog_audit.py` / `release/model_catalog_candidates.json` | Metadata-only candidate source audit plus its versioned repository register |
-| `release/model_catalog_inventory.py` / `release/model_catalog_incumbents.json` | Exact active-catalog artifact inventory plus its required upstream roles |
-| `release/model_catalog_incumbent_audit.py` | Pinned upstream and distributed-artifact source audit for every active catalog entry |
-| `release/model_catalog_screen.py` | Pinned custom-model import, normal benchmark interruption/resume, and contract-complete candidate evidence gate |
-| `release/model_catalog_readiness.py` | Fail-closed Milestone 9 source, screen-integrity, runtime/hardware identity, and active-catalog cost gate |
 | `release/qualification_run.py` / `release/qualification_targets.py` / `release/qualification_targets.ps1` / `release/qualification_setup.ps1` / `release/qualification_coverage.py` | Explicit platform selection, dependency-free Windows target parsing, setup evidence capture, normal benchmark launch, and smallest-model result validation |
 | `app/interface_mode.py` | Pure GUI/terminal/noninteractive selection for local desktop, SSH, and headless sessions |
 | `stage_registry.py` | Authoritative workload order, result section, model family, label, category, and native-engine ownership |

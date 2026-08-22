@@ -7,8 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from scripts.results.canonical_json import canonical_json, sha256_json
-from scripts.runtime.sampling import baseline_sampling_profile, sampling_profile_payload
-from scripts.runtime.image_model_spec import validate_audit_image_model
+from scripts.runtime.sampling import baseline_sampling_profile
 
 
 PLAN_SCHEMA_VERSION = 5
@@ -33,11 +32,7 @@ SAFE_CONFIG_KEYS = {
 }
 REQUIRED_CONFIG_KEYS = {"warmup_runs", "cpu_only", "force_all"}
 MODEL_FAMILIES = {"llm", "concurrency", "embeddings", "images"}
-SAFE_MODEL_KEYS = {
-    "tag", "short", "size_gb", "params_b", "audit_candidate", "artifact_digest", "label",
-    "tier", "checkpoint", "checkpoint_folder", "workflow", "steps", "cfg", "sampler",
-    "scheduler",
-}
+SAFE_MODEL_KEYS = {"tag", "short", "size_gb", "params_b"}
 EXECUTION_CONFIG_KEYS = set(SAFE_CONFIG_KEYS) - {
     "methodology_profile", "effective_optimizations", "sampling_profile", "offline", "gpu_split_mode",
     "retry_crashed_models", "llamacpp_no_repack",
@@ -305,11 +300,10 @@ class RunPlan:
         if settings.get("gpu_split_mode", "layer") not in ("single", "layer", "tensor"):
             raise ValueError("invalid execution setting: gpu_split_mode")
         if "methodology_profile" in settings:
-            allowed_profiles = {"neutral-v1", "neutral-v2", "publisher-v1"}
+            allowed_profiles = {"neutral-v1", "neutral-v2"}
             if settings["methodology_profile"] not in allowed_profiles:
                 raise ValueError("invalid execution setting: methodology_profile")
-            if self.schema_version >= 5 and settings["methodology_profile"] not in {
-                    "neutral-v2", "publisher-v1"}:
+            if self.schema_version >= 5 and settings["methodology_profile"] != "neutral-v2":
                 raise ValueError("run-plan schema 5 requires a version 2 methodology")
             optimizations = settings.get("effective_optimizations")
             if (not isinstance(optimizations, list)
@@ -330,14 +324,8 @@ class RunPlan:
         )
         if requires_sampling:
             sampling = settings.get("sampling_profile")
-            if settings.get("methodology_profile") == "neutral-v2":
-                if sampling != baseline_sampling_profile(self.engine_name):
-                    raise ValueError("invalid execution setting: sampling_profile")
-            elif settings.get("methodology_profile") == "publisher-v1":
-                if not isinstance(sampling, dict) or not str(sampling.get("profile", "")).startswith(
-                        "publisher-recommended-v1:") or not isinstance(sampling.get("source"), dict):
-                    raise ValueError("invalid execution setting: sampling_profile")
-                sampling_profile_payload(self.engine_name, sampling)
+            if sampling != baseline_sampling_profile(self.engine_name):
+                raise ValueError("invalid execution setting: sampling_profile")
         for key in (
             "max_prompt_tokens", "sample_size", "concurrency_tool_context",
             "concurrency_chat_context", "concurrency_chat_soft_exit_floor",
@@ -369,10 +357,6 @@ class RunPlan:
                 if not all(isinstance(model.get(key), str) and model[key]
                            for key in required_keys):
                     raise ValueError(f"invalid model identity in family: {family}")
-                if model.get("audit_candidate") is True:
-                    if family != "images":
-                        raise ValueError("audit image-model identity is outside the image family")
-                    validate_audit_image_model(model)
 
     @property
     def plan_id(self) -> str:

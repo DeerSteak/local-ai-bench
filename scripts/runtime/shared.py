@@ -685,11 +685,7 @@ class Shared:
     def file_hash(path: Path | str) -> str:
         """First 12 hex chars of `path`'s sha256 — a bank-version fingerprint
         that catches whitespace/key-order changes a question count wouldn't."""
-        return Shared.file_sha256(path)[:12]
-
-    @staticmethod
-    def file_sha256(path: Path | str) -> str:
-        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:12]
 
     @staticmethod
     def run_measured_calls(n_runs: int, call, tag: str, crash_cache: dict, cache_path: Path,

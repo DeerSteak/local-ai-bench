@@ -1,6 +1,6 @@
 # Platform Tuning Profiles
 
-Version 6 uses comparison profile `neutral-v2`; the immutable 4.1 profile remains `neutral-v1`. The active profile does not silently select a vendor-optimized or publisher-recommended profile. Platform-specific installation and crash workarounds are kept separate from measurement tuning, while every measurement-affecting runtime and sampling setting used by a selected workload is recorded in the immutable run plan, its execution identity, result bundles, and decision reports.
+Version 6 uses comparison profile `neutral-v2`; the immutable 4.1 profile remains `neutral-v1`. The active profile does not silently select vendor-optimized or repository-provided sampling. Platform-specific installation and crash workarounds are kept separate from measurement tuning, while every measurement-affecting runtime and sampling setting used by a selected workload is recorded in the immutable run plan, its execution identity, result bundles, and decision reports.
 
 ## Active neutral settings
 
