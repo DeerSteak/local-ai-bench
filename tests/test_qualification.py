@@ -102,6 +102,24 @@ def test_reviewed_radeon_linux_qualifications_are_supported(
         assert derive_image_support_level(evidence, "6.0-pre8") == "supported"
 
 
+@pytest.mark.parametrize(("runtime", "runtime_version"), [
+    ("llamacpp", "0.1.2-dev"),
+    ("vllm", "0.27.1"),
+])
+def test_reviewed_nvidia_linux_qualifications_are_supported(runtime, runtime_version):
+    evidence = qualification_entry(
+        "linux", "x86_64", runtime, "cuda", runtime_version,
+        accelerator=(
+            "AMD Ryzen 7 5800XT 8-Core Processor\n"
+            "NVIDIA GeForce RTX 5060 Ti 63 GB"
+        ),
+    )
+    assert evidence is not None and evidence["id"] == f"nvidia-linux-{runtime}-cuda"
+    assert derive_support_level(evidence, "6.0-pre8") == "supported"
+    if runtime == "llamacpp":
+        assert derive_image_support_level(evidence, "6.0-pre8") == "supported"
+
+
 def test_reviewed_geforce_windows_qualification_is_supported():
     evidence = qualification_entry(
         "windows", "x86_64", "llamacpp", "cuda", "0.1.2-dev",

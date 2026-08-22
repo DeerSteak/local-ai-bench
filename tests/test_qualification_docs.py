@@ -20,6 +20,12 @@ def test_rendered_matrix_disambiguates_same_backend_targets_by_accelerator():
     assert "| linux | x86_64 | vllm | rocm | Radeon 8060S | Unverified |" in rendered
 
 
+def test_rendered_matrix_includes_reviewed_native_nvidia_support():
+    rendered = render_qualification_matrix("6.0-pre8")
+    assert "| linux | x86_64 | llamacpp | cuda | NVIDIA | Supported | Supported | 0.1.2-dev, 2026-08-22, suite 6.0-pre8 |" in rendered
+    assert "| linux | x86_64 | vllm | cuda | NVIDIA | Supported | Not applicable | 0.27.1, 2026-08-22, suite 6.0-pre8 |" in rendered
+
+
 def test_document_drift_is_detected_and_replacement_is_exact(tmp_path, monkeypatch):
     relative = "docs/example.md"
     path = tmp_path / relative
