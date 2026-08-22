@@ -884,6 +884,7 @@ def run_frontend(input_fn=input, output_fn=Shared.plain_output, process_runner=N
         )
         acknowledge_experimental = False
         if selected_engine == "vllm":
+            output_fn("Checking exact vLLM qualification status…")
             support_profile = support_profile_builder(
                 selected_engine_instance, tests, cpu_only=False,
                 engine_name=selected_engine,
@@ -896,7 +897,7 @@ def run_frontend(input_fn=input, output_fn=Shared.plain_output, process_runner=N
                 ).lower()
                 if acknowledgement not in ("y", "yes"):
                     raise FrontendCancelled
-            acknowledge_experimental = True
+                acknowledge_experimental = True
         confirmation = read_choice("Start this benchmark? [Y/n]", input_fn, output_fn).lower()
         if confirmation not in ("", "y", "yes"):
             raise FrontendCancelled

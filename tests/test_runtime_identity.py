@@ -4,7 +4,8 @@ from types import SimpleNamespace
 import pytest
 
 from scripts.setup.runtime_identity import (
-    RuntimeIdentity, engine_runtime_version, inspect_runtime, parse_llamacpp_commit, parse_runtime_version,
+    RuntimeIdentity, engine_runtime_version, inspect_runtime, managed_distribution_version,
+    parse_llamacpp_commit, parse_runtime_version,
     probe_vllm_server_health, probe_vllm_server_version, runtime_ownership,
     source_commit_version,
 )
@@ -77,6 +78,19 @@ def test_engine_runtime_version_uses_the_engine_runtime_descriptor():
     )
     assert version == "7000"
     assert calls[0][1]["env"] is environment
+
+
+def test_managed_vllm_version_is_read_without_starting_the_cli(monkeypatch, tmp_path):
+    metadata = tmp_path / "lib" / "python3.12" / "site-packages" / "vllm-0.27.1.dist-info" / "METADATA"
+    metadata.parent.mkdir(parents=True)
+    metadata.write_text("Name: vllm\nVersion: 0.27.1+cu130\n", encoding="utf-8")
+    monkeypatch.setattr("scripts.setup.runtime_identity.config.VLLM_VENV", tmp_path)
+    engine = type("Engine", (), {"runtime_location": lambda self: tmp_path / "bin" / "vllm"})()
+
+    assert managed_distribution_version(tmp_path, "vllm") == "0.27.1+cu130"
+    assert engine_runtime_version(
+        "vllm", engine, run=lambda *_args, **_kwargs: pytest.fail("CLI must not start"),
+    ) == "0.27.1+cu130"
 
 
 def test_source_build_version_uses_utc_commit_date_and_short_hash(tmp_path):

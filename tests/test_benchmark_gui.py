@@ -1,4 +1,5 @@
 import json
+import queue
 import subprocess
 from pathlib import Path
 from typing import cast
@@ -24,7 +25,7 @@ from scripts.app.benchmark_gui import (
     gpu_split_mode_labels, gpu_split_mode_value, history_row_height,
     launch_controlled_process, open_path_command, parse_progress_line,
     normalize_gui_option_values, prepare_benchmark_launch, restored_tg_tokens,
-    qualification_profiles_for_engines,
+    pending_qualification_profiles, qualification_profiles_for_engines,
     process_completion_state, resolve_engine_selection,
     resolve_engine_names,
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
@@ -37,6 +38,7 @@ from scripts.app.benchmark_gui import (
     preset_control_values, process_resource_usage, preset_after_control_change,
     restored_preset_name, should_finalize_process_exit,
     resource_usage_rows, system_memory_usage,
+    start_qualification_profile_load,
     windows_host_utc_offset_minutes,
     update_progress_metrics, workload_preflight_errors,
 )
@@ -75,6 +77,40 @@ def test_gui_qualification_profiles_resolve_each_installed_runtime_version():
         "vllm": {"support_level": "supported", "runtime_version": "1.0"},
     }
     assert [call[2]["engine_name"] for call in calls] == ["llamacpp", "vllm"]
+
+
+def test_pending_gui_qualification_profiles_never_claim_support():
+    profiles = pending_qualification_profiles(["llamacpp", "vllm"])
+    assert profiles["llamacpp"]["support_level"] == "unverified"
+    assert profiles["vllm"]["support_level"] == "unverified"
+    assert "Checking" in profiles["vllm"]["caveat"]
+    assert "could not be determined" in pending_qualification_profiles(
+        ["vllm"], failed=True,
+    )["vllm"]["caveat"]
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_gui_qualification_profile_loader_always_returns_a_terminal_profile(fails):
+    output = queue.Queue()
+
+    class ImmediateThread:
+        def __init__(self, *, target, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    def load(_engines, _hardware):
+        if fails:
+            raise RuntimeError("probe failed")
+        return {"vllm": {"support_level": "supported", "caveat": "Qualified."}}
+
+    start_qualification_profile_load(
+        {"vllm": object()}, {"backend": "cuda"}, output,
+        loader=load, thread_factory=ImmediateThread,
+    )
+    profile = output.get_nowait()["vllm"]
+    assert profile["support_level"] == ("unverified" if fails else "supported")
 
 
 def test_dual_gpu_modes_have_user_facing_labels_and_round_trip():

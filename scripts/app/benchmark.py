@@ -77,7 +77,6 @@ from scripts.runtime.supervised_stage import relay_runner_log, run_supervised_ll
 from scripts.setup.setup_config import (
     available_gpu_split_modes, configured_comfyui_dir, load_setup_config,
 )
-from scripts.setup.runtime_identity import engine_runtime_version
 from scripts.stage_registry import (
     ACCURACY_TESTS, CONCURRENCY_TESTS, JOURNAL_STAGES, LLM_TESTS,
     engine_incompatible_tests,
@@ -366,6 +365,7 @@ def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
 def engine_version_applies(tests: list[str]) -> bool:
     return bool(set(tests) & (set(LLM_TESTS) | set(CONCURRENCY_TESTS) | {"emb"}))
 
+
 def engine_pass_tests(tests: list[str], engine_name: str, *, include_images: bool) -> list[str]:
     """Workloads that produce results in one engine pass."""
     incompatible = set(engine_incompatible_tests(tests, engine_name))
@@ -373,6 +373,20 @@ def engine_pass_tests(tests: list[str], engine_name: str, *, include_images: boo
         test for test in tests
         if test not in incompatible and (include_images or test != "img")
     ]
+
+
+def build_engine_execution_profiles(engine_scopes: list[dict], tests: list[str], *,
+                                    cpu_only: bool, hardware_profile: dict,
+                                    profile_builder=build_execution_profile) -> dict[str, dict]:
+    profiles = {}
+    for index, scope in enumerate(engine_scopes):
+        pass_tests = engine_pass_tests(tests, scope["name"], include_images=index == 0)
+        if pass_tests:
+            profiles[scope["name"]] = profile_builder(
+                scope["engine"], pass_tests, cpu_only=cpu_only,
+                engine_name=scope["name"], hardware_profile=hardware_profile,
+            )
+    return profiles
 
 
 def selected_plan_models(tests: list[str], llm_models: list[dict],
@@ -831,12 +845,6 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         run_engine_names = resolve_engine_names(args.engine, _engines)
     except ValueError as exc:
         parser.error(str(exc))
-    acknowledgement_error = experimental_engine_ack_error(
-        run_engine_names, args.ack_experimental_engine,
-    )
-    if acknowledgement_error:
-        parser.error(acknowledgement_error)
-
     if args.list_models:
         any_installed = False
         for engine_name in run_engine_names:
@@ -914,6 +922,25 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         Shared.output(format_dry_run_output(previews))
         return
 
+    execution_profiles = build_engine_execution_profiles(
+        engine_scopes, args.tests, cpu_only=args.cpu_only,
+        hardware_profile=hardware_profile,
+    )
+    acknowledged_runtimes = [
+        scope["name"] for index, scope in enumerate(engine_scopes)
+        if engine_version_applies(engine_pass_tests(
+            args.tests, scope["name"], include_images=index == 0,
+        ))
+    ]
+    support_profiles = {
+        name: profile["engine_support"] for name, profile in execution_profiles.items()
+    }
+    acknowledgement_error = experimental_engine_ack_error(
+        acknowledged_runtimes, support_profiles, args.ack_experimental_engine,
+    )
+    if acknowledgement_error:
+        parser.error(acknowledgement_error)
+
     _safe = re.sub(r'[\\/:*?"<>|\s]+', '_', hardware_profile['hostname']).strip('_')
     _start_stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     config.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -959,12 +986,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             t for t in ("llm", "conv", "llamabench", "llamabenchconc", "emb", "mcq", "math", "reasoning", "code", "tool",
                         "conc_tool", "conc_chat", "sustained") if t in tests
         ]
-        profile = build_execution_profile(
-            engine, tests, cpu_only=args.cpu_only, engine_name=engine_name,
-            hardware_profile=hardware_profile,
-        )
+        profile = execution_profiles[engine_name]
         runtime_version = (
-            engine_runtime_version(engine_name, engine) if engine_version_applies(tests) else None
+            profile["engine_support"]["runtime_version"] if engine_version_applies(tests) else None
         )
         hardware_backend = profile["hardware_backend"]
         if (engine_backed_tests

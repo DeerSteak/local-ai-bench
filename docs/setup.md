@@ -13,7 +13,7 @@ This generated matrix reports the current evidence-backed runtime and ComfyUI im
 | windows | x86_64 | llamacpp | cuda | NVIDIA GeForce | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
 | windows | x86_64 | llamacpp | vulkan | AMD Radeon | Supported | Supported | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
 | windows | x86_64 | llamacpp | xpu | B65 | Unverified | Unverified | No qualification record |
-| wsl2 | x86_64 | llamacpp | cuda | NVIDIA GeForce | Supported | Supported | b10488, 2026-08-19, suite 6.0-pre8 |
+| wsl2 | x86_64 | llamacpp | cuda | NVIDIA GeForce | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
 | wsl2 | x86_64 | vllm | cuda | NVIDIA GeForce | Supported | Not applicable | 0.27.1, 2026-08-19, suite 6.0-pre8 |
 | wsl2 | x86_64 | llamacpp | rocm | Radeon RX 9060 XT | Supported | Supported | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
 | linux | x86_64 | llamacpp | cuda | NVIDIA | Unverified | Unverified | No qualification record |

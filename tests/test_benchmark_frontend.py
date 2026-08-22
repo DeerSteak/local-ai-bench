@@ -1482,7 +1482,7 @@ def test_run_frontend_does_not_prompt_for_qualified_vllm():
         support_profile_builder=lambda *_args, **_kwargs: profile,
     )
     assert result == 0
-    assert "--ack-experimental-engine" in commands[0]
+    assert "--ack-experimental-engine" not in commands[0]
     assert "Acknowledge this experimental vLLM run? [y/N]" not in messages
 
 

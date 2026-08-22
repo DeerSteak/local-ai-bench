@@ -60,7 +60,7 @@ def test_reviewed_macos_m5_pro_qualification_is_supported():
 
 def test_reviewed_geforce_wsl2_qualification_is_supported():
     evidence = qualification_entry(
-        "wsl2", "x86_64", "llamacpp", "cuda", "b10488",
+        "wsl2", "x86_64", "llamacpp", "cuda", "0.1.2-dev",
         accelerator=(
             "Intel(R) Core(TM) Ultra 7 270K Plus\n"
             "NVIDIA GeForce RTX 5060 Ti 55 GB"
@@ -338,7 +338,8 @@ def test_engine_selection_labels_and_vllm_acknowledgement_follow_derived_support
     assert experimental_acknowledgement_required(
         ["vllm"], {"vllm": supported},
     ) is False
-    error = experimental_engine_ack_error(["vllm"], False)
+    error = experimental_engine_ack_error(["vllm"], {"vllm": unverified}, False)
     assert error is not None and "--ack-experimental-engine" in error
-    assert experimental_engine_ack_error(["vllm"], True) is None
-    assert experimental_engine_ack_error(["llamacpp"], False) is None
+    assert experimental_engine_ack_error(["vllm"], {"vllm": unverified}, True) is None
+    assert experimental_engine_ack_error(["vllm"], {"vllm": supported}, False) is None
+    assert experimental_engine_ack_error(["llamacpp"], {"llamacpp": unverified}, False) is None

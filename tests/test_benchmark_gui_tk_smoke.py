@@ -29,6 +29,12 @@ def test_benchmark_gui_builds_all_tabs_and_controller_wiring(monkeypatch):
     monkeypatch.setattr(benchmark_gui, "get_engine", lambda _name: engine)
     monkeypatch.setattr(benchmark_gui, "build_model_inventory", lambda *_args: inventory.copy())
     monkeypatch.setattr(benchmark_gui, "find_llamacpp_tool", lambda _name: None)
+    monkeypatch.setattr(
+        benchmark_gui, "start_qualification_profile_load",
+        lambda engines, hardware_profile, output_queue: output_queue.put(
+            benchmark_gui.pending_qualification_profiles(tuple(engines), failed=True)
+        ),
+    )
     monkeypatch.setattr(benchmark_gui.Shared, "build_profile", lambda: {
         "hostname": "test host", "os": "Linux 6.17", "arch": "x86_64",
         "ram_gb": 32.0, "backend": "cpu", "timestamp": "now",

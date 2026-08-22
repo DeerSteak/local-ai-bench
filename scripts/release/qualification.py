@@ -45,7 +45,7 @@ QUALIFICATION_MATRIX: tuple[dict, ...] = (
         "platform": "wsl2",
         "architecture": "x86_64",
         "runtime": "llamacpp",
-        "runtime_version": "b10488",
+        "runtime_version": "0.1.2-dev",
         "backend": "cuda",
         "accelerator": (
             "Intel(R) Core(TM) Ultra 7 270K Plus\n"
@@ -627,8 +627,9 @@ def experimental_acknowledgement_required(runtimes, support_profiles: dict[str, 
     )
 
 
-def experimental_engine_ack_error(runtimes, acknowledged: bool) -> str | None:
-    if "vllm" in runtimes and not acknowledged:
+def experimental_engine_ack_error(runtimes, support_profiles: dict[str, dict],
+                                  acknowledged: bool) -> str | None:
+    if experimental_acknowledgement_required(runtimes, support_profiles) and not acknowledged:
         return ("vLLM requires --ack-experimental-engine until its exact platform and "
                 "runtime pass complete smallest-model qualification")
     return None

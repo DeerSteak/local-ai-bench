@@ -252,6 +252,30 @@ def qualification_profiles_for_engines(engines: dict, hardware_profile: dict,
     }
 
 
+def pending_qualification_profiles(engine_names: Sequence[str], *, failed: bool = False
+                                   ) -> dict[str, dict]:
+    caveat = ("Exact qualification status could not be determined."
+              if failed else "Checking exact runtime qualification status.")
+    return {
+        name: {"support_level": "unverified", "caveat": caveat}
+        for name in engine_names
+    }
+
+
+def start_qualification_profile_load(engines: dict, hardware_profile: dict,
+                                     output_queue: queue.Queue,
+                                     loader=qualification_profiles_for_engines,
+                                     thread_factory: Any = threading.Thread) -> None:
+    def load() -> None:
+        try:
+            profiles = loader(engines, hardware_profile)
+        except Exception:
+            profiles = pending_qualification_profiles(tuple(engines), failed=True)
+        output_queue.put(profiles)
+
+    thread_factory(target=load, daemon=True).start()
+
+
 def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[MenuEntry],
                              max_prompt_tokens: int | None, tg_tokens: list[int],
                              gui_options: dict[str, Any], selected_preset: str,
@@ -332,10 +356,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     hardware_profile = Shared.build_profile()
     system_ram_gb = hardware_profile["ram_gb"]
     hardware_backend = hardware_profile["backend"]
-    qualification_profiles = qualification_profiles_for_engines(
-        engine_instances, hardware_profile,
-    )
-    runtime_backend = engine_instances[selected_engine].runtime_backend(hardware_backend)
+    qualification_profiles = pending_qualification_profiles(available_engines)
+    qualification_profiles_ready = [False]
+    qualification_profile_queue = queue.Queue()
+    runtime_backend = hardware_backend
     gpu_split_modes = available_gpu_split_modes(setup, runtime_backend)
     discovery = build_discovery_report(
         platform_name=platform.system(), architecture=platform.machine(),
@@ -502,9 +526,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             if not available and model_vars[value].get():
                 model_vars[value].set(False)
 
+    engine_label_vars = {
+        name: tk.StringVar(value=engine_selection_label(name, qualification_profiles[name]))
+        for name in available_engines
+    }
     for index, name in enumerate(available_engines):
         ttk.Checkbutton(
-            engine_box, text=engine_selection_label(name, qualification_profiles[name]),
+            engine_box, textvariable=engine_label_vars[name],
             variable=engine_check_vars[name],
         ).grid(
             row=0, column=index, sticky="w", padx=(0, 16))
@@ -1011,6 +1039,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     configuration_files.bind()
 
     def start_run():
+        if not qualification_profiles_ready[0]:
+            messagebox.showinfo(
+                "Qualification status",
+                "The exact installed runtime status is still being checked. Try again shortly.",
+                parent=root,
+            )
+            return
         tests = expand_selected_tests(
             name for name, variable in test_vars.items() if variable.get())
         entries = custom_models
@@ -1034,7 +1069,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         if not show_plan_preview(root, tk, ttk, preparation.preview):
             return
         selected_engines = parse_engine_selection(engine_var.get())
-        if experimental_acknowledgement_required(selected_engines, qualification_profiles):
+        acknowledge_experimental = experimental_acknowledgement_required(
+            selected_engines, qualification_profiles,
+        )
+        if acknowledge_experimental:
             if not messagebox.askyesno(
                     "Experimental engine",
                     "vLLM has not passed this suite's complete qualification on this "
@@ -1042,7 +1080,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                     "result will retain that caveat?",
                     parent=root):
                 return
-        if "vllm" in selected_engines:
             preparation.command.append("--ack-experimental-engine")
         authorization_error = authorize_macos_power_telemetry(
             gui_options["power_telemetry"],
@@ -1113,6 +1150,23 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     loading.destroy()
     root.protocol("WM_DELETE_WINDOW", close_window)
     update_advanced()
+
+    def poll_qualification_profiles():
+        try:
+            profiles = qualification_profile_queue.get_nowait()
+        except queue.Empty:
+            root.after(100, poll_qualification_profiles)
+            return
+        qualification_profiles.clear()
+        qualification_profiles.update(profiles)
+        for name in available_engines:
+            engine_label_vars[name].set(engine_selection_label(name, profiles[name]))
+        qualification_profiles_ready[0] = True
+
+    start_qualification_profile_load(
+        engine_instances, hardware_profile, qualification_profile_queue,
+    )
+    root.after(50, poll_qualification_profiles)
     root.after(100, poll_output)
     root.after(150, lambda: (root.lift(), root.attributes("-topmost", True), root.focus_force(),
                              root.after(400, lambda: root.attributes("-topmost", False))))
