@@ -151,3 +151,20 @@ def test_discovers_linux_amd_gpu_before_rocm_is_installed(monkeypatch):
     assert result.vendor == "amd"
     assert result.kind == "discrete"
     assert result.name is not None and "Radeon RX 9060 XT" in result.name
+
+
+def test_discovers_linux_nvidia_gpu_before_driver_is_installed(monkeypatch):
+    _platform(monkeypatch, "Linux")
+    monkeypatch.setattr(
+        setup_discovery.subprocess, "check_output",
+        lambda *_args, **_kwargs: (
+            "0d:00.0 VGA compatible controller: NVIDIA Corporation GB202 "
+            "[GeForce RTX 5090] [10de:2b85]\n"
+        ),
+    )
+
+    result = setup_discovery.discover_linux_nvidia_gpu()
+
+    assert result.vendor == "nvidia"
+    assert result.kind == "discrete"
+    assert result.name is not None and "RTX 5090" in result.name

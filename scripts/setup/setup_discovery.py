@@ -235,3 +235,18 @@ def discover_linux_amd_gpu() -> DisplayDiscovery:
             name = line.split(":", 2)[-1].strip()
             return DisplayDiscovery("amd", hardware.classify_gpu(name), name)
     return DisplayDiscovery(None, None, None)
+
+
+def discover_linux_nvidia_gpu() -> DisplayDiscovery:
+    if platform.system() != "Linux":
+        return DisplayDiscovery(None, None, None)
+    try:
+        output = subprocess.check_output(["lspci", "-nn"], text=True, stderr=subprocess.DEVNULL)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return DisplayDiscovery(None, None, None)
+    for line in output.splitlines():
+        if (any(key in line for key in ("VGA", "3D controller", "Display"))
+                and ("NVIDIA" in line or "[10de:" in line.casefold())):
+            name = line.split(":", 2)[-1].strip()
+            return DisplayDiscovery("nvidia", "discrete", name)
+    return DisplayDiscovery(None, None, None)

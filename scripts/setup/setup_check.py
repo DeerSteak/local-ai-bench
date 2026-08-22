@@ -28,7 +28,11 @@ from scripts.runtime.comfyui_installation import (
     resolve_comfyui_setup_choice,
 )
 from scripts.runtime.llamacpp_tools import find_nvcc, probe_llamacpp_backend
-from scripts.setup.cuda_install import cuda_toolkit_plan, run_cuda_toolkit_install
+from scripts.setup.cuda_install import (
+    cuda_toolkit_plan, native_nvidia_driver_plan,
+    nouveau_loaded, qualification_needs_native_nvidia_driver, run_cuda_toolkit_install,
+    run_native_nvidia_driver_install,
+)
 from scripts.setup.intel_xpu_install import (
     intel_xpu_install_plan, oneapi_environment, run_intel_xpu_install, sycl_gpu_available,
 )
@@ -61,8 +65,9 @@ from scripts.setup.setup_config import (
 )
 from scripts.setup.setup_progress import finish_setup_progress, start_setup_progress
 from scripts.setup.setup_discovery import (
-    discover_linux_amd_gpu, discover_linux_intel_gpu, discover_metal, discover_nvidia,
-    discover_rocm, discover_system, discover_windows_gpu, rocm_version,
+    discover_linux_amd_gpu, discover_linux_intel_gpu, discover_linux_nvidia_gpu,
+    discover_metal, discover_nvidia, discover_rocm, discover_system,
+    discover_windows_gpu, rocm_version,
 )
 from scripts.setup.setup_console import (
     BOLD, CYAN, GREEN, RESET, YELLOW, confirm, fail, info, link, ok, section, warn,
@@ -186,6 +191,37 @@ def main() -> None:  # pragma: no cover - real interactive installer
         if _host_error := qualification_host_error(_qualification_target):
             fail(_host_error)
             sys.exit(1)
+        _initial_nvidia = discover_nvidia()
+        try:
+            _install_native_nvidia = qualification_needs_native_nvidia_driver(
+                _qualification_target, os_name=os_name, release=platform.release(),
+                nvidia_available=_initial_nvidia.available,
+            )
+        except ValueError as exc:
+            _arg_parser.error(str(exc))
+        if _install_native_nvidia:
+            section("NVIDIA driver for native Linux")
+            _nvidia_gpu = discover_linux_nvidia_gpu()
+            if _nvidia_gpu.vendor != "nvidia":
+                fail("native NVIDIA qualification found no NVIDIA display adapter")
+                sys.exit(1)
+            info(f"GPU: {_nvidia_gpu.name}")
+            try:
+                _disable_nouveau = nouveau_loaded()
+                _driver_plan = native_nvidia_driver_plan(
+                    platform.freedesktop_os_release(), platform.release(),
+                    disable_nouveau=_disable_nouveau,
+                )
+                if _disable_nouveau:
+                    info("nouveau is loaded; replacing it with the NVIDIA CUDA driver")
+                info("Installing Ubuntu's recommended signed NVIDIA driver (requires sudo) ...")
+                run_native_nvidia_driver_install(_driver_plan)
+            except (OSError, RuntimeError, ValueError) as exc:
+                fail(f"NVIDIA driver installation failed: {exc}")
+                sys.exit(1)
+            fail("NVIDIA driver installed; reboot to load it, then rerun qualification")
+            sys.exit(1)
+
         _initial_rocm = discover_rocm()
         try:
             _install_wsl_rocm = qualification_needs_wsl_rocm(

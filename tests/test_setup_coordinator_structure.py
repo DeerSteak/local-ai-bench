@@ -36,6 +36,18 @@ def test_post_install_xpu_probe_uses_oneapi_environment():
     assert 'probe_llamacpp_backend(binary, env=_post_install_probe_env)' in source
 
 
+def test_native_nvidia_qualification_installs_driver_before_runtime_discovery():
+    source = SETUP_CHECK.read_text(encoding="utf-8")
+    driver_block = source[source.index("_initial_nvidia = discover_nvidia()"):
+                          source.index("_initial_rocm = discover_rocm()")]
+
+    assert "qualification_needs_native_nvidia_driver(" in driver_block
+    assert "discover_linux_nvidia_gpu()" in driver_block
+    assert "nouveau_loaded()" in driver_block
+    assert "run_native_nvidia_driver_install(_driver_plan)" in driver_block
+    assert "reboot to load it" in driver_block
+
+
 def test_setup_coordinator_import_is_safe():
     sys.modules.pop("scripts.setup.setup_check", None)
     module = importlib.import_module("scripts.setup.setup_check")

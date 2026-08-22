@@ -159,7 +159,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `setup/runtime_status.py` | Combined engine health, backend, dependency-stack, and WSL runtime status records |
 | `setup/model_compatibility.py` | Imported-model architecture metadata and read-only vLLM registry compatibility probes |
 | `setup/engine_selection.py` | Engine-picker rules and terminal interaction, including disabled engines and installation needs |
-| `setup/cuda_install.py` | WSL2-only CUDA toolkit plan and installer, so the llama.cpp source build is not silently CPU-only |
+| `setup/cuda_install.py` | Native Ubuntu NVIDIA driver bootstrap and WSL2-only CUDA toolkit installation, so qualification cannot silently build llama.cpp CPU-only |
 | `setup/rocm_install.py` | Pinned native-Linux and WSL2 ROCm qualification plans, platform gates, and privileged execution |
 | `setup/intel_xpu_install.py` | Native Ubuntu Intel GPU compute/oneAPI prerequisite plan, SYCL environment loading, and XPU probe |
 | `setup/vllm_install.py` | vLLM platform-support matrix, launcher/server discovery, interpreter/venv resolution, and the optional installer |
