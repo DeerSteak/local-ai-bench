@@ -64,6 +64,15 @@ def test_effective_gui_options_uses_defaults_without_saved_gui_settings():
     assert effective_gui_options(None) is not GUI_OPTION_DEFAULTS
 
 
+def test_effective_gui_options_preserves_known_split_modes_and_defaults_unknown_values():
+    assert effective_gui_options({
+        "gui_options": dict(GUI_OPTION_DEFAULTS, gpu_split_mode="tensor"),
+    })["gpu_split_mode"] == "tensor"
+    assert effective_gui_options({
+        "gui_options": dict(GUI_OPTION_DEFAULTS, gpu_split_mode="row"),
+    })["gpu_split_mode"] == "layer"
+
+
 def test_gui_runtime_profiles_resolve_accelerated_and_cpu_qualification_once_per_version():
     engines = {"llamacpp": object(), "vllm": object()}
     calls = []
@@ -167,6 +176,9 @@ def test_split_mode_validation_defers_unknown_capability_and_rejects_known_misma
     assert gpu_split_mode_availability_error(
         "single", ("layer",), known=True,
     ) == "Single GPU is unavailable for the detected GPU runtime and topology."
+    assert gpu_split_mode_availability_error(
+        "row", ("layer",), known=True,
+    ) == "row is unavailable for the detected GPU runtime and topology."
 
 
 @pytest.mark.parametrize("fails", [False, True])

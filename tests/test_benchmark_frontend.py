@@ -259,6 +259,13 @@ def test_saved_gui_state_defaults_legacy_missing_gpu_split_to_layer(tmp_path):
     assert loaded is not None and loaded["gui_options"]["gpu_split_mode"] == "layer"
 
 
+def test_saved_gui_state_rejects_unknown_gpu_split_mode(tmp_path):
+    path = tmp_path / "state.json"
+    options = dict(GUI_OPTION_DEFAULTS, gpu_split_mode="row")
+    path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
+    assert load_frontend_state(path) is None
+
+
 def test_saved_gui_state_defaults_legacy_missing_retry_crashed_to_false(tmp_path):
     path = tmp_path / "state.json"
     options = dict(GUI_OPTION_DEFAULTS)

@@ -68,6 +68,16 @@ def test_current_schema_rejects_a_preset_that_still_carries_an_engine():
     assert validate_portable_preset(preset)
 
 
+def test_portable_preset_rejects_unknown_gpu_split_mode_before_import(tmp_path):
+    preset = build_portable_preset("Unknown split", sample_state())
+    preset["configuration"]["options"]["gpu_split_mode"] = "row"
+    assert validate_portable_preset(preset) == ["Preset GPU split mode is invalid."]
+    path = tmp_path / "unknown-split.json"
+    path.write_text(json.dumps(preset), encoding="utf-8")
+    with pytest.raises(ValueError, match="Preset GPU split mode is invalid"):
+        load_portable_preset(path)
+
+
 @pytest.mark.parametrize("mutation", [
     lambda preset: preset.update(schema_version=99),
     lambda preset: preset.update(name=""),

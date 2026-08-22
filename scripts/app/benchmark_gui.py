@@ -312,8 +312,9 @@ def gpu_split_mode_availability_error(requested: str, available: Sequence[str], 
                                       ) -> str | None:
     if not known or requested in available:
         return None
+    label = GPU_SPLIT_MODE_LABELS.get(requested, requested)
     return (
-        f"{GPU_SPLIT_MODE_LABELS[requested]} is unavailable for the detected GPU runtime "
+        f"{label} is unavailable for the detected GPU runtime "
         "and topology."
     )
 
@@ -803,7 +804,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                     if name in available_engines]
         selected = restored or parse_engine_selection(engine_var.get())
         gui_options = state.get("gui_options", {})
-        requested_split = gui_options.get("gpu_split_mode", "layer")
+        requested_split = gpu_split_mode_value(gui_options.get("gpu_split_mode", "layer"))
         cpu_only = bool(gui_options.get("cpu_only", False))
         available_splits = split_modes_for_runtime_profiles(
             setup, selected, runtime_profiles, cpu_only=cpu_only,
@@ -836,7 +837,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                 variable.set(value in selected_tg)
             for key, value in state.get("gui_options", {}).items():
                 if key == "gpu_split_mode":
-                    option_vars[key].set(GPU_SPLIT_MODE_LABELS[value])
+                    option_vars[key].set(GPU_SPLIT_MODE_LABELS[requested_split])
                 else:
                     option_vars[key].set(value if isinstance(value, bool) else str(value))
         finally:
