@@ -55,10 +55,15 @@ from scripts.setup.model_download import (
 )
 from scripts.setup import llamacpp_install
 from scripts.setup.hf_credentials import HfTokenProvider
-from scripts.setup.comfyui_assets import provision as provision_comfyui_assets
+from scripts.setup.comfyui_assets import (
+    missing_download_size_gb, provision as provision_comfyui_assets,
+)
 from scripts.setup.comfyui_runtime import prepare as prepare_comfyui_runtime
 from scripts.setup.comfyui_install import ensure as ensure_comfyui
-from scripts.workloads.models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
+from scripts.workloads.models import (
+    EMBED_MODELS, IMAGE_MODELS, LLM_MODELS_LARGE, LLM_MODELS_MEDIUM,
+    LLM_MODELS_SMALL, LLM_MODELS_XSMALL, image_checkpoint_groups,
+)
 from scripts.setup.setup_selection import (
     additional_disk_space_needed, qualification_model_selection, select_models,
 )
@@ -168,10 +173,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
 
     issues = []
 
-    # Local aliases for hardware.py's sizes, shared with select_models()'s memory-fit check.
-    CHECKPOINT_SIZES_GB = hardware.CHECKPOINT_SIZES_GB
-    ENCODER_SIZES_GB = hardware.ENCODER_SIZES_GB
-    GATED_IMAGE_SHORTS = {"sd35-large", "flux-dev", "flux2-dev"}
+    GATED_IMAGE_SHORTS = {"flux-dev", "flux2-dev"}
 
     # ── 1. Python version ──────────────────────────────────────────────────────────
 
@@ -984,29 +986,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
             ):
                 remaining_gb += hardware.parse_size_gb(engine_download_size(m, engine) or "")
 
-    sd35_selected  = "sd35-large" in selected_image_shorts
-    flux1_selected = "flux-dev" in selected_image_shorts
-    flux2_selected = "flux2-dev" in selected_image_shorts
-
-    for m in selected_images:
-        if not image_asset(m["checkpoint"], "checkpoints"):
-            remaining_gb += CHECKPOINT_SIZES_GB.get(m["checkpoint"], 0.0)
-
-    # Shared T5-XXL + CLIP-L text encoders: used by SD3.5 Large and Flux.1-dev,
-    # NOT Flux.2-dev (which has its own Mistral-based encoder below).
-    if (sd35_selected or flux1_selected):
-        for fname in ("t5xxl_fp16.safetensors", "clip_l.safetensors"):
-            if not image_asset(fname, "clip"):
-                remaining_gb += ENCODER_SIZES_GB[fname]
-    if sd35_selected and not image_asset("clip_g.safetensors", "clip"):
-        remaining_gb += ENCODER_SIZES_GB["clip_g.safetensors"]
-    if flux1_selected and not image_asset("ae.safetensors", "vae"):
-        remaining_gb += ENCODER_SIZES_GB["ae.safetensors"]
-    if flux2_selected:
-        if not image_asset("mistral_3_small_flux2_fp8.safetensors", "text_encoders"):
-            remaining_gb += ENCODER_SIZES_GB["mistral_3_small_flux2_fp8.safetensors"]
-        if not image_asset("flux2-vae.safetensors", "vae"):
-            remaining_gb += ENCODER_SIZES_GB["flux2-vae.safetensors"]
+    remaining_gb += missing_download_size_gb(selected_images, image_asset)
 
     try:
         total, used, free = shutil.disk_usage(SCRIPT_DIR)
@@ -1112,11 +1092,16 @@ def main() -> None:  # pragma: no cover - real interactive installer
                 ok(f"{len(found_ckpts)}/{len(selected_images)} image checkpoints ready: "
                    f"{', '.join(found_ckpts)}")
                 try:
-                    with urllib.request.urlopen(
-                        f"{config.COMFYUI_URL}/object_info/CheckpointLoaderSimple", timeout=3,
-                    ) as response:
-                        available = checkpoint_names_from_object_info(json.load(response))
-                    if managed_checkpoints_visible(available, set(found_ckpts)):
+                    visible = True
+                    ready_models = [model for model in selected_images
+                                    if model["checkpoint"] in found_ckpts]
+                    for loader, expected in image_checkpoint_groups(ready_models).items():
+                        with urllib.request.urlopen(
+                            f"{config.COMFYUI_URL}/object_info/{loader}", timeout=3,
+                        ) as response:
+                            available = checkpoint_names_from_object_info(json.load(response))
+                        visible = visible and managed_checkpoints_visible(available, expected)
+                    if visible:
                         ok("Running ComfyUI already sees Local AI Bench's managed models")
                     else:
                         warn("Restart running ComfyUI once to load the managed model path")
@@ -1124,7 +1109,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
                     pass
             else:
                 fail("No image checkpoints available — image benchmarks will be skipped")
-                issues.append("Download at least one image checkpoint into models/comfyui/checkpoints/")
+                issues.append("Download at least one image model through setup")
 
     # ── 9. Summary ────────────────────────────────────────────────────────────────
 

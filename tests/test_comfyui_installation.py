@@ -143,6 +143,7 @@ def test_write_extra_model_paths_points_to_managed_models(tmp_path):
     content = config_path.read_text()
     assert f'base_path: "{models_dir.resolve()}"' in content
     assert "checkpoints: checkpoints" in content
+    assert "diffusion_models: diffusion_models" in content
     assert "text_encoders: text_encoders" in content
 
 
@@ -159,6 +160,7 @@ def test_add_managed_models_preserves_existing_config_and_is_idempotent(tmp_path
     assert "existing:\n  base_path: /models" in content
     assert content.count("BEGIN local-ai-bench") == 1
     assert f'base_path: "{models_dir.resolve()}"' in content
+    assert "diffusion_models: diffusion_models" in content
 
 
 def test_checkpoint_names_from_object_info_handles_valid_and_malformed_data():
@@ -192,6 +194,15 @@ def test_image_asset_dirs_prefer_the_managed_location(tmp_path):
     comfyui, managed = _legacy_tree(tmp_path)
     assert image_asset_dirs(managed, "checkpoints", comfyui) == [
         managed / "checkpoints", comfyui / "models" / "checkpoints",
+    ]
+
+
+def test_image_asset_dirs_support_diffusion_model_locations(tmp_path):
+    comfyui, managed = _legacy_tree(
+        tmp_path, subdirs=("diffusion_models",), name="z_image.safetensors",
+    )
+    assert image_asset_dirs(managed, "diffusion_models", comfyui) == [
+        managed / "diffusion_models", comfyui / "models" / "diffusion_models",
     ]
 
 

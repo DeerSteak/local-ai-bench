@@ -130,7 +130,7 @@ def select_models(memory_ceiling_gb=None, engines=(LLAMACPP,), *,
             for warning in engine_fit_warnings(e["report"], memory_ceiling_gb):
                 label += f"  {YELLOW}⚠ {warning}{RESET}"
             return label
-        gb = hardware.CHECKPOINT_SIZES_GB.get(m["checkpoint"])
+        gb = hardware.image_model_weights_gb(m["checkpoint"], m["short"])
         label = f"  (~{gb:.1f} GB)" if gb else ""
         if kind == "image" and e["fits"] is False:
             needed = hardware.image_model_memory_requirement_gb(m["checkpoint"], m["short"])

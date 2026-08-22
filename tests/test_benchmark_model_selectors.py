@@ -78,7 +78,7 @@ def test_catalog_scopes_filter_embedding_tags_and_image_shorts():
         IMAGE_MODELS, ["nomic*"], ["sd*"],
     )
     assert [model["tag"] for model in embedding_models] == ["nomic-embed-text"]
-    assert [model["short"] for model in image_models] == ["sd15", "sdxl", "sd35-large"]
+    assert [model["short"] for model in image_models] == ["sd15", "sdxl"]
 
 
 def test_catalog_validation_rejects_relevant_empty_embedding_selection():

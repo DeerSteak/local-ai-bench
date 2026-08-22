@@ -1,6 +1,8 @@
 """Single source of truth for all model definitions. No external
 dependencies, so this is safe to import before packages are installed."""
 
+from pathlib import Path
+
 # "download_size" is rounded UP to the next 0.1 GB — see docs/workloads.md.
 EMBED_MODELS = [
     {
@@ -51,20 +53,54 @@ IMAGE_MODELS = [
         "tier":       "small",     # ~7.0 GB
     },
     {
-        "label":      "SD3.5 Large",
-        "checkpoint": "sd3.5_large.safetensors",
-        "workflow":   "sd3",
-        "steps":      28,
-        "cfg":        4.5,
-        "sampler":    "euler",
-        "scheduler":  "beta",
-        "short":      "sd35-large",
-        "tier":       "medium",    # ~16.5 GB
-        "license_url": "https://huggingface.co/stabilityai/stable-diffusion-3.5-large",
+        "label":      "Z-Image Turbo",
+        "checkpoint": "z_image_turbo_bf16.safetensors",
+        "checkpoint_folder": "diffusion_models",
+        "checkpoint_loader": "UNETLoader",
+        "checkpoint_repo": "Comfy-Org/z_image_turbo",
+        "checkpoint_remote": "split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+        "support_assets": [
+            {
+                "name": "qwen_3_4b.safetensors",
+                "folder": "text_encoders",
+                "repo": "Comfy-Org/z_image_turbo",
+                "remote": "split_files/text_encoders/qwen_3_4b.safetensors",
+            },
+            {
+                "name": "ae.safetensors",
+                "folder": "vae",
+                "repo": "Comfy-Org/z_image_turbo",
+                "remote": "split_files/vae/ae.safetensors",
+            },
+        ],
+        "workflow":   "z_image",
+        "steps":      8,
+        "cfg":        1.0,
+        "sampler":    "res_multistep",
+        "scheduler":  "simple",
+        "short":      "z-image-turbo",
+        "tier":       "medium",    # ~20.7 GB complete pipeline
     },
     {
         "label":      "Flux.1-dev",
         "checkpoint": "flux1-dev.safetensors",
+        "support_assets": [
+            {
+                "name": "t5xxl_fp16.safetensors", "folder": "clip",
+                "repo": "comfyanonymous/flux_text_encoders",
+                "remote": "t5xxl_fp16.safetensors",
+            },
+            {
+                "name": "clip_l.safetensors", "folder": "clip",
+                "repo": "comfyanonymous/flux_text_encoders",
+                "remote": "clip_l.safetensors",
+            },
+            {
+                "name": "ae.safetensors", "folder": "vae",
+                "repo": "black-forest-labs/FLUX.1-schnell",
+                "remote": "ae.safetensors", "gated": True,
+            },
+        ],
         "workflow":   "flux",
         "steps":      20,
         "cfg":        1.0,
@@ -77,6 +113,18 @@ IMAGE_MODELS = [
     {
         "label":      "Flux.2-dev",
         "checkpoint": "flux2-dev.safetensors",
+        "support_assets": [
+            {
+                "name": "mistral_3_small_flux2_fp8.safetensors",
+                "folder": "text_encoders", "repo": "Comfy-Org/flux2-dev",
+                "remote": "split_files/text_encoders/mistral_3_small_flux2_fp8.safetensors",
+            },
+            {
+                "name": "flux2-vae.safetensors", "folder": "vae",
+                "repo": "Comfy-Org/flux2-dev",
+                "remote": "split_files/vae/flux2-vae.safetensors",
+            },
+        ],
         "workflow":   "flux2",
         "steps":      28,
         "cfg":        4.0,
@@ -271,6 +319,25 @@ LLM_MODELS_LARGE = sorted([
 ], key=lambda m: m["params_b"])
 
 LLM_MODELS = LLM_MODELS_XSMALL + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM + LLM_MODELS_LARGE
+
+
+def image_checkpoint_folder(model: dict) -> str:
+    return model.get("checkpoint_folder", "checkpoints")
+
+
+def image_checkpoint_path(model: dict, models_dir: Path) -> Path:
+    return Path(models_dir) / image_checkpoint_folder(model) / model["checkpoint"]
+
+
+def image_checkpoint_loader(model: dict) -> str:
+    return model.get("checkpoint_loader", "CheckpointLoaderSimple")
+
+
+def image_checkpoint_groups(models: list[dict]) -> dict[str, set[str]]:
+    groups = {}
+    for model in models:
+        groups.setdefault(image_checkpoint_loader(model), set()).add(model["checkpoint"])
+    return groups
 
 
 def qualification_llm_model(engine: str) -> dict:

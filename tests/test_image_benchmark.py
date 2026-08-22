@@ -29,9 +29,9 @@ def test_build_workflow_routes_flux2_type():
     assert wf == ImageBenchmark.build_flux2_workflow(**_build_kwargs())
 
 
-def test_build_workflow_routes_sd3_type():
-    wf = ImageBenchmark.build_workflow("sd3", **_build_kwargs())
-    assert wf == ImageBenchmark.build_sd3_workflow(**_build_kwargs())
+def test_build_workflow_routes_z_image_type():
+    wf = ImageBenchmark.build_workflow("z_image", **_build_kwargs())
+    assert wf == ImageBenchmark.build_z_image_workflow(**_build_kwargs())
 
 
 def test_build_workflow_falls_back_to_sdxl_for_unrecognized_type():
@@ -71,15 +71,30 @@ def test_flux2_workflow_wires_checkpoint_and_prompt():
                 assert value[0] in wf
 
 
-def test_sd3_workflow_wires_checkpoint_and_prompt():
-    wf = ImageBenchmark.build_sd3_workflow(
-        checkpoint="sd3.5_large.safetensors", width=1024, height=1024,
-        steps=28, cfg=4.5, sampler="euler", scheduler="beta",
+def test_z_image_workflow_matches_official_core_node_graph():
+    wf = ImageBenchmark.build_z_image_workflow(
+        checkpoint="z_image_turbo_bf16.safetensors", width=1024, height=1536,
+        steps=8, cfg=1.0, sampler="res_multistep", scheduler="simple",
         seed=42, prompt="a cat",
     )
-    assert wf["1"]["inputs"]["ckpt_name"] == "sd3.5_large.safetensors"
-    assert wf["3"]["inputs"]["text"] == "a cat"
-    assert wf["4"]["inputs"]["text"] == ""  # negative prompt is empty
+    assert wf["1"] == {"class_type": "UNETLoader", "inputs": {
+        "unet_name": "z_image_turbo_bf16.safetensors", "weight_dtype": "default",
+    }}
+    assert wf["2"]["inputs"] == {
+        "clip_name": "qwen_3_4b.safetensors", "type": "lumina2", "device": "default",
+    }
+    assert wf["3"]["inputs"]["vae_name"] == "ae.safetensors"
+    assert wf["4"]["inputs"]["text"] == "a cat"
+    assert wf["5"] == {"class_type": "ConditioningZeroOut", "inputs": {
+        "conditioning": ["4", 0],
+    }}
+    assert wf["6"]["inputs"] == {"width": 1024, "height": 1536, "batch_size": 1}
+    assert wf["7"]["inputs"] == {"model": ["1", 0], "shift": 3.0}
+    assert wf["8"]["inputs"] == {
+        "model": ["7", 0], "positive": ["4", 0], "negative": ["5", 0],
+        "latent_image": ["6", 0], "seed": 42, "steps": 8, "cfg": 1.0,
+        "sampler_name": "res_multistep", "scheduler": "simple", "denoise": 1.0,
+    }
     for node in wf.values():
         for value in node["inputs"].values():
             if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
@@ -124,11 +139,42 @@ def test_image_resume_inputs_include_existing_workflow_assets_only(monkeypatch, 
         path = tmp_path / folder / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(name.encode())
-    model = {"short": "flux", "checkpoint": "flux.safetensors", "workflow": "flux"}
+    model = {
+        "short": "flux", "checkpoint": "flux.safetensors", "workflow": "flux",
+        "support_assets": [
+            {"folder": "clip", "name": "t5xxl_fp16.safetensors"},
+            {"folder": "clip", "name": "clip_l.safetensors"},
+            {"folder": "vae", "name": "ae.safetensors"},
+        ],
+    }
     artifacts = image_resume_artifacts([model])
     assert set(artifacts) == {
         "image:flux:checkpoint", "image:flux:clip:t5xxl_fp16.safetensors",
         "image:flux:clip:clip_l.safetensors", "image:flux:vae:ae.safetensors",
+    }
+
+
+def test_z_image_resume_inputs_use_diffusion_model_and_declared_assets(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "COMFYUI_MODELS_DIR", tmp_path)
+    model = {
+        "short": "z-image", "checkpoint": "z.safetensors",
+        "checkpoint_folder": "diffusion_models", "workflow": "z_image",
+        "support_assets": [
+            {"folder": "text_encoders", "name": "qwen.safetensors"},
+            {"folder": "vae", "name": "ae.safetensors"},
+        ],
+    }
+    for folder, name in (("diffusion_models", "z.safetensors"),
+                         ("text_encoders", "qwen.safetensors"),
+                         ("vae", "ae.safetensors")):
+        path = tmp_path / folder / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(name.encode())
+
+    assert set(image_resume_artifacts([model])) == {
+        "image:z-image:checkpoint",
+        "image:z-image:text_encoders:qwen.safetensors",
+        "image:z-image:vae:ae.safetensors",
     }
 
 
@@ -294,14 +340,14 @@ def test_handle_crashed_warmup_returns_true_when_restart_succeeds(monkeypatch):
     monkeypatch.setattr(Shared, "ensure_comfyui", lambda comfyui_dir: True)
     monkeypatch.setattr(Shared, "tail_comfyui_log", lambda: "some log output")
 
-    assert ImageBenchmark.handle_crashed_warmup(Path("/fake/ComfyUI"), "SD3.5 Large") is True
+    assert ImageBenchmark.handle_crashed_warmup(Path("/fake/ComfyUI"), "Z-Image Turbo") is True
 
 
 def test_handle_crashed_warmup_returns_false_when_restart_fails(monkeypatch):
     monkeypatch.setattr(Shared, "ensure_comfyui", lambda comfyui_dir: False)
     monkeypatch.setattr(Shared, "tail_comfyui_log", lambda: "some log output")
 
-    assert ImageBenchmark.handle_crashed_warmup(Path("/fake/ComfyUI"), "SD3.5 Large") is False
+    assert ImageBenchmark.handle_crashed_warmup(Path("/fake/ComfyUI"), "Z-Image Turbo") is False
 
 
 def test_handle_crashed_warmup_passes_comfyui_dir_through_to_restart(monkeypatch):

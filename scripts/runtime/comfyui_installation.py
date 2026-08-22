@@ -138,6 +138,7 @@ def _model_paths_section(name: str, models_dir: Path) -> str:
         f"{name}:\n"
         f"  base_path: {json.dumps(str(Path(models_dir).resolve()))}\n"
         "  checkpoints: checkpoints\n"
+        "  diffusion_models: diffusion_models\n"
         "  clip: clip\n"
         "  text_encoders: text_encoders\n"
         "  vae: vae\n"
@@ -171,6 +172,7 @@ def add_managed_models_to_comfyui(comfyui_dir: Path, models_dir: Path) -> Path:
         "local_ai_bench_managed_models:\n"
         f"  base_path: {base_path}\n"
         "  checkpoints: checkpoints\n"
+        "  diffusion_models: diffusion_models\n"
         "  clip: clip\n"
         "  text_encoders: text_encoders\n"
         "  vae: vae\n"
@@ -183,7 +185,7 @@ def add_managed_models_to_comfyui(comfyui_dir: Path, models_dir: Path) -> Path:
 
 # Image models lived under <ComfyUI>/models before 4.1 moved them to models/comfyui.
 # Both are searched, so an upgrade reuses them in place instead of re-downloading.
-LEGACY_MODEL_SUBDIRS = ("checkpoints", "clip", "vae", "text_encoders")
+LEGACY_MODEL_SUBDIRS = ("checkpoints", "diffusion_models", "clip", "vae", "text_encoders")
 
 
 def legacy_models_dir_with_assets(comfyui_dir: Path | None, has_files_fn=None) -> Path | None:

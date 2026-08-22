@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   LLM_MODEL_ORDER, LEGACY_LLM_MODEL_ORDER, LLM_DISPLAY_ORDER,
   LLM_MODEL_LABELS, MODEL_COLORS, MODEL_SIZE_TIER,
-  IMAGE_MODEL_ORDER, IMAGE_MODEL_LABELS, IMAGE_MODEL_COLORS,
+  IMAGE_MODEL_ORDER, LEGACY_IMAGE_MODEL_ORDER, IMAGE_DISPLAY_ORDER,
+  IMAGE_MODEL_LABELS, IMAGE_MODEL_COLORS,
   EMBED_MODEL_ORDER, EMBED_MODEL_LABELS, EMBED_MODEL_COLORS,
   SIZE_TIER_ORDER, RES_ORDER, RES_COLORS, FALLBACK_COLORS,
   FILE_COLORS, CATEGORY_COLORS, CTX_COLORS, IMAGE_BAR_COLORS,
@@ -54,6 +55,15 @@ describe("model registry consistency", () => {
     for (const model of IMAGE_MODEL_ORDER) {
       expect(lookup(IMAGE_MODEL_LABELS, model), `${model} missing a label`).toBeDefined();
       expect(lookup(IMAGE_MODEL_COLORS, model), `${model} missing a color`).toBeDefined();
+    }
+  });
+
+  it("keeps removed image models renderable after the current catalog", () => {
+    expect(IMAGE_DISPLAY_ORDER).toEqual([...IMAGE_MODEL_ORDER, ...LEGACY_IMAGE_MODEL_ORDER]);
+    expect(LEGACY_IMAGE_MODEL_ORDER).toEqual(["sd35-large"]);
+    for (const model of LEGACY_IMAGE_MODEL_ORDER) {
+      expect(lookup(IMAGE_MODEL_LABELS, model)).toBeDefined();
+      expect(lookup(IMAGE_MODEL_COLORS, model)).toBeDefined();
     }
   });
 

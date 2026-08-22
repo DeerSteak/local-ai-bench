@@ -29,7 +29,9 @@ from scripts.runtime.comfyui_installation import (
 )
 from scripts.runtime import hardware
 from scripts.runtime.log_redaction import redact_log_text
-from scripts.workloads.models import IMAGE_MODELS
+from scripts.workloads.models import (
+    IMAGE_MODELS, image_checkpoint_groups, image_checkpoint_path,
+)
 from scripts.runtime.pause_control import wait_if_paused
 from scripts.results.result_store import atomic_write_json
 from scripts.runtime.progress_events import emit_model_finished, emit_progress
@@ -326,16 +328,15 @@ class Shared:
         """Start ComfyUI if not already running. Returns whether it's now available."""
         if Shared.comfyui_available():
             try:
-                response = requests.get(f"{config.COMFYUI_URL}/object_info/CheckpointLoaderSimple", timeout=5)
-                available = checkpoint_names_from_object_info(response.json())
-                managed = {
-                    model["checkpoint"] for model in IMAGE_MODELS
-                    if (config.COMFYUI_MODELS_DIR / "checkpoints" / model["checkpoint"]).is_file()
-                }
-                if not managed_checkpoints_visible(available, managed):
-                    Shared.warn("ComfyUI is running but has not loaded Local AI Bench's managed model path")
-                    Shared.warn("Stop it without active work, restart it once, then retry the image workload")
-                    return False
+                managed_models = [model for model in IMAGE_MODELS
+                                  if image_checkpoint_path(model, config.COMFYUI_MODELS_DIR).is_file()]
+                for loader, managed in image_checkpoint_groups(managed_models).items():
+                    response = requests.get(f"{config.COMFYUI_URL}/object_info/{loader}", timeout=5)
+                    available = checkpoint_names_from_object_info(response.json())
+                    if not managed_checkpoints_visible(available, managed):
+                        Shared.warn("ComfyUI is running but has not loaded Local AI Bench's managed model path")
+                        Shared.warn("Stop it without active work, restart it once, then retry the image workload")
+                        return False
             except Exception as exc:
                 Shared.warn(f"Could not verify checkpoints in the running ComfyUI server: {exc}")
                 return False
@@ -353,13 +354,13 @@ class Shared:
             return False
 
         # Check at least one image model checkpoint is present
-        checkpoints_dir = config.COMFYUI_MODELS_DIR / "checkpoints"
-        known = [m["checkpoint"] for m in IMAGE_MODELS]
-        found = [c for c in known if (checkpoints_dir / c).exists()]
+        known = [model["checkpoint"] for model in IMAGE_MODELS]
+        found = [model["checkpoint"] for model in IMAGE_MODELS
+                 if image_checkpoint_path(model, config.COMFYUI_MODELS_DIR).exists()]
         if not found:
-            Shared.warn("No image model checkpoints found in " + str(checkpoints_dir))
+            Shared.warn("No managed image model checkpoints found in " + str(config.COMFYUI_MODELS_DIR))
             Shared.warn("Expected one of: " + ", ".join(known))
-            Shared.warn("Run setup_check.py to download Flux models automatically")
+            Shared.warn("Run setup to download image models automatically")
             return False
         Shared.log(f"Found {len(found)}/{len(known)} image checkpoints: {found}")
 

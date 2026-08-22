@@ -32,17 +32,19 @@ export const MODEL_COLORS = {
 export const IMAGE_MODEL_COLORS = {
   "sd15":         "#cf222e",
   "sdxl":         "#0969da",
-  "sd35-large":   "#7c4dff",
+  "z-image-turbo": "#7c4dff",
   "flux-dev":     "#b54708",
   "flux2-dev":    "#1a7f37",
+  "sd35-large":   "#7c4dff",
 };
 
 export const IMAGE_MODEL_LABELS = {
   "sd15":         "Stable Diffusion 1.5",
   "sdxl":         "SDXL",
-  "sd35-large":   "SD3.5 Large",
+  "z-image-turbo": "Z-Image Turbo",
   "flux-dev":     "Flux.1-dev",
   "flux2-dev":    "Flux.2-dev",
+  "sd35-large":   "SD3.5 Large",
 };
 
 // Fallback palette for unknown model keys (hash-assigned)
@@ -188,7 +190,9 @@ export const MODEL_SIZE_TIER = {
   "qwen3.6-35b-a3b":        "medium",
 };
 
-export const IMAGE_MODEL_ORDER = ["sd15", "sdxl", "sd35-large", "flux-dev", "flux2-dev"];
+export const IMAGE_MODEL_ORDER = ["sd15", "sdxl", "z-image-turbo", "flux-dev", "flux2-dev"];
+export const LEGACY_IMAGE_MODEL_ORDER = ["sd35-large"];
+export const IMAGE_DISPLAY_ORDER = [...IMAGE_MODEL_ORDER, ...LEGACY_IMAGE_MODEL_ORDER];
 
 // Matches models.py's EMBED_MODELS list
 export const EMBED_MODEL_COLORS = {
@@ -291,9 +295,10 @@ export const CTX_COLORS = {
 export const IMAGE_BAR_COLORS = {
   "sd15":         "#cf222e",
   "sdxl":         "#0969da",
-  "sd35-large":   "#b54708",
+  "z-image-turbo": "#b54708",
   "flux-dev":     "#1a7f37",
   "flux2-dev":    "#9a3078",
+  "sd35-large":   "#b54708",
 };
 
 // Colors per embedding model (used in bar chart mode — matches CTX/BATCH palette)

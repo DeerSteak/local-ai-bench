@@ -6,6 +6,10 @@ from scripts.workloads.models import (
     LLM_MODELS_SMALL,
     LLM_MODELS_MEDIUM,
     LLM_MODELS_LARGE,
+    image_checkpoint_folder,
+    image_checkpoint_groups,
+    image_checkpoint_loader,
+    image_checkpoint_path,
 )
 
 ALL_LLM_TIERS = [LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE]
@@ -151,12 +155,47 @@ def test_image_models_have_required_keys():
         assert required <= m.keys()
 
 
+def test_z_image_catalog_uses_complete_official_comfyui_pipeline(tmp_path):
+    model = next(model for model in IMAGE_MODELS if model["short"] == "z-image-turbo")
+    assert model["checkpoint"] == "z_image_turbo_bf16.safetensors"
+    assert image_checkpoint_folder(model) == "diffusion_models"
+    assert image_checkpoint_loader(model) == "UNETLoader"
+    assert image_checkpoint_path(model, tmp_path) == \
+        tmp_path / "diffusion_models" / "z_image_turbo_bf16.safetensors"
+    assert model["checkpoint_repo"] == "Comfy-Org/z_image_turbo"
+    assert model["checkpoint_remote"] == \
+        "split_files/diffusion_models/z_image_turbo_bf16.safetensors"
+    assert [(asset["folder"], asset["name"], asset["remote"])
+            for asset in model["support_assets"]] == [
+        ("text_encoders", "qwen_3_4b.safetensors",
+         "split_files/text_encoders/qwen_3_4b.safetensors"),
+        ("vae", "ae.safetensors", "split_files/vae/ae.safetensors"),
+    ]
+
+
+def test_standard_image_checkpoint_defaults_remain_stable(tmp_path):
+    model = next(model for model in IMAGE_MODELS if model["short"] == "sdxl")
+    assert image_checkpoint_folder(model) == "checkpoints"
+    assert image_checkpoint_loader(model) == "CheckpointLoaderSimple"
+    assert image_checkpoint_path(model, tmp_path) == \
+        tmp_path / "checkpoints" / model["checkpoint"]
+
+
+def test_image_checkpoint_groups_separate_comfyui_loader_inventories():
+    groups = image_checkpoint_groups(IMAGE_MODELS)
+    assert groups["UNETLoader"] == {"z_image_turbo_bf16.safetensors"}
+    assert groups["CheckpointLoaderSimple"] == {
+        "v1-5-pruned-emaonly.safetensors", "sd_xl_base_1.0.safetensors",
+        "flux1-dev.safetensors", "flux2-dev.safetensors",
+    }
+
+
 def test_gated_image_models_expose_their_hugging_face_license_pages():
     urls = {model["short"]: model.get("license_url") for model in IMAGE_MODELS}
     assert urls == {
         "sd15": None,
         "sdxl": None,
-        "sd35-large": "https://huggingface.co/stabilityai/stable-diffusion-3.5-large",
+        "z-image-turbo": None,
         "flux-dev": "https://huggingface.co/black-forest-labs/FLUX.1-dev",
         "flux2-dev": "https://huggingface.co/black-forest-labs/FLUX.2-dev",
     }
