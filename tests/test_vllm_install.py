@@ -12,6 +12,7 @@ from scripts.setup.vllm_install import (
     DGX_CU130_VERSION,
     PYTORCH_XPU_INDEX,
     TRITON_XPU_VERSION,
+    VllmSupport,
     VLLM_REPO,
     VLLM_XPU_VERSION,
     hf_cache_model_complete,
@@ -31,6 +32,7 @@ from scripts.setup.vllm_install import (
     find_vllm_server,
     vllm_server_reachable,
     is_dgx_spark,
+    install_vllm,
     parse_compute_capability,
     redact_launcher_extra_args,
     python_bootstrap_plan,
@@ -41,6 +43,7 @@ from scripts.setup.vllm_install import (
     normalize_vllm_version,
     vllm_install_command,
     vllm_runtime_probe_code,
+    vllm_runtime_expectations,
     vllm_xpu_install_steps,
     vllm_platform_support,
     vllm_runtime_import_error,
@@ -539,13 +542,60 @@ def test_runtime_import_probe_accepts_a_loadable_environment(tmp_path):
 
 
 def test_xpu_runtime_probe_requires_vllm_and_torch_to_select_xpu():
-    code = vllm_runtime_probe_code("xpu")
+    code = vllm_runtime_probe_code("xpu", "xpu")
     assert "current_platform.device_type == 'xpu'" in code
     assert "torch.xpu.is_available()" in code
     assert "Plain Triton conflicts with Intel XPU Triton" in code
     assert "import triton" in code
     assert "from triton._C.libtriton import intel" in code
     assert "has_triton()" in code
+
+
+def test_cuda_runtime_probe_rejects_cpu_only_and_rocm_torch_builds():
+    code = vllm_runtime_probe_code("cuda", "cuda")
+    assert "current_platform.device_type == 'cuda'" in code
+    assert "torch.cuda.is_available()" in code
+    assert "torch.version.cuda" in code
+    assert "not torch.version.hip" in code
+
+
+def test_rocm_runtime_probe_requires_hip_backed_torch():
+    code = vllm_runtime_probe_code("cuda", "rocm")
+    assert "torch.cuda.is_available()" in code
+    assert "torch.version.hip" in code
+
+
+def test_install_methods_share_one_hardware_runtime_contract():
+    assert vllm_runtime_expectations("cuda_wheel") == ("cuda", "cuda")
+    assert vllm_runtime_expectations("cu130_wheel") == ("cuda", "cuda")
+    assert vllm_runtime_expectations("rocm_wheel") == ("cuda", "rocm")
+    assert vllm_runtime_expectations("xpu_source") == ("xpu", "xpu")
+    assert vllm_runtime_expectations(None) == (None, None)
+
+
+def test_repair_recreates_an_incompatible_managed_environment(monkeypatch, tmp_path):
+    environment = tmp_path / "vllm-env"
+    environment.mkdir()
+    stale = environment / "stale-runtime"
+    stale.touch()
+    commands = []
+
+    monkeypatch.setattr("scripts.setup.vllm_install.resolve_python", lambda *_args: "/python")
+    monkeypatch.setattr("scripts.setup.vllm_install.shutil.which", lambda _name: None)
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        if command[:3] == ["/python", "-m", "venv"]:
+            (environment / "bin").mkdir(parents=True)
+            (environment / "bin" / "python").touch()
+        return SimpleNamespace(returncode=0)
+
+    assert install_vllm(
+        VllmSupport("supported", "cuda_wheel", "supported"),
+        venv_dir=environment, recreate=True, run=run, log=lambda _message: None,
+    )
+    assert not stale.exists()
+    assert commands[0] == ["/python", "-m", "venv", str(environment)]
 
 
 def test_find_vllm_binary_prefers_a_system_install():

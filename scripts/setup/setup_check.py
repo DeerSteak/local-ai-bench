@@ -27,11 +27,13 @@ from scripts.runtime.comfyui_installation import (
     normalize_comfyui_dir,
     resolve_comfyui_setup_choice,
 )
-from scripts.runtime.llamacpp_tools import find_nvcc, probe_llamacpp_backend
+from scripts.runtime.llamacpp_tools import (
+    find_nvcc, llamacpp_backend_error, llamacpp_backend_mismatch, probe_llamacpp_backend,
+)
 from scripts.setup.cuda_install import (
-    cuda_toolkit_plan, native_nvidia_driver_plan,
-    nouveau_loaded, qualification_needs_native_nvidia_driver, run_cuda_toolkit_install,
-    run_native_nvidia_driver_install,
+    NATIVE_NVIDIA_REBOOT_EXIT_CODE, cuda_toolkit_plan, native_cuda_toolkit_plan,
+    native_nvidia_driver_plan, nouveau_loaded, qualification_needs_native_nvidia_driver,
+    run_cuda_toolkit_install, run_native_nvidia_driver_install,
 )
 from scripts.setup.intel_xpu_install import (
     intel_xpu_install_plan, oneapi_environment, run_intel_xpu_install, sycl_gpu_available,
@@ -84,7 +86,7 @@ from scripts.setup.vllm_install import (
     python_dev_package_command, python_include_dir, python_version_from_include_dir,
     read_launcher_extra_args, redact_launcher_extra_args, vllm_cache_home, vllm_platform_support,
     PINNED_PYTHON, python_bootstrap_plan, resolve_python, run_python_bootstrap,
-    vllm_runtime_import_error,
+    vllm_runtime_expectations, vllm_runtime_import_error,
 )
 from scripts.app.interface_mode import select_interface_mode
 from scripts.release.qualification_targets import qualification_host_error, qualification_target
@@ -219,8 +221,8 @@ def main() -> None:  # pragma: no cover - real interactive installer
             except (OSError, RuntimeError, ValueError) as exc:
                 fail(f"NVIDIA driver installation failed: {exc}")
                 sys.exit(1)
-            fail("NVIDIA driver installed; reboot to load it, then rerun qualification")
-            sys.exit(1)
+            warn("NVIDIA driver installed; reboot to load it, then rerun qualification")
+            sys.exit(NATIVE_NVIDIA_REBOOT_EXIT_CODE)
 
         _initial_rocm = discover_rocm()
         try:
@@ -432,15 +434,21 @@ def main() -> None:  # pragma: no cover - real interactive installer
 
     llamacpp_tools = llamacpp_install.find_tools(LLAMACPP_DIR, os_name)
     LLAMACPP_BIN = llamacpp_tools["llama-server"]
-    _required_llamacpp_backend = (
-        _qualification_target["backend"] if _qualification_target
-        and _qualification_target["runtime"] == LLAMACPP else None
-    )
+    _required_llamacpp_backend = None
+    if _qualification_target and _qualification_target["runtime"] == LLAMACPP:
+        _required_llamacpp_backend = _qualification_target["backend"]
+    elif os_name == "Linux":
+        if nvidia_ok:
+            _required_llamacpp_backend = "cuda"
+        elif rocm_ok:
+            _required_llamacpp_backend = "rocm"
+        elif intel_linux:
+            _required_llamacpp_backend = "xpu"
     _llamacpp_probe_env = oneapi_environment() if _required_llamacpp_backend == "xpu" else None
     _installed_llamacpp_backend = (
         probe_llamacpp_backend(LLAMACPP_BIN, env=_llamacpp_probe_env) if LLAMACPP_BIN else None
     )
-    _llamacpp_backend_mismatch = llamacpp_install.qualification_backend_mismatch(
+    _llamacpp_backend_mismatch = llamacpp_backend_mismatch(
         LLAMACPP_BIN, _installed_llamacpp_backend, _required_llamacpp_backend,
     )
     llamacpp_found = LLAMACPP_BIN is not None and not _llamacpp_backend_mismatch
@@ -512,20 +520,29 @@ def main() -> None:  # pragma: no cover - real interactive installer
     ) if missing_python_header else None
     header_package = header_command[-1] if header_command else None
     vllm_found = VLLM_BIN is not None or VLLM_LAUNCHER is not None or VLLM_SERVER_URL is not None
+    _is_wsl = hardware.detect_wsl(os_name, platform.release())
     _cuda_plan = cuda_toolkit_plan(
-        is_wsl=hardware.detect_wsl(os_name, platform.release()),
+        is_wsl=_is_wsl,
         nvidia_ok=nvidia_ok, nvcc_found=find_nvcc() is not None,
     )
+    if not _cuda_plan and os_name == "Linux" and not _is_wsl:
+        _cuda_plan = native_cuda_toolkit_plan(
+            platform.freedesktop_os_release(), platform.machine(),
+            nvidia_ok=nvidia_ok, nvcc_found=find_nvcc() is not None,
+        )
     if _cuda_plan:
         section("CUDA Toolkit")
-        warn("An NVIDIA GPU is available under WSL2 but the CUDA toolkit (nvcc) is missing — "
+        location = "under WSL2" if _is_wsl else "on native Linux"
+        warn(f"An NVIDIA GPU is available {location} but nvcc is missing — "
              "llama.cpp would build CPU-only")
-        info("Setup can install NVIDIA's WSL-Ubuntu CUDA toolkit. It contains no Linux GPU "
-             "driver, so the Windows driver's passthrough is left intact. Needs sudo.")
+        info("Setup can install NVIDIA's driver-free CUDA toolkit package. Needs sudo.")
         for _command in _cuda_plan:
             print(f"      {' '.join(_command)}")
         if args.qualification or input("\n  Install it? [y/N] ").strip().lower().startswith("y"):
-            run_cuda_toolkit_install(_cuda_plan)
+            if not run_cuda_toolkit_install(_cuda_plan) or find_nvcc() is None:
+                fail("CUDA toolkit installation did not provide nvcc")
+                if args.qualification:
+                    sys.exit(1)
         else:
             info("Skipped — llama.cpp will build CPU-only")
 
@@ -679,11 +696,15 @@ def main() -> None:  # pragma: no cover - real interactive installer
 
     selected_engines = selected_engine_names(engine_entries)
     _qualification_vllm_runtime_error = None
+    _expected_vllm_device, _expected_vllm_runtime = vllm_runtime_expectations(
+        vllm_support.method,
+    )
     if args.qualification == VLLM and VLLM_BIN is not None \
             and (config.VLLM_VENV / "bin" / "python").is_file():
         _qualification_vllm_runtime_error = vllm_runtime_import_error(
             config.VLLM_VENV,
-            expected_device_type="xpu" if vllm_support.method == "xpu_source" else None,
+            expected_device_type=_expected_vllm_device,
+            expected_runtime=_expected_vllm_runtime,
         )
         if _qualification_vllm_runtime_error:
             warn("Managed vLLM runtime failed preflight — setup will rebuild it")
@@ -865,9 +886,9 @@ def main() -> None:  # pragma: no cover - real interactive installer
             _post_install_probe_env = (
                 oneapi_environment() if _required_llamacpp_backend == "xpu" else None
             )
-            _post_install_backend_error = llamacpp_install.qualification_backend_error(
-                LLAMACPP_BIN, _required_llamacpp_backend,
-                probe=lambda binary: probe_llamacpp_backend(binary, env=_post_install_probe_env),
+            _post_install_backend_error = llamacpp_backend_error(
+                LLAMACPP_BIN, _required_llamacpp_backend, env=_post_install_probe_env,
+                context="setup",
             )
             if _post_install_backend_error:
                 fail(_post_install_backend_error)
@@ -903,7 +924,10 @@ def main() -> None:  # pragma: no cover - real interactive installer
                 issues.append(f"Run: {' '.join(header_command)}")
 
     if VLLM in pending_engines:
-        if install_vllm(vllm_support, log=info):
+        if install_vllm(
+            vllm_support, log=info,
+            recreate=_qualification_vllm_runtime_error is not None,
+        ):
             VLLM_BIN = find_vllm_binary(
                 platform_name=os_name, managed_only=args.qualification == VLLM,
             )
@@ -920,9 +944,9 @@ def main() -> None:  # pragma: no cover - real interactive installer
         if not install_vllm_build_tools(config.VLLM_VENV, log=info):
             fail("vLLM build tool install failed — kernel compilation will fail at run time")
             issues.append(f"Install the vLLM build tools in {config.VLLM_VENV}")
-        expected_vllm_device = "xpu" if vllm_support.method == "xpu_source" else None
         runtime_error = vllm_runtime_import_error(
-            config.VLLM_VENV, expected_device_type=expected_vllm_device,
+            config.VLLM_VENV, expected_device_type=_expected_vllm_device,
+            expected_runtime=_expected_vllm_runtime,
         )
         if runtime_error:
             fail("vLLM runtime preflight failed")

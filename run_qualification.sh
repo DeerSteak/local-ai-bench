@@ -38,17 +38,42 @@ set +e
 {
     echo
     echo "=== qualification setup attempt $STARTED_AT ==="
-    bash "$ROOT/setup.sh" --qualification "$ENGINE" --qualification-target "$TARGET"
-} 2>&1 | tee -a "$SETUP_LOG"
-SETUP_EXIT=${PIPESTATUS[0]}
+} >> "$SETUP_LOG"
+LOG_OFFSET=$(( $(wc -c < "$SETUP_LOG") + 1 ))
+LOG_FOLLOWER_PID=""
+stop_log_follower() {
+    if [ -n "$LOG_FOLLOWER_PID" ]; then
+        kill "$LOG_FOLLOWER_PID" 2>/dev/null || true
+        wait "$LOG_FOLLOWER_PID" 2>/dev/null || true
+        LOG_FOLLOWER_PID=""
+    fi
+}
+trap stop_log_follower EXIT INT TERM
+tail -c +"$LOG_OFFSET" -f "$SETUP_LOG" &
+LOG_FOLLOWER_PID=$!
+PYTHONUNBUFFERED=1 bash "$ROOT/setup.sh" \
+    --qualification "$ENGINE" --qualification-target "$TARGET" >> "$SETUP_LOG" 2>&1
+SETUP_EXIT=$?
+sleep 1
+stop_log_follower
 set -e
-if [ "$SETUP_EXIT" -eq 0 ]; then SETUP_RESULT="passed"; else SETUP_RESULT="failed"; fi
+if [ "$SETUP_EXIT" -eq 0 ]; then
+    SETUP_RESULT="passed"
+elif [ "$SETUP_EXIT" -eq 75 ]; then
+    SETUP_RESULT="reboot_required"
+else
+    SETUP_RESULT="failed"
+fi
 FINISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 printf '{\n  "schema": "qualification-setup-v1",\n  "target": "%s",\n  "status": "%s",\n  "exit_code": %d,\n  "started_at": "%s",\n  "finished_at": "%s",\n  "log": "setup.log"\n}\n' \
     "$TARGET" "$SETUP_RESULT" "$SETUP_EXIT" "$STARTED_AT" "$FINISHED_AT" \
     > "$SETUP_STATUS"
 chmod 0644 "$SETUP_LOG" "$SETUP_STATUS"
 if [ "$SETUP_EXIT" -ne 0 ]; then
+    if [ "$SETUP_EXIT" -eq 75 ]; then
+        echo "NVIDIA driver installation completed. Reboot, then rerun this command." >&2
+        exit "$SETUP_EXIT"
+    fi
     echo "Qualification setup failed; evidence saved to $SETUP_LOG" >&2
     exit "$SETUP_EXIT"
 fi

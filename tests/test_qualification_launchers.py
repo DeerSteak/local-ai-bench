@@ -7,13 +7,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_unix_launcher_runs_normal_setup_then_normal_benchmark_wrapper():
     text = (ROOT / "run_qualification.sh").read_text()
-    assert ('setup.sh" --qualification "$ENGINE" --qualification-target "$TARGET"'
-            in text)
+    assert 'bash "$ROOT/setup.sh"' in text
+    assert '--qualification "$ENGINE" --qualification-target "$TARGET"' in text
     assert "scripts.release.qualification_run" in text
     assert "qualification-env" not in text
     assert "qualification_automation" not in text
     assert '$ROOT/qualification-evidence/$TARGET/results_qualification_${TARGET}.json' in text
-    assert 'tee -a "$SETUP_LOG"' in text
+    assert 'tee -a "$SETUP_LOG"' not in text
+    assert 'tail -c +"$LOG_OFFSET" -f "$SETUP_LOG" &' in text
+    assert "trap stop_log_follower EXIT INT TERM" in text
+    assert 'kill "$LOG_FOLLOWER_PID"' in text
+    assert '--qualification "$ENGINE" --qualification-target "$TARGET" >> "$SETUP_LOG" 2>&1' in text
+    assert 'SETUP_RESULT="reboot_required"' in text
+    assert "NVIDIA driver installation completed. Reboot" in text
     assert '"schema": "qualification-setup-v1"' in text
     assert 'chmod 0644 "$SETUP_LOG" "$SETUP_STATUS"' in text
 

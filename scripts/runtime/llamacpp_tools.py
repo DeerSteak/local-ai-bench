@@ -42,6 +42,25 @@ def probe_llamacpp_backend(binary: str | Path, *, env=None, run=None) -> str | N
     return llamacpp_backend_from_device_listing(f"{completed.stdout}\n{completed.stderr}")
 
 
+def llamacpp_backend_mismatch(binary: str | Path | None, installed_backend: str | None,
+                              required_backend: str | None) -> bool:
+    return bool(binary and required_backend and installed_backend != required_backend)
+
+
+def llamacpp_backend_error(binary: str | Path | None, required_backend: str | None, *,
+                           env=None, run=None, probe=probe_llamacpp_backend,
+                           context: str = "llama.cpp") -> str | None:
+    if binary is None or required_backend is None:
+        return None
+    installed = probe(binary, env=env, run=run)
+    if not llamacpp_backend_mismatch(binary, installed, required_backend):
+        return None
+    return (
+        f"{context} requires {required_backend}, but installed llama.cpp exposes "
+        f"{installed or 'no backend'}"
+    )
+
+
 def managed_llamacpp_tools(vendored_dir: Path, platform_name: str) -> dict[str, str]:
     exe_suffix = ".exe" if platform_name == "Windows" else ""
     server_name = f"{LLAMACPP_TOOL_NAMES[0]}{exe_suffix}"

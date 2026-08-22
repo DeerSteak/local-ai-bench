@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from scripts.runtime.llamacpp_tools import (
     CUDA_BIN_DIRS, cuda_architecture, find_llamacpp_tool, find_nvcc,
-    probe_llamacpp_backend,
+    llamacpp_backend_error, llamacpp_backend_mismatch, probe_llamacpp_backend,
 )
 
 
@@ -35,6 +35,28 @@ def test_llamacpp_backend_probe_uses_the_explicit_binary_and_both_output_streams
 def test_llamacpp_backend_probe_does_not_guess_after_a_failed_command():
     run = lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stdout="", stderr="failed")
     assert probe_llamacpp_backend("llama-server", run=run) is None
+
+
+def test_required_backend_rejects_wrong_or_unverifiable_builds():
+    assert llamacpp_backend_mismatch("llama-server", "cpu", "cuda")
+    assert llamacpp_backend_mismatch("llama-server", None, "cuda")
+    assert not llamacpp_backend_mismatch("llama-server", "cuda", "cuda")
+    assert not llamacpp_backend_mismatch(None, None, "cuda")
+
+
+def test_backend_error_uses_the_shared_probe_contract():
+    calls = []
+
+    def probe(binary, **kwargs):
+        calls.append((binary, kwargs))
+        return "cpu"
+
+    error = llamacpp_backend_error(
+        "llama-server", "rocm", env={"HIP": "1"}, run="runner",
+        probe=probe, context="managed update",
+    )
+    assert error == "managed update requires rocm, but installed llama.cpp exposes cpu"
+    assert calls == [("llama-server", {"env": {"HIP": "1"}, "run": "runner"})]
 
 
 def test_nvcc_on_path_is_preferred_over_a_toolkit_directory():

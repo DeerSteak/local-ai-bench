@@ -33,7 +33,8 @@ def test_post_install_xpu_probe_uses_oneapi_environment():
     assert '_llamacpp_probe_env = oneapi_environment() if _required_llamacpp_backend == "xpu"' in source
     assert source.count("env=_llamacpp_probe_env") == 1
     assert '_post_install_probe_env = (' in source
-    assert 'probe_llamacpp_backend(binary, env=_post_install_probe_env)' in source
+    assert 'env=_post_install_probe_env,' in source
+    assert 'context="setup"' in source
 
 
 def test_native_nvidia_qualification_installs_driver_before_runtime_discovery():
@@ -46,6 +47,25 @@ def test_native_nvidia_qualification_installs_driver_before_runtime_discovery():
     assert "nouveau_loaded()" in driver_block
     assert "run_native_nvidia_driver_install(_driver_plan)" in driver_block
     assert "reboot to load it" in driver_block
+    assert "sys.exit(NATIVE_NVIDIA_REBOOT_EXIT_CODE)" in driver_block
+
+
+def test_qualification_repairs_cpu_only_gpu_runtimes():
+    source = SETUP_CHECK.read_text(encoding="utf-8")
+
+    assert "_llamacpp_backend_mismatch" in source
+    assert "requires {_required_llamacpp_backend} — it will be rebuilt" in source
+    assert "vllm_runtime_expectations(\n        vllm_support.method," in source
+    assert "recreate=_qualification_vllm_runtime_error is not None" in source
+
+
+def test_native_nvidia_setup_requires_toolkit_before_source_build():
+    source = SETUP_CHECK.read_text(encoding="utf-8")
+
+    assert "native_cuda_toolkit_plan(" in source
+    assert 'fail("CUDA toolkit installation did not provide nvcc")' in source
+    assert "sys.exit(1)" in source[source.index("if _cuda_plan:"):
+                                   source.index("vllm_note =")]
 
 
 def test_setup_coordinator_import_is_safe():

@@ -5,7 +5,9 @@ import pytest
 from scripts.release.qualification_targets import qualification_target
 from scripts.setup.cuda_install import (
     CUDA_TOOLKIT_PACKAGE,
+    NATIVE_NVIDIA_REBOOT_EXIT_CODE,
     cuda_toolkit_plan,
+    native_cuda_toolkit_plan,
     native_nvidia_driver_plan,
     nouveau_loaded,
     qualification_needs_native_nvidia_driver,
@@ -51,6 +53,33 @@ def test_plan_falls_back_to_curl_and_gives_up_without_a_downloader():
     assert plan(which_fn=have("apt-get")) == []
 
 
+def test_native_plan_installs_driver_free_toolkit_from_matching_ubuntu_repository():
+    commands = native_cuda_toolkit_plan(
+        {"ID": "ubuntu", "VERSION_ID": "24.04"}, "x86_64",
+        nvidia_ok=True, nvcc_found=False, which_fn=have("apt-get", "wget"),
+    )
+    assert "ubuntu2404/x86_64" in commands[0][-1]
+    assert commands[-1] == ["sudo", "apt-get", "install", "-y", CUDA_TOOLKIT_PACKAGE]
+    assert "cuda-drivers" not in commands[-1]
+
+
+def test_native_plan_requires_supported_ubuntu_nvidia_and_missing_nvcc():
+    kwargs = {"nvidia_ok": True, "nvcc_found": False, "which_fn": have("apt-get", "curl")}
+    assert native_cuda_toolkit_plan(
+        {"ID": "ubuntu", "VERSION_ID": "26.04"}, "amd64", **kwargs,
+    )[0][0] == "curl"
+    assert native_cuda_toolkit_plan(
+        {"ID": "ubuntu", "VERSION_ID": "22.04"}, "x86_64", **kwargs,
+    ) == []
+    assert native_cuda_toolkit_plan(
+        {"ID": "ubuntu", "VERSION_ID": "24.04"}, "aarch64", **kwargs,
+    ) == []
+    assert native_cuda_toolkit_plan(
+        {"ID": "ubuntu", "VERSION_ID": "24.04"}, "x86_64",
+        **{**kwargs, "nvcc_found": True},
+    ) == []
+
+
 def test_install_reports_success_only_when_every_command_succeeds():
     calls = []
 
@@ -84,6 +113,7 @@ def test_install_reports_a_missing_binary_instead_of_raising():
 
 
 def test_native_nvidia_target_requires_driver_only_when_nvidia_smi_is_missing():
+    assert NATIVE_NVIDIA_REBOOT_EXIT_CODE == 75
     target = qualification_target("nvidia-linux-llamacpp-cuda")
     assert qualification_needs_native_nvidia_driver(
         target, os_name="Linux", release="6.17.0-generic", nvidia_available=False,

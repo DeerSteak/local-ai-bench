@@ -521,7 +521,8 @@ def install_vllm_build_tools(venv_dir: Path, *, log=print,
     return command is not None and run(command).returncode == 0
 
 
-def vllm_runtime_probe_code(expected_device_type: str | None = None) -> str:
+def vllm_runtime_probe_code(expected_device_type: str | None = None,
+                            expected_runtime: str | None = None) -> str:
     statements = [
         "import torch", "import vllm", "from vllm.platforms import current_platform",
         "assert current_platform.device_type, 'vLLM could not detect an accelerator'",
@@ -531,6 +532,17 @@ def vllm_runtime_probe_code(expected_device_type: str | None = None) -> str:
             f"assert current_platform.device_type == {expected_device_type!r}, "
             "'vLLM detected ' + str(current_platform.device_type)"
         )
+    if expected_runtime == "cuda":
+        statements.extend([
+            "assert torch.cuda.is_available(), 'PyTorch cannot access CUDA'",
+            "assert torch.version.cuda, 'PyTorch is not a CUDA build'",
+            "assert not torch.version.hip, 'PyTorch is a ROCm build, not CUDA'",
+        ])
+    elif expected_runtime == "rocm":
+        statements.extend([
+            "assert torch.cuda.is_available(), 'PyTorch cannot access ROCm'",
+            "assert torch.version.hip, 'PyTorch is not a ROCm build'",
+        ])
     if expected_device_type == "xpu":
         statements.extend([
             "assert torch.xpu.is_available(), 'PyTorch cannot access Intel XPU'",
@@ -545,14 +557,26 @@ def vllm_runtime_probe_code(expected_device_type: str | None = None) -> str:
     return "; ".join(statements)
 
 
+def vllm_runtime_expectations(method: str | None) -> tuple[str | None, str | None]:
+    if method in {"cuda_wheel", "cu130_wheel"}:
+        return "cuda", "cuda"
+    if method == "rocm_wheel":
+        return "cuda", "rocm"
+    if method == "xpu_source":
+        return "xpu", "xpu"
+    return None, None
+
+
 def vllm_runtime_import_error(venv_dir: Path, *, expected_device_type: str | None = None,
+                              expected_runtime: str | None = None,
                               run=subprocess.run) -> str | None:
     python = Path(venv_dir) / ("Scripts" if os.name == "nt" else "bin") / \
         ("python.exe" if os.name == "nt" else "python")
     try:
         result = run(
             [
-                str(python), "-c", vllm_runtime_probe_code(expected_device_type),
+                str(python), "-c",
+                vllm_runtime_probe_code(expected_device_type, expected_runtime),
             ],
             capture_output=True, text=True, timeout=60,
         )
@@ -586,7 +610,8 @@ def find_vllm_server(ports=None, timeout: float = 2.0, open_fn=None) -> str | No
 def install_vllm(support: VllmSupport, *, log=print, run=subprocess.run,
                  venv_dir: Path | None = None,
                  version: str | None = None,
-                 index_url: str | None = None) -> bool:  # pragma: no cover
+                 index_url: str | None = None,
+                 recreate: bool = False) -> bool:  # pragma: no cover
     """Install vLLM per `support.method`. Real network/venv side effects."""
     if support.method is None:
         return False
@@ -599,6 +624,9 @@ def install_vllm(support: VllmSupport, *, log=print, run=subprocess.run,
         log(f"No {wanted} interpreter found — vLLM's {support.method} wheels require it")
         return False
 
+    if recreate and venv_dir.exists():
+        log(f"Rebuilding incompatible managed vLLM environment at {venv_dir} ...")
+        shutil.rmtree(venv_dir)
     if not venv_dir.exists():
         log(f"Creating vLLM environment at {venv_dir} ...")
         created = run([python_exe, "-m", "venv", str(venv_dir)])

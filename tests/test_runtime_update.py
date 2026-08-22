@@ -138,7 +138,23 @@ def test_validate_vllm_environment_allows_a_slow_cold_import(tmp_path):
         return SimpleNamespace(returncode=0, stdout="vllm 0.27.1\n", stderr="")
 
     assert validate_vllm_environment(tmp_path, run=run).success
-    assert calls[0][1]["timeout"] == 300
+    assert calls[0][1]["timeout"] == 60
+    assert calls[1][1]["timeout"] == 300
+
+
+def test_validate_vllm_environment_rejects_wrong_hardware_runtime(tmp_path):
+    executable = vllm_executable(tmp_path)
+    executable.parent.mkdir()
+    executable.touch()
+
+    def run(command, **_kwargs):
+        if "-c" in command:
+            return SimpleNamespace(returncode=1, stdout="", stderr="PyTorch is not a CUDA build")
+        return SimpleNamespace(returncode=0, stdout="vllm 1.0", stderr="")
+
+    result = validate_vllm_environment(tmp_path, support=SUPPORT, run=run)
+    assert not result.success
+    assert "not a CUDA build" in result.detail
 
 
 def test_update_managed_vllm_recreates_venv_at_final_path_after_staging(tmp_path):
@@ -526,6 +542,8 @@ def test_rebuild_managed_llamacpp_builds_all_tools_before_swap(tmp_path, monkeyp
                 tool.touch()
         if "--version" in command:
             return SimpleNamespace(returncode=0, stdout="version: 7000", stderr="")
+        if "--list-devices" in command:
+            return SimpleNamespace(returncode=0, stdout="CUDA0: NVIDIA GPU", stderr="")
         if command[:1] == ["nvidia-smi"]:
             return SimpleNamespace(returncode=0, stdout="8.9\n", stderr="")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
@@ -543,6 +561,38 @@ def test_rebuild_managed_llamacpp_builds_all_tools_before_swap(tmp_path, monkeyp
     assert "-DCMAKE_CUDA_ARCHITECTURES=89" in configure
     assert all(name in build for name in ("llama-server", "llama-bench", "llama-batched-bench"))
     assert not (target / "old").exists()
+
+
+def test_rebuild_managed_llamacpp_preserves_cpu_runtime_when_cuda_build_has_no_cuda(tmp_path,
+                                                                                   monkeypatch):
+    target = tmp_path / "llama.cpp"
+    target.mkdir()
+    marker = target / "old"
+    marker.touch()
+    monkeypatch.setattr("scripts.setup.runtime_update.find_nvcc", lambda: "/cuda/nvcc")
+
+    def run(command, **_kwargs):
+        if command[:2] == ["git", "clone"]:
+            staged = Path(command[-1])
+            for name in ("llama-server", "llama-bench", "llama-batched-bench"):
+                tool = staged / "build" / "bin" / name
+                tool.parent.mkdir(parents=True, exist_ok=True)
+                tool.touch()
+        if command[:1] == ["nvidia-smi"]:
+            return SimpleNamespace(returncode=0, stdout="8.9\n", stderr="")
+        if "--version" in command:
+            return SimpleNamespace(returncode=0, stdout="version: 7000", stderr="")
+        if "--list-devices" in command:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    result = rebuild_managed_llamacpp(
+        target, "cuda", run=run, os_name="posix", release_fetcher=lambda: SOURCE_RELEASE,
+        token_factory=lambda: "test",
+    )
+    assert not result.success
+    assert "exposes cpu" in result.detail
+    assert marker.exists()
 
 
 def test_rebuild_managed_llamacpp_preserves_checkout_on_build_failure(tmp_path):

@@ -14,13 +14,17 @@ from typing import Callable
 
 import psutil
 
-from scripts.setup.vllm_install import VllmSupport, install_vllm
+from scripts.setup.vllm_install import (
+    VllmSupport, install_vllm, vllm_runtime_expectations, vllm_runtime_import_error,
+)
 from scripts.setup.intel_xpu_install import oneapi_environment
 from scripts.setup.archive_safety import safe_extract_tar, safe_extract_zip
 from scripts.setup.directory_transaction import DirectorySwapError, swap_staged_directory
 from scripts.setup.resumable_download import download_file
 from scripts.runtime import config, hardware
-from scripts.runtime.llamacpp_tools import cuda_architecture, find_nvcc
+from scripts.runtime.llamacpp_tools import (
+    cuda_architecture, find_nvcc, llamacpp_backend_error,
+)
 from scripts.setup.runtime_identity import RuntimeIdentity, parse_runtime_version, source_commit_version
 
 
@@ -225,7 +229,8 @@ def llamacpp_cmake_flags(backend: str, *, nvcc: str | None = None,
     return []
 
 
-def validate_llamacpp_build(source_dir: Path, *, run=subprocess.run) -> RuntimeUpdateResult:
+def validate_llamacpp_build(source_dir: Path, *, required_backend: str | None = None,
+                            env=None, run=subprocess.run) -> RuntimeUpdateResult:
     tools = {}
     for name in LLAMACPP_TARGETS:
         matches = [path for path in source_dir.rglob(name) if path.is_file()]
@@ -242,6 +247,12 @@ def validate_llamacpp_build(source_dir: Path, *, run=subprocess.run) -> RuntimeU
     output = (result.stdout or result.stderr or "").strip()
     if result.returncode != 0 or not output:
         return RuntimeUpdateResult(False, output or "Staged llama.cpp returned no version.")
+    backend_error = llamacpp_backend_error(
+        tools["llama-server"], required_backend, env=env, run=run,
+        context="staged llama.cpp build",
+    )
+    if backend_error:
+        return RuntimeUpdateResult(False, backend_error)
     identity = RuntimeIdentity(
         "llamacpp", "app_managed", str(tools["llama-server"]),
         parse_runtime_version(output), output,
@@ -582,7 +593,9 @@ def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
                 if cancelled := _cancelled(control):
                     return cancelled
                 return RuntimeUpdateResult(False, f"llama.cpp update command failed: {command[0]}")
-        validation = validate_llamacpp_build(staged, run=active_run)
+        validation = validate_llamacpp_build(
+            staged, required_backend=backend, env=build_env, run=active_run,
+        )
         if cancelled := _cancelled(control):
             return cancelled
         if not validation.success:
@@ -590,7 +603,9 @@ def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
         try:
             outcome = swap_staged_directory(
                 target, staged, backup, had_target=True,
-                validate=lambda path: validate_llamacpp_build(path, run=active_run),
+                validate=lambda path: validate_llamacpp_build(
+                    path, required_backend=backend, env=build_env, run=active_run,
+                ),
                 replace=replace, remove=remove,
             )
         except DirectorySwapError as exc:
@@ -628,11 +643,20 @@ def vllm_executable(venv_dir: Path, os_name: str = os.name) -> Path:
     return venv_dir / subdir / f"vllm{suffix}"
 
 
-def validate_vllm_environment(venv_dir: Path, *, run=subprocess.run,
-                              os_name: str = os.name) -> RuntimeUpdateResult:
+def validate_vllm_environment(venv_dir: Path, *, support: VllmSupport | None = None,
+                              run=subprocess.run, os_name: str = os.name) -> RuntimeUpdateResult:
     executable = vllm_executable(venv_dir, os_name)
     if not executable.is_file():
         return RuntimeUpdateResult(False, f"Staged vLLM executable is missing: {executable}")
+    expected_device, expected_runtime = vllm_runtime_expectations(
+        support.method if support else None,
+    )
+    runtime_error = vllm_runtime_import_error(
+        venv_dir, expected_device_type=expected_device,
+        expected_runtime=expected_runtime, run=run,
+    )
+    if runtime_error:
+        return RuntimeUpdateResult(False, f"Staged vLLM hardware validation failed: {runtime_error}")
     try:
         result = run(
             [str(executable), "--version"], capture_output=True, text=True,
@@ -670,7 +694,7 @@ def update_managed_vllm(support: VllmSupport, target: Path, *, log=print,
             return RuntimeUpdateResult(False, "The staged vLLM installation failed.")
         if cancelled := _cancelled(control):
             return cancelled
-        validation = validate_vllm_environment(staged, run=active_run)
+        validation = validate_vllm_environment(staged, support=support, run=active_run)
         if cancelled := _cancelled(control):
             return cancelled
         if not validation.success:
@@ -680,7 +704,9 @@ def update_managed_vllm(support: VllmSupport, target: Path, *, log=print,
         try:
             if not installer(support, log=log, run=active_run, venv_dir=target, **install_kwargs):
                 raise RuntimeError("The final vLLM installation failed.")
-            final_validation = validate_vllm_environment(target, run=active_run)
+            final_validation = validate_vllm_environment(
+                target, support=support, run=active_run,
+            )
             if not final_validation.success:
                 raise RuntimeError(final_validation.detail)
         except Exception as exc:

@@ -10,12 +10,17 @@ CUDA_WSL_KEYRING_URL = (
     "https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/"
     "cuda-keyring_1.1-1_all.deb"
 )
+CUDA_UBUNTU_REPO_URL = (
+    "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu{release}/x86_64/"
+    "cuda-keyring_1.1-1_all.deb"
+)
 CUDA_KEYRING_DEB = "/tmp/cuda-keyring.deb"
 
 # Driver-free meta-package. `cuda`, `cuda-12-x`, and `cuda-drivers` each pull a Linux
 # driver into WSL2 and break the /dev/dxg passthrough the Windows driver provides.
 CUDA_TOOLKIT_PACKAGE = "cuda-toolkit"
 NATIVE_NVIDIA_UBUNTU_VERSIONS = {"24.04", "26.04"}
+NATIVE_NVIDIA_REBOOT_EXIT_CODE = 75
 NOUVEAU_BLOCKLIST_COMMAND = (
     "printf '%s\\n' 'blacklist nouveau' 'options nouveau modeset=0' "
     "> /etc/modprobe.d/disable-nouveau.conf"
@@ -34,6 +39,33 @@ def cuda_toolkit_plan(*, is_wsl: bool, nvidia_ok: bool, nvcc_found: bool,
         fetch = ["wget", "-qO", CUDA_KEYRING_DEB, CUDA_WSL_KEYRING_URL]
     elif which_fn("curl"):
         fetch = ["curl", "-fsSLo", CUDA_KEYRING_DEB, CUDA_WSL_KEYRING_URL]
+    else:
+        return []
+    return [
+        fetch,
+        ["sudo", "dpkg", "-i", CUDA_KEYRING_DEB],
+        ["sudo", "apt-get", "update"],
+        ["sudo", "apt-get", "install", "-y", CUDA_TOOLKIT_PACKAGE],
+    ]
+
+
+def native_cuda_toolkit_plan(os_release: dict[str, str], architecture: str, *,
+                             nvidia_ok: bool, nvcc_found: bool,
+                             which_fn=shutil.which) -> list[list[str]]:
+    if nvcc_found or not nvidia_ok:
+        return []
+    distribution = os_release.get("ID", "").lower()
+    version = os_release.get("VERSION_ID", "")
+    if (distribution != "ubuntu" or version not in NATIVE_NVIDIA_UBUNTU_VERSIONS
+            or architecture.lower() not in {"x86_64", "amd64"}):
+        return []
+    if which_fn("apt-get") is None:
+        return []
+    url = CUDA_UBUNTU_REPO_URL.format(release=version.replace(".", ""))
+    if which_fn("wget"):
+        fetch = ["wget", "-qO", CUDA_KEYRING_DEB, url]
+    elif which_fn("curl"):
+        fetch = ["curl", "-fsSLo", CUDA_KEYRING_DEB, url]
     else:
         return []
     return [

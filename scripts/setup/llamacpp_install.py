@@ -6,7 +6,8 @@ import subprocess
 from pathlib import Path
 
 from scripts.runtime.llamacpp_tools import (
-    cuda_architecture, find_llamacpp_tool, find_nvcc, managed_llamacpp_tools,
+    cuda_architecture, find_llamacpp_tool, find_nvcc, llamacpp_backend_error,
+    llamacpp_backend_mismatch, managed_llamacpp_tools,
 )
 from scripts.setup.archive_safety import safe_extract_zip
 from scripts.setup.intel_xpu_install import oneapi_environment
@@ -35,19 +36,15 @@ def managed_toolset_ready(runtime_dir: Path, platform_name: str) -> bool:
     return bool(managed_llamacpp_tools(runtime_dir, platform_name))
 
 
-def qualification_backend_mismatch(binary: str | None, installed_backend: str | None,
-                                   required_backend: str | None) -> bool:
-    return bool(binary and required_backend and installed_backend != required_backend)
+qualification_backend_mismatch = llamacpp_backend_mismatch
 
 
 def qualification_backend_error(binary: str | None, required_backend: str | None, *,
                                 probe) -> str | None:
-    if binary is None or required_backend is None:
-        return None
-    installed = probe(binary)
-    if not qualification_backend_mismatch(binary, installed, required_backend):
-        return None
-    return f"qualification requires {required_backend}, but installed llama.cpp exposes {installed or 'no backend'}"
+    return llamacpp_backend_error(
+        binary, required_backend,
+        probe=lambda value, **_kwargs: probe(value), context="qualification",
+    )
 
 
 def install_windows(runtime_dir: Path, download_dir: Path, max_cuda_version: str | None,
