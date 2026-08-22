@@ -26,6 +26,7 @@ from scripts.setup.model_download import (
     custom_model_artifacts_present, download_hf_files, import_model, load_hf_token,
 )
 from scripts.setup.model_import import ImportVariant, inspect_repository
+from scripts.setup.runtime_identity import repository_revision
 
 
 DEFAULT_AUDIT = config.SCRIPT_DIR / "docs" / "model-catalog-source-audit-v6.json"
@@ -453,6 +454,9 @@ def execute_screen(spec: ScreenSpec, timeout: int) -> dict:  # pragma: no cover 
         if result is None:
             raise RuntimeError("candidate screen produced no result")
     errors = compatibility_screen_errors(result, spec)
+    comfyui_revision = repository_revision(config.COMFYUI_DIR) if spec.family == "image" else None
+    if spec.family == "image" and comfyui_revision is None:
+        errors.append("ComfyUI revision is unavailable")
     evidence_artifacts, evidence_errors = screen_evidence_artifacts(spec)
     errors.extend(evidence_errors)
     image_artifacts, artifact_errors = screen_image_artifacts(result, spec)
@@ -465,6 +469,7 @@ def execute_screen(spec: ScreenSpec, timeout: int) -> dict:  # pragma: no cover 
         "revision": spec.revision,
         "files": list(spec.files),
         "import": import_status,
+        "comfyui_revision": comfyui_revision,
         "result": spec.output_path.name,
         "status": "passed" if not errors else "failed",
         "errors": errors,

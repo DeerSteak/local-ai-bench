@@ -6,7 +6,7 @@ import pytest
 from scripts.setup.runtime_identity import (
     RuntimeIdentity, engine_runtime_version, inspect_runtime, managed_distribution_version,
     parse_llamacpp_commit, parse_runtime_version,
-    probe_vllm_server_health, probe_vllm_server_version, runtime_ownership,
+    probe_vllm_server_health, probe_vllm_server_version, repository_revision, runtime_ownership,
     source_commit_version,
 )
 
@@ -34,6 +34,13 @@ def test_runtime_ownership_distinguishes_managed_system_external_and_missing(tmp
     assert runtime_ownership(Path("/usr/bin/vllm"), managed) == "system_managed"
     assert runtime_ownership("http://localhost:8000", managed) == "external_server"
     assert runtime_ownership(None, managed) == "missing"
+
+
+def test_repository_revision_requires_an_exact_commit_identity(tmp_path):
+    valid = SimpleNamespace(stdout="A" * 40 + "\n", returncode=0)
+    assert repository_revision(tmp_path, run=lambda *_args, **_kwargs: valid) == "a" * 40
+    invalid = SimpleNamespace(stdout="main\n", returncode=0)
+    assert repository_revision(tmp_path, run=lambda *_args, **_kwargs: invalid) is None
 
 
 def test_inspect_runtime_reports_version_without_mutating_runtime(tmp_path):

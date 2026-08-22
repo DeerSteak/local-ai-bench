@@ -73,6 +73,18 @@ def managed_distribution_version(managed_root: Path, distribution: str) -> str |
     return None
 
 
+def repository_revision(path: Path, *, run=subprocess.run) -> str | None:
+    try:
+        result = run(
+            ["git", "-C", str(path), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    revision = result.stdout.strip().lower()
+    return revision if result.returncode == 0 and re.fullmatch(r"[0-9a-f]{40}", revision) else None
+
+
 def source_commit_version(identity: RuntimeIdentity, managed_root: Path, *,
                           run=subprocess.run) -> str | None:
     """Prefer a sortable commit identity for a managed llama.cpp source build."""
