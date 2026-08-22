@@ -18,6 +18,7 @@ from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
 
 def download_hf_files(repo: str, filenames: str | list[str], destination: Path, *,
                       token: str | None = None, save_as: str | None = None,
+                      revision: str | None = None,
                       warn=lambda _message: None) -> bool:
     destination.mkdir(parents=True, exist_ok=True)
     requested = filenames if isinstance(filenames, list) else [filenames]
@@ -28,8 +29,11 @@ def download_hf_files(repo: str, filenames: str | list[str], destination: Path, 
         for cli in ("hf", "huggingface-cli"):
             if not shutil.which(cli):
                 continue
+            command = [cli, "download", repo, filename, "--local-dir", str(destination)]
+            if revision:
+                command.extend(("--revision", revision))
             result = subprocess.run(
-                [cli, "download", repo, filename, "--local-dir", str(destination)],
+                command,
                 env=env, capture_output=True, text=True,
             )
             downloaded = result.returncode == 0
@@ -43,6 +47,7 @@ def download_hf_files(repo: str, filenames: str | list[str], destination: Path, 
                 from huggingface_hub import hf_hub_download
                 hf_hub_download(
                     repo_id=repo, filename=filename, local_dir=str(destination), token=token,
+                    revision=revision,
                 )
                 downloaded = True
             except Exception as exc:

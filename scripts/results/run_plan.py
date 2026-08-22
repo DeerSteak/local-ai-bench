@@ -8,6 +8,7 @@ from pathlib import Path
 
 from scripts.results.canonical_json import canonical_json, sha256_json
 from scripts.runtime.sampling import baseline_sampling_profile, sampling_profile_payload
+from scripts.runtime.image_model_spec import validate_audit_image_model
 
 
 PLAN_SCHEMA_VERSION = 5
@@ -32,7 +33,11 @@ SAFE_CONFIG_KEYS = {
 }
 REQUIRED_CONFIG_KEYS = {"warmup_runs", "cpu_only", "force_all"}
 MODEL_FAMILIES = {"llm", "concurrency", "embeddings", "images"}
-SAFE_MODEL_KEYS = {"tag", "short", "size_gb", "params_b"}
+SAFE_MODEL_KEYS = {
+    "tag", "short", "size_gb", "params_b", "audit_candidate", "artifact_digest", "label",
+    "tier", "checkpoint", "checkpoint_folder", "workflow", "steps", "cfg", "sampler",
+    "scheduler",
+}
 EXECUTION_CONFIG_KEYS = set(SAFE_CONFIG_KEYS) - {
     "methodology_profile", "effective_optimizations", "sampling_profile", "offline", "gpu_split_mode",
     "retry_crashed_models", "llamacpp_no_repack",
@@ -364,6 +369,10 @@ class RunPlan:
                 if not all(isinstance(model.get(key), str) and model[key]
                            for key in required_keys):
                     raise ValueError(f"invalid model identity in family: {family}")
+                if model.get("audit_candidate") is True:
+                    if family != "images":
+                        raise ValueError("audit image-model identity is outside the image family")
+                    validate_audit_image_model(model)
 
     @property
     def plan_id(self) -> str:

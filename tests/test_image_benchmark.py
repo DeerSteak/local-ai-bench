@@ -4,7 +4,8 @@ import pytest
 
 from scripts.runtime import config
 from scripts.workloads.image_benchmark import (
-    ImageBenchmark, display_image_path, image_resume_artifacts, image_resume_runtimes,
+    ImageBenchmark, display_image_path, image_checkpoint_path, image_resume_artifacts,
+    image_resume_runtimes,
 )
 from scripts.results.image_event_stage import ImageEventStage
 from scripts.results.run_plan import RunPlan
@@ -32,6 +33,11 @@ def test_build_workflow_routes_flux2_type():
 def test_build_workflow_routes_sd3_type():
     wf = ImageBenchmark.build_workflow("sd3", **_build_kwargs())
     assert wf == ImageBenchmark.build_sd3_workflow(**_build_kwargs())
+
+
+def test_build_workflow_routes_z_image_type():
+    wf = ImageBenchmark.build_workflow("z_image", **_build_kwargs())
+    assert wf == ImageBenchmark.build_z_image_workflow(**_build_kwargs())
 
 
 def test_build_workflow_falls_back_to_sdxl_for_unrecognized_type():
@@ -101,6 +107,28 @@ def test_sdxl_workflow_wires_checkpoint_and_prompt():
                 assert value[0] in wf
 
 
+def test_z_image_workflow_matches_pinned_core_node_pipeline():
+    wf = ImageBenchmark.build_z_image_workflow(
+        checkpoint="z_image_turbo_bf16.safetensors", width=1024, height=1024,
+        steps=8, cfg=1.0, sampler="res_multistep", scheduler="simple",
+        seed=42, prompt="a cat",
+    )
+    assert wf["1"] == {"class_type": "UNETLoader", "inputs": {
+        "unet_name": "z_image_turbo_bf16.safetensors", "weight_dtype": "default",
+    }}
+    assert wf["2"]["inputs"] == {
+        "clip_name": "qwen_3_4b.safetensors", "type": "lumina2", "device": "default",
+    }
+    assert wf["5"]["inputs"]["conditioning"] == ["4", 0]
+    assert wf["6"]["class_type"] == "EmptySD3LatentImage"
+    assert wf["7"]["inputs"]["shift"] == 3.0
+    assert wf["8"]["inputs"]["sampler_name"] == "res_multistep"
+    for node in wf.values():
+        for value in node["inputs"].values():
+            if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
+                assert value[0] in wf
+
+
 def test_flux_and_flux2_use_different_filename_prefixes():
     wf1 = ImageBenchmark.build_flux_workflow(
         checkpoint="c", width=8, height=8, steps=1, cfg=1.0,
@@ -129,6 +157,30 @@ def test_image_resume_inputs_include_existing_workflow_assets_only(monkeypatch, 
     assert set(artifacts) == {
         "image:flux:checkpoint", "image:flux:clip:t5xxl_fp16.safetensors",
         "image:flux:clip:clip_l.safetensors", "image:flux:vae:ae.safetensors",
+    }
+
+
+def test_image_resume_inputs_use_candidate_checkpoint_and_text_encoder_folders(
+        monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "COMFYUI_MODELS_DIR", tmp_path)
+    for folder, name in (
+        ("diffusion_models", "z_image_turbo_bf16.safetensors"),
+        ("text_encoders", "qwen_3_4b.safetensors"), ("vae", "ae.safetensors"),
+    ):
+        path = tmp_path / folder / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(name.encode())
+    model = {
+        "short": "z-image-turbo", "checkpoint": "z_image_turbo_bf16.safetensors",
+        "checkpoint_folder": "diffusion_models", "workflow": "z_image",
+    }
+    assert image_checkpoint_path(model, tmp_path) == (
+        tmp_path / "diffusion_models" / "z_image_turbo_bf16.safetensors"
+    )
+    assert set(image_resume_artifacts([model])) == {
+        "image:z-image-turbo:checkpoint",
+        "image:z-image-turbo:text_encoders:qwen_3_4b.safetensors",
+        "image:z-image-turbo:vae:ae.safetensors",
     }
 
 

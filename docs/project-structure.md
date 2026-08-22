@@ -144,6 +144,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `results/content_store.py` | Atomic content-addressed storage and verified references for large local artifacts |
 | `runtime/runner_supervisor.py` / `runtime/process_tree.py` | Fixed-command internal runner protocol, heartbeat monitoring, and descendant-aware cancellation escalation |
 | `runtime/workload_runner.py` / `runtime/supervised_stage.py` | Owned internal stage runner plus the parent supervisor service shared by normal and recovery execution |
+| `runtime/image_model_spec.py` | Strict internal image-candidate identity shared by CLI plan construction and isolated recovery runners |
 | `release/qualification.py` / `release/qualification_docs.py` | Evidence-derived platform support policy plus generated published matrices |
 | `release/model_catalog_audit.py` / `release/model_catalog_candidates.json` | Metadata-only candidate source audit plus its versioned repository register |
 | `release/model_catalog_inventory.py` / `release/model_catalog_incumbents.json` | Exact active-catalog artifact inventory plus its required upstream roles |

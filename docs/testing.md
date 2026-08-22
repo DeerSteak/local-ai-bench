@@ -97,7 +97,7 @@ Telemetry qualification tests exercise alternating pair order, exact off/on meth
 | Area | Test modules |
 |---|---|
 | LLM throughput and conversation growth | [test_llm_prefill_benchmark.py](../tests/test_llm_prefill_benchmark.py), [test_llm_conversation_benchmark.py](../tests/test_llm_conversation_benchmark.py) |
-| Embeddings and images | [test_embedding_benchmark.py](../tests/test_embedding_benchmark.py), [test_image_benchmark.py](../tests/test_image_benchmark.py) |
+| Embeddings and images, including strict audit-only image identities | [test_embedding_benchmark.py](../tests/test_embedding_benchmark.py), [test_image_benchmark.py](../tests/test_image_benchmark.py), [test_image_model_spec.py](../tests/test_image_model_spec.py) |
 | HTTP concurrency | [test_concurrency_benchmark.py](../tests/test_concurrency_benchmark.py) |
 | Sustained load and degradation analysis | [test_sustained_benchmark.py](../tests/test_sustained_benchmark.py), [test_sustained_analysis.py](../tests/test_sustained_analysis.py), [test_sustained_event_stage.py](../tests/test_sustained_event_stage.py) |
 | llama.cpp native benchmarks | [test_llamabench_benchmark.py](../tests/test_llamabench_benchmark.py), [test_llamabench_concurrency_benchmark.py](../tests/test_llamabench_concurrency_benchmark.py) |

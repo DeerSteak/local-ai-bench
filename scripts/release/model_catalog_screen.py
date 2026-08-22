@@ -13,13 +13,16 @@ from pathlib import Path
 
 from scripts.app.benchmark_gui_process import launch_controlled_process
 from scripts.results.result_store import atomic_write_json
+from scripts.results.canonical_json import sha256_json
+from scripts.results.local_execution_context import images_dir_for_result
 from scripts.runtime import config
 from scripts.runtime.log_redaction import redact_log_text
+from scripts.runtime.shared import Shared
 from scripts.runtime.pause_control import write_pause_state
 from scripts.runtime.sampling import baseline_sampling_profile, publisher_sampling_profile
 from scripts.setup.custom_models import custom_model
 from scripts.setup.model_download import (
-    custom_model_artifacts_present, import_model, load_hf_token,
+    custom_model_artifacts_present, download_hf_files, import_model, load_hf_token,
 )
 from scripts.setup.model_import import ImportVariant, inspect_repository
 
@@ -43,6 +46,8 @@ class ScreenSpec:
     output_path: Path
     command: tuple[str, ...]
     sampling_profile: dict
+    pipeline_sources: tuple[dict, ...] = ()
+    image_model: dict | None = None
 
 
 def load_source_audit(path: Path = DEFAULT_AUDIT) -> dict:
@@ -66,16 +71,27 @@ def build_screen_spec(candidate: dict, engine: str, output_root: Path,
         detail = "; ".join(candidate.get("reasons") or []) or "source audit is incomplete"
         raise ValueError(f"candidate is not source-ready: {detail}")
     family = candidate["family"]
-    if family == "image":
-        raise ValueError("image candidate needs its fixed ComfyUI workflow before screening")
     if engine not in {"llamacpp", "vllm"}:
         raise ValueError("screen engine must be llamacpp or vllm")
-    role = "gguf" if engine == "llamacpp" else "upstream"
-    source = candidate["sources"].get(role)
-    artifact = source.get("artifact") if isinstance(source, dict) else None
-    if not isinstance(artifact, dict) or not artifact.get("files"):
-        raise ValueError(f"candidate has no {engine} artifact")
-    tag = f"audit-{candidate['id']}"
+    raw_pipeline = candidate["sources"].get("pipeline") or []
+    pipeline_sources: tuple[dict, ...] = tuple(
+        dependency for dependency in raw_pipeline if isinstance(dependency, dict)
+    )
+    if family == "image":
+        source = candidate["sources"]["upstream"]
+        files = tuple(
+            file["name"] for dependency in pipeline_sources for file in dependency["files"]
+        )
+        if candidate["id"] != "z-image-turbo" or not files:
+            raise ValueError("image candidate needs a supported fixed ComfyUI workflow")
+    else:
+        role = "gguf" if engine == "llamacpp" else "upstream"
+        source = candidate["sources"].get(role)
+        artifact = source.get("artifact") if isinstance(source, dict) else None
+        if not isinstance(artifact, dict) or not artifact.get("files"):
+            raise ValueError(f"candidate has no {engine} artifact")
+        files = tuple(artifact["files"])
+    tag = candidate["id"] if family == "image" else f"audit-{candidate['id']}"
     revision = source["revision"]
     output_dir = Path(output_root) / candidate["id"] / engine / revision[:12]
     if publisher_sampling:
@@ -91,6 +107,7 @@ def build_screen_spec(candidate: dict, engine: str, output_root: Path,
         )
     else:
         sampling = baseline_sampling_profile(engine)
+    image_model = None
     if family == "llm":
         context_cap = min(int(context_tokens or 32768), 32768)
         command = [
@@ -100,10 +117,25 @@ def build_screen_spec(candidate: dict, engine: str, output_root: Path,
             "--max-prompt-tokens", str(context_cap), "--force-all",
             "--out", str(output_path),
         ]
-    else:
+    elif family == "embedding":
         command = [
             python_executable, "-m", "scripts.app.benchmark",
             "--engine", engine, "--tests", "emb", "--embedding-models", tag,
+            "--runs", "1", "--warmup", "1", "--out", str(output_path),
+        ]
+    else:
+        image_model = {
+            "audit_candidate": True,
+            "artifact_digest": sha256_json(list(pipeline_sources)),
+            "label": candidate["name"], "short": candidate["id"], "tier": "medium",
+            "checkpoint": "z_image_turbo_bf16.safetensors",
+            "checkpoint_folder": "diffusion_models", "workflow": "z_image",
+            "steps": 8, "cfg": 1.0, "sampler": "res_multistep", "scheduler": "simple",
+        }
+        command = [
+            python_executable, "-m", "scripts.app.benchmark",
+            "--engine", engine, "--tests", "img", "--image-models", candidate["id"],
+            "--audit-image-model", str(output_path.with_name("image-model.json")),
             "--runs", "1", "--warmup", "1", "--out", str(output_path),
         ]
     if engine == "vllm":
@@ -115,9 +147,9 @@ def build_screen_spec(candidate: dict, engine: str, output_root: Path,
         ))
     return ScreenSpec(
         candidate["id"], candidate["name"], engine, tag, family,
-        source["repo"], revision, tuple(artifact["files"]),
+        source["repo"], revision, files,
         context_tokens if isinstance(context_tokens, int) else None,
-        output_path, tuple(command), sampling,
+        output_path, tuple(command), sampling, pipeline_sources, image_model,
     )
 
 
@@ -140,8 +172,22 @@ def candidate_import_matches(existing: dict, spec: ScreenSpec) -> bool:
     return existing.get("format") == "gguf" and tuple(existing.get("files") or ()) == expected
 
 
+def pipeline_asset_target(file_name: str, models_root: Path) -> Path:
+    parts = Path(file_name).parts
+    if len(parts) != 3 or parts[0] != "split_files" \
+            or parts[1] not in {"diffusion_models", "text_encoders", "vae"}:
+        raise ValueError("candidate pipeline artifact has an invalid path")
+    return Path(models_root) / parts[1] / parts[2]
+
+
 def interrupt_ready(result: dict, spec: ScreenSpec) -> bool:
     section_name = "llm" if spec.family == "llm" else "embeddings"
+    if spec.family == "image":
+        model = result.get("images", {}).get(spec.tag, {})
+        return any(
+            isinstance(case, dict) and case.get("n_runs", 0) > 0
+            for case in model.get("resolutions", {}).values()
+        ) if isinstance(model, dict) else False
     model = result.get(section_name, {}).get(spec.tag, {})
     if spec.family == "embedding":
         return result.get("run", {}).get("stages", {}).get("emb", {}).get("status") == "running"
@@ -156,7 +202,10 @@ def compatibility_screen_errors(result: dict, spec: ScreenSpec) -> list[str]:
     run = result.get("run", {})
     if run.get("status") != "complete":
         errors.append("run did not complete")
-    expected_stages = ("llm", "conv") if spec.family == "llm" else ("emb",)
+    expected_stages = (
+        ("llm", "conv") if spec.family == "llm"
+        else ("emb",) if spec.family == "embedding" else ("img",)
+    )
     for stage in expected_stages:
         if run.get("stages", {}).get(stage, {}).get("status") != "complete":
             errors.append(f"{stage} stage did not complete")
@@ -182,6 +231,12 @@ def compatibility_screen_errors(result: dict, spec: ScreenSpec) -> list[str]:
         if model.get("valid_runs", 0) < 1:
             errors.append("embedding measurement is missing")
         return errors
+    if spec.family == "image":
+        model = result.get("images", {}).get(spec.tag, {})
+        resolutions = model.get("resolutions", {}) if isinstance(model, dict) else {}
+        if not resolutions or any(case.get("n_runs", 0) < 1 for case in resolutions.values()):
+            errors.append("image measurement evidence is missing")
+        return errors
     deepest = min(spec.context_tokens or 32768, 32768)
     labels = ("2K", f"{deepest / 1024:g}K")
     sections = (("llm", "single-shot"), ("llm_conversation", "conversation"))
@@ -193,7 +248,45 @@ def compatibility_screen_errors(result: dict, spec: ScreenSpec) -> list[str]:
     return errors
 
 
+def screen_image_artifacts(result: dict, spec: ScreenSpec) -> tuple[list[dict], list[str]]:
+    if spec.family != "image":
+        return [], []
+    model = result.get("images", {}).get(spec.tag, {})
+    resolutions = model.get("resolutions", {}) if isinstance(model, dict) else {}
+    records, errors = [], []
+    for resolution in sorted(resolutions):
+        path = images_dir_for_result(spec.output_path) / f"{spec.tag}_{resolution}.png"
+        if not path.is_file() or path.stat().st_size < 1:
+            errors.append(f"generated image is missing: {resolution}")
+            continue
+        records.append({
+            "resolution": resolution, "path": str(path),
+            "size": path.stat().st_size, "sha256": Shared.file_hash(path),
+        })
+    return records, errors
+
+
 def ensure_candidate_import(spec: ScreenSpec) -> str:  # pragma: no cover - real downloads
+    if spec.family == "image":
+        token = load_hf_token()
+        downloaded = False
+        for dependency in spec.pipeline_sources:
+            for file in dependency["files"]:
+                target = pipeline_asset_target(file["name"], config.COMFYUI_MODELS_DIR)
+                destination = target.parent
+                expected = file.get("sha256")
+                if target.is_file():
+                    if not expected or Shared.file_hash(target) != expected:
+                        raise ValueError(f"candidate pipeline digest mismatch: {target.name}")
+                    continue
+                if not download_hf_files(
+                        dependency["repo"], file["name"], destination,
+                        revision=dependency["revision"], token=token, save_as=target.name):
+                    raise RuntimeError(f"candidate pipeline download failed: {target.name}")
+                if not expected or Shared.file_hash(target) != expected:
+                    raise ValueError(f"candidate pipeline digest mismatch: {target.name}")
+                downloaded = True
+        return "downloaded" if downloaded else "reused"
     existing = custom_model(spec.engine, spec.tag)
     vllm_cache = None
     if spec.engine == "vllm":
@@ -303,6 +396,10 @@ def _resume_screen(spec: ScreenSpec) -> int:  # pragma: no cover - real benchmar
 
 def execute_screen(spec: ScreenSpec, timeout: int) -> dict:  # pragma: no cover - real benchmark
     spec.output_path.parent.mkdir(parents=True, exist_ok=True)
+    if spec.image_model is not None:
+        atomic_write_json(spec.output_path.with_name("image-model.json"), {
+            "schema_version": 1, "model": spec.image_model,
+        })
     if spec.sampling_profile["profile"].startswith("publisher-recommended-v1:"):
         atomic_write_json(spec.output_path.with_name("publisher-sampling.json"), {
             "schema_version": 1,
@@ -334,6 +431,8 @@ def execute_screen(spec: ScreenSpec, timeout: int) -> dict:  # pragma: no cover 
         if result is None:
             raise RuntimeError("candidate screen produced no result")
     errors = compatibility_screen_errors(result, spec)
+    image_artifacts, artifact_errors = screen_image_artifacts(result, spec)
+    errors.extend(artifact_errors)
     report = {
         "schema_version": SCREEN_SCHEMA_VERSION,
         "candidate": spec.candidate_id,
@@ -345,6 +444,7 @@ def execute_screen(spec: ScreenSpec, timeout: int) -> dict:  # pragma: no cover 
         "result": str(spec.output_path),
         "status": "passed" if not errors else "failed",
         "errors": errors,
+        "image_artifacts": image_artifacts,
     }
     atomic_write_json(spec.output_path.with_name("screen-report.json"), report)
     if errors:

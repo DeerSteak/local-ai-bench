@@ -153,6 +153,27 @@ def test_source_pinned_publisher_sampling_is_valid_and_not_baseline_equivalent()
         make_plan(effective_config=malformed).validate_for_execution()
 
 
+def test_audit_image_model_identity_is_complete_and_image_only():
+    audit_model = {
+        "audit_candidate": True, "artifact_digest": "a" * 64,
+        "label": "Z-Image Turbo", "short": "z-image-turbo", "tier": "medium",
+        "checkpoint": "z_image_turbo_bf16.safetensors",
+        "checkpoint_folder": "diffusion_models", "workflow": "z_image",
+        "steps": 8, "cfg": 1.0, "sampler": "res_multistep", "scheduler": "simple",
+    }
+    base = complete_plan()
+    models = base.models
+    models["images"] = [audit_model]
+    plan = make_plan(models=models, effective_config=base.effective_config)
+    plan.validate_for_execution()
+    assert plan.models["images"] == [audit_model]
+
+    models = base.models
+    models["llm"] = [{**audit_model, "tag": "wrong"}]
+    with pytest.raises(ValueError, match="outside the image family"):
+        make_plan(models=models, effective_config=base.effective_config).validate_for_execution()
+
+
 def test_offline_mode_is_identity_bearing_without_changing_legacy_plans():
     legacy = make_plan()
     config = complete_plan().effective_config

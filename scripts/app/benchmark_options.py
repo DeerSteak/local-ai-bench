@@ -44,6 +44,9 @@ PUBLIC_OPTION_SCHEMA = {
     "--publisher-sampling-profile": _spec(
         "path", "developer-only", "excluded", "Catalog-audit methodology control",
     ),
+    "--audit-image-model": _spec(
+        "path", "developer-only", "excluded", "Catalog-audit image candidate",
+    ),
     "--llm-models": _spec("string-list", "guided", "exposed", "LLM model selection screen"),
     "--models": _spec("string-list", "guided", "equivalent", "Alias of --llm-models"),
     "--embedding-models": _spec("string-list", "guided", "exposed", "Embedding model selection screen"),

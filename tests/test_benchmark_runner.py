@@ -3,6 +3,8 @@ import io
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 from scripts.app.benchmark import (
     relay_runner_log, run_supervised_llm, run_supervised_stage,
     supervised_stage_runner, temperature_telemetry_requested,
@@ -767,6 +769,18 @@ def test_image_runner_uses_private_paths_and_commits_projection(monkeypatch, tmp
     assert export_images(path, plan.job_id)["sdxl"]["resolutions"]["1024x1024"][
         "sec_per_image_mean"
     ] == 2.0
+
+
+def test_image_runner_uses_complete_audit_identity_without_catalog_lookup():
+    from scripts.runtime.workload_runner import resolve_runner_image_models
+
+    candidate = {
+        "audit_candidate": True, "short": "z-image-turbo", "label": "Z-Image Turbo",
+        "checkpoint": "z.safetensors", "workflow": "z_image",
+    }
+    assert resolve_runner_image_models([candidate], catalog_models=[]) == [candidate]
+    with pytest.raises(ValueError, match="absent from the catalog"):
+        resolve_runner_image_models([{"short": "missing"}], catalog_models=[])
 
 
 def test_supervised_accuracy_projects_committed_question(monkeypatch, tmp_path):

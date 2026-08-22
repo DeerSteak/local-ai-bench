@@ -41,6 +41,7 @@ from scripts.workloads.math_benchmark import MathBenchmark
 from scripts.workloads.methodology_profile import resolve_methodology_profile
 from scripts.runtime.network_policy import apply_offline_mode
 from scripts.runtime.sampling import load_publisher_sampling_profile
+from scripts.runtime.image_model_spec import load_audit_image_model, select_audit_image_model
 from scripts.runtime.telemetry import (
     CaseTelemetry, derive_run_memory_summary, derive_run_power_summary,
     discover_power_source, discover_temperature_source, power_availability_dict,
@@ -809,6 +810,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         help="Opt in to a source-pinned publisher sampling profile JSON. Results use a distinct "
              "methodology identity and are not baseline-comparable.",
     )
+    parser.add_argument(
+        "--audit-image-model", type=Path,
+        help="Developer-only fixed image candidate specification for the catalog audit.",
+    )
     args = parser.parse_args()
     if args.power_telemetry and not args.memory_telemetry:
         parser.error("--power-telemetry requires --memory-telemetry")
@@ -886,6 +891,13 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     embedding_models, image_models = resolve_catalog_scopes(
         tier_image_models, args.embedding_models, args.image_models,
     )
+    if args.audit_image_model:
+        try:
+            image_models = select_audit_image_model(
+                args.tests, args.image_models, load_audit_image_model(args.audit_image_model),
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            parser.error(str(exc))
     validation_errors = validate_catalog_scopes(
         args.tests, args.embedding_models, args.image_models, embedding_models, image_models,
     )

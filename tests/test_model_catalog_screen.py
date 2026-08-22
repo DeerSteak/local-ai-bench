@@ -5,6 +5,7 @@ import pytest
 from scripts.release.model_catalog_screen import (
     ScreenSpec, build_screen_spec, candidate_import_matches, candidate_record,
     compatibility_screen_errors, interrupt_ready, select_exact_variant,
+    pipeline_asset_target, screen_image_artifacts,
 )
 from scripts.runtime.sampling import baseline_sampling_profile
 from scripts.setup.model_import import ImportVariant, RepositoryInspection
@@ -103,8 +104,44 @@ def test_candidate_lookup_and_screen_plan_are_exact_and_side_effect_free(tmp_pat
 def test_screen_plan_refuses_blocked_and_unimplemented_candidates(tmp_path):
     with pytest.raises(ValueError, match="blocked reason"):
         build_screen_spec(candidate(status="blocked"), "llamacpp", tmp_path)
-    with pytest.raises(ValueError, match="ComfyUI workflow"):
+    with pytest.raises(ValueError, match="supported fixed ComfyUI workflow"):
         build_screen_spec(candidate(family="image"), "llamacpp", tmp_path)
+
+
+def test_z_image_screen_uses_fixed_normal_workload_spec(tmp_path):
+    record = candidate(family="image")
+    record["id"] = "z-image-turbo"
+    record["name"] = "Z-Image Turbo"
+    record["sources"]["pipeline"] = [{
+        "repo": "Comfy-Org/z_image_turbo", "revision": "c" * 40,
+        "files": [
+            {"name": "split_files/text_encoders/qwen_3_4b.safetensors", "sha256": "1" * 64},
+            {"name": "split_files/diffusion_models/z_image_turbo_bf16.safetensors", "sha256": "2" * 64},
+            {"name": "split_files/vae/ae.safetensors", "sha256": "3" * 64},
+        ],
+    }]
+    screen = build_screen_spec(record, "llamacpp", tmp_path)
+    assert screen.tag == "z-image-turbo"
+    assert screen.image_model is not None
+    assert screen.image_model == {
+        "audit_candidate": True,
+        "artifact_digest": screen.image_model["artifact_digest"],
+        "label": "Z-Image Turbo", "short": "z-image-turbo", "tier": "medium",
+        "checkpoint": "z_image_turbo_bf16.safetensors",
+        "checkpoint_folder": "diffusion_models", "workflow": "z_image",
+        "steps": 8, "cfg": 1.0, "sampler": "res_multistep", "scheduler": "simple",
+    }
+    assert "--audit-image-model" in screen.command
+    assert screen.files == (
+        "split_files/text_encoders/qwen_3_4b.safetensors",
+        "split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+        "split_files/vae/ae.safetensors",
+    )
+    assert pipeline_asset_target(screen.files[0], tmp_path) == (
+        tmp_path / "text_encoders" / "qwen_3_4b.safetensors"
+    )
+    with pytest.raises(ValueError, match="invalid path"):
+        pipeline_asset_target("checkpoints/escape.safetensors", tmp_path)
 
 
 def test_exact_variant_selection_never_falls_back_to_another_quantization():
@@ -188,3 +225,42 @@ def test_embedding_screen_requires_one_valid_measurement_without_sampler_claim()
         "embeddings": {screen_spec.tag: {"valid_runs": 1}},
     }
     assert compatibility_screen_errors(result, screen_spec) == []
+
+
+def test_image_screen_requires_recovered_stage_and_measured_resolution():
+    screen_spec = spec("image")
+    result = {
+        "run": {
+            "status": "complete", "recovery_history": [{"status": "interrupted"}],
+            "stages": {"img": {"status": "complete"}},
+            "plan": {"effective_config": {"methodology_profile": "neutral-v2"}},
+        },
+        "preflight": {"models": {}},
+        "images": {screen_spec.tag: {
+            "resolutions": {"1024x1024": {"n_runs": 1}},
+        }},
+    }
+    assert interrupt_ready(result, screen_spec)
+    assert compatibility_screen_errors(result, screen_spec) == []
+    result["images"][screen_spec.tag]["resolutions"] = {}
+    assert compatibility_screen_errors(result, screen_spec) == [
+        "image measurement evidence is missing",
+    ]
+
+
+def test_image_screen_report_hashes_every_generated_resolution(tmp_path):
+    screen_spec = ScreenSpec(
+        "z-image-turbo", "Z-Image Turbo", "llamacpp", "z-image-turbo", "image",
+        "owner/model", "a" * 40, (), None, tmp_path / "result.json", (),
+        baseline_sampling_profile("llamacpp"),
+    )
+    image_dir = tmp_path / "images_result"
+    image_dir.mkdir()
+    (image_dir / "z-image-turbo_1024x1024.png").write_bytes(b"png")
+    result = {"images": {screen_spec.tag: {
+        "resolutions": {"1024x1024": {"n_runs": 1}, "1536x1536": {"n_runs": 1}},
+    }}}
+    artifacts, errors = screen_image_artifacts(result, screen_spec)
+    assert artifacts[0]["resolution"] == "1024x1024"
+    assert artifacts[0]["size"] == 3
+    assert errors == ["generated image is missing: 1536x1536"]
