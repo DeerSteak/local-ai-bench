@@ -92,6 +92,8 @@ This is source readiness only, not engine compatibility or catalog acceptance. I
 
 The screen uses the shipped setup and runtime paths and records engine, runtime version, artifact digest, model revision, hardware profile, and every outcome. Preview and validation tooling may be automated, but a real setup or benchmark is launched only by the maintainer on the selected hardware.
 
+`bench-env/bin/python -m scripts.release.model_catalog_screen --list` reports which pinned candidates may enter the screen and the exact hard gates blocking the rest. `--candidate ID --engine llamacpp|vllm` prints the side-effect-free import and normal-benchmark plan. Adding `--execute` performs the pinned custom-model import, runs the real `llm` and conversation workloads through 32K with one warmup and one measured pass, pauses and interrupts after the first durable case, resumes through the normal recovery executor, and writes the result, journal, initial/resume logs, and `screen-report.json` under `results/catalog-audit/`. The final gate requires a complete recovered run, passing runtime formatting preflight, exact `neutral-v2` sampler identity, and valid 2K/deep evidence on both request paths; missing evidence is a failure. Image candidates remain blocked from this launcher until their fixed ComfyUI workflows are implemented in the normal image workload.
+
 1. Resolve the pinned source revision and verify every expected file before loading.
 2. Discover the model through normal setup inventory and confirm its catalog identity is unchanged across restart.
 3. Load and unload once, then repeat after cancellation to prove cleanup.
