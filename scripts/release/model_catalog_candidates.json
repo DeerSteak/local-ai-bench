@@ -78,7 +78,22 @@
       "family": "image",
       "name": "FLUX.2 Klein 4B",
       "sources": {
-        "upstream": "black-forest-labs/FLUX.2-klein-4B"
+        "upstream": "black-forest-labs/FLUX.2-klein-4B",
+        "pipeline": [
+          {
+            "repo": "Comfy-Org/flux2-klein",
+            "files": [
+              "split_files/text_encoders/qwen_3_4b.safetensors",
+              "split_files/diffusion_models/flux-2-klein-4b.safetensors"
+            ]
+          },
+          {
+            "repo": "Comfy-Org/flux2-dev",
+            "files": [
+              "split_files/vae/flux2-vae.safetensors"
+            ]
+          }
+        ]
       }
     },
     {
@@ -86,7 +101,17 @@
       "family": "image",
       "name": "Z-Image Turbo",
       "sources": {
-        "upstream": "Tongyi-MAI/Z-Image-Turbo"
+        "upstream": "Tongyi-MAI/Z-Image-Turbo",
+        "pipeline": [
+          {
+            "repo": "Comfy-Org/z_image_turbo",
+            "files": [
+              "split_files/text_encoders/qwen_3_4b.safetensors",
+              "split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+              "split_files/vae/ae.safetensors"
+            ]
+          }
+        ]
       }
     }
   ]
