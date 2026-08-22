@@ -22,7 +22,8 @@ from scripts.app.benchmark_gui import (
     PsutilLike, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults, default_control_values,
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
-    gpu_split_mode_labels, gpu_split_mode_value, history_row_height,
+    gpu_split_mode_availability_error, gpu_split_mode_labels, gpu_split_mode_value,
+    history_row_height,
     launch_controlled_process, open_path_command, parse_progress_line,
     normalize_gui_option_values, prepare_benchmark_launch, restored_tg_tokens,
     pending_qualification_profiles, qualification_profiles_for_selection,
@@ -37,7 +38,8 @@ from scripts.app.benchmark_gui import (
     resolve_preset,
     preset_control_values, process_resource_usage, preset_after_control_change,
     restored_preset_name, should_finalize_process_exit,
-    resource_usage_rows, runtime_profiles_for_engines, split_modes_for_runtime_profiles,
+    reconcile_gpu_split_mode, resource_usage_rows, runtime_profiles_for_engines,
+    split_mode_capability_known, split_modes_for_runtime_profiles,
     system_memory_usage,
     start_qualification_profile_load,
     windows_host_utc_offset_minutes,
@@ -136,6 +138,35 @@ def test_split_modes_use_runtime_backend_intersection_and_cpu_constraint():
         setup, ["llamacpp"], pending_qualification_profiles(["llamacpp"]),
         cpu_only=False,
     ) == ("layer",)
+
+
+def test_split_mode_capability_is_unknown_until_selected_runtime_backends_resolve():
+    pending = pending_qualification_profiles(["llamacpp"])
+    failed = pending_qualification_profiles(["llamacpp"], failed=True)
+    resolved = {"llamacpp": {"runtime_backend": "cuda"}}
+
+    assert not split_mode_capability_known(["llamacpp"], pending, cpu_only=False)
+    assert not split_mode_capability_known(["llamacpp"], failed, cpu_only=False)
+    assert split_mode_capability_known(["llamacpp"], resolved, cpu_only=False)
+    assert split_mode_capability_known(["llamacpp"], pending, cpu_only=True)
+
+
+def test_split_mode_reconciliation_preserves_requested_mode_until_capability_is_known():
+    assert reconcile_gpu_split_mode("tensor", ("layer",), known=False) == "tensor"
+    assert reconcile_gpu_split_mode(
+        "tensor", ("single", "layer", "tensor"), known=True,
+    ) == "tensor"
+    assert reconcile_gpu_split_mode("tensor", ("layer",), known=True) == "layer"
+
+
+def test_split_mode_validation_defers_unknown_capability_and_rejects_known_mismatch():
+    assert gpu_split_mode_availability_error("tensor", ("layer",), known=False) is None
+    assert gpu_split_mode_availability_error(
+        "tensor", ("single", "layer", "tensor"), known=True,
+    ) is None
+    assert gpu_split_mode_availability_error(
+        "single", ("layer",), known=True,
+    ) == "Single GPU is unavailable for the detected GPU runtime and topology."
 
 
 @pytest.mark.parametrize("fails", [False, True])

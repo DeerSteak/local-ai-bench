@@ -294,6 +294,30 @@ def split_modes_for_runtime_profiles(setup: dict, selected_engines: Sequence[str
                  if all(mode in modes for modes in supported))
 
 
+def split_mode_capability_known(selected_engines: Sequence[str], profiles: dict[str, dict],
+                                *, cpu_only: bool) -> bool:
+    if cpu_only:
+        return True
+    return bool(selected_engines) and all(
+        isinstance(profiles.get(name, {}).get("runtime_backend"), str)
+        for name in selected_engines
+    )
+
+
+def reconcile_gpu_split_mode(requested: str, available: Sequence[str], *, known: bool) -> str:
+    return requested if not known or requested in available else "layer"
+
+
+def gpu_split_mode_availability_error(requested: str, available: Sequence[str], *, known: bool
+                                      ) -> str | None:
+    if not known or requested in available:
+        return None
+    return (
+        f"{GPU_SPLIT_MODE_LABELS[requested]} is unavailable for the detected GPU runtime "
+        "and topology."
+    )
+
+
 def qualification_profiles_for_selection(profiles: dict[str, dict],
                                          selected_engines: Sequence[str], *,
                                          cpu_only: bool) -> dict[str, dict]:
@@ -440,8 +464,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     saved_tg = restored_tg_tokens(saved)
     tg_vars = {value: tk.BooleanVar(value=value in saved_tg) for value in TG_TOKEN_OPTIONS}
     options = effective_gui_options(saved)
-    if options["gpu_split_mode"] not in gpu_split_modes:
-        options["gpu_split_mode"] = "layer"
     option_vars: dict[str, tk.Variable] = {
         key: (tk.BooleanVar(value=value) if isinstance(value, bool)
               else tk.StringVar(value="" if value is None else str(value)))
@@ -777,13 +799,25 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         )
         if errors:
             raise ValueError("\n".join(errors))
-        requested_split = state.get("gui_options", {}).get("gpu_split_mode", "layer")
-        if requested_split not in gpu_split_modes:
-            raise ValueError("Tensor split is unavailable for the detected GPU runtime and topology.")
+        restored = [name for name in parse_engine_selection(state.get("engine", ""))
+                    if name in available_engines]
+        selected = restored or parse_engine_selection(engine_var.get())
+        gui_options = state.get("gui_options", {})
+        requested_split = gui_options.get("gpu_split_mode", "layer")
+        cpu_only = bool(gui_options.get("cpu_only", False))
+        available_splits = split_modes_for_runtime_profiles(
+            setup, selected, runtime_profiles, cpu_only=cpu_only,
+        )
+        capability_known = split_mode_capability_known(
+            selected, runtime_profiles, cpu_only=cpu_only,
+        )
+        split_error = gpu_split_mode_availability_error(
+            requested_split, available_splits, known=capability_known,
+        )
+        if split_error:
+            raise ValueError(split_error)
         applying_configuration[0] = True
         try:
-            restored = [name for name in parse_engine_selection(state.get("engine", ""))
-                        if name in available_engines]
             if restored:
                 set_selected_engines(restored)
             selected_tests = set(state["tests"])
@@ -1084,11 +1118,16 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             setup, selected, runtime_profiles,
             cpu_only=bool(option_vars["cpu_only"].get()),
         )
+        capability_known = split_mode_capability_known(
+            selected, runtime_profiles,
+            cpu_only=bool(option_vars["cpu_only"].get()),
+        )
         gpu_split_modes[:] = resolved
         split_mode_combo.configure(values=gpu_split_mode_labels(resolved))
         current = gpu_split_mode_value(option_vars["gpu_split_mode"].get())
-        if current not in resolved:
-            option_vars["gpu_split_mode"].set(GPU_SPLIT_MODE_LABELS["layer"])
+        reconciled = reconcile_gpu_split_mode(current, resolved, known=capability_known)
+        if reconciled != current:
+            option_vars["gpu_split_mode"].set(GPU_SPLIT_MODE_LABELS[reconciled])
 
     option_vars["cpu_only"].trace_add("write", refresh_split_modes)
 
