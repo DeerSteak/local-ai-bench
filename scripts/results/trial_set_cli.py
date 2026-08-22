@@ -15,6 +15,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Build a Local AI Bench repeated-trial comparison")
     parser.add_argument("--baseline", type=Path, nargs="+", required=True)
     parser.add_argument("--candidate", type=Path, nargs="+", required=True)
+    parser.add_argument("--baseline-model")
+    parser.add_argument("--candidate-model")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--report", type=Path)
     args = parser.parse_args(argv)
@@ -22,6 +24,7 @@ def main(argv=None) -> int:
         artifact = build_trial_set(
             [load_result(path) for path in args.baseline],
             [load_result(path) for path in args.candidate],
+            baseline_model=args.baseline_model, candidate_model=args.candidate_model,
         )
         atomic_write_json(args.out, artifact)
         if args.report:

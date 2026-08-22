@@ -13,11 +13,20 @@ def render_trial_set_markdown(artifact: dict) -> str:
         "",
         (f"Mode: {artifact.get('comparison_mode', 'unknown')}; "
          f"baseline trials: {artifact.get('baseline_trials', 0)}; "
-         f"candidate trials: {artifact.get('candidate_trials', 0)}."),
+        f"candidate trials: {artifact.get('candidate_trials', 0)}."),
         "",
+    ]
+    model_comparison = artifact.get("model_comparison")
+    if isinstance(model_comparison, dict):
+        lines.extend([
+            f"Models: `{model_comparison.get('baseline', 'unknown')}` (baseline) versus "
+            f"`{model_comparison.get('candidate', 'unknown')}` (candidate).",
+            "",
+        ])
+    lines.extend([
         "| Metric | Baseline mean ± SD | Candidate mean ± SD | 95% change interval | Threshold | Drift | Verdict |",
         "|---|---:|---:|---:|---:|---|---|",
-    ]
+    ])
     insufficient = False
     for row in rows:
         if not isinstance(row, dict):
