@@ -435,14 +435,14 @@ It ranks below the items above because it costs users time rather than correctne
 
 ## Why this is eighth
 
-[limitations.md](docs/limitations.md) states plainly that nothing in this project currently runs vLLM and that the cross-engine weights have not been validated on real hardware. Intel Arc and parts of ROCm are similarly described as unverified. Yet [vllm.py](scripts/runtime/engines/vllm.py), [vllm_install.py](scripts/setup/vllm_install.py), and [vllm_benchmark.py](scripts/workloads/vllm_benchmark.py) carry substantial user-facing surface area, and the dashboard has a `VllmBenchPanel`. The honesty currently lives in documentation while the UI presents these as ordinary options.
+At planning time, [limitations.md](docs/limitations.md) stated that vLLM and its cross-engine weights had not been validated on real hardware, while Intel Arc and parts of ROCm were similarly unverified. Yet [vllm.py](scripts/runtime/engines/vllm.py), [vllm_install.py](scripts/setup/vllm_install.py), and [vllm_benchmark.py](scripts/workloads/vllm_benchmark.py) already carried substantial user-facing surface area, and the dashboard had a `VllmBenchPanel`. The honesty lived in documentation while the UI presented these as ordinary options.
 
 This is mostly process rather than code, which is exactly why it is worth doing — the cost is low and the trust return is high.
 
 ## Implementation outline
 
 1. **Define qualification through the shipped paths**: run the ordinary setup and benchmark wrappers with the smallest compatible LLM, embedding, and image model across every workload supported by that engine. The resulting benchmark JSON and generated images are the evidence; any missing or incomplete required section fails qualification.
-2. **Create `scripts/release/qualification.py`** holding the matrix as data — platform, runtime, version, GPU backend, date, suite version, workload coverage, and benchmark evidence — with pure functions to validate an entry and derive its support level. Support level is derived from evidence, never hand-set.
+2. **Create `scripts/release/qualification.py`** holding the matrix as data — target, platform, architecture, accelerator identity, runtime, runtime version, backend, qualification date, suite version, workload/model coverage, and ordinary benchmark evidence — with pure functions to validate an entry and derive its support level. Support level is derived from evidence, never hand-set.
 3. **Define three support levels** with explicit evidence requirements: supported (a complete current qualification result), experimental (recorded evidence that is stale), and unverified (no matching complete qualification evidence). Absence of evidence yields unverified, which is the default for anything not deliberately qualified.
 4. **Enforce support level in the UI**, not only in docs. An experimental or unverified engine is labeled at the point of selection, and choosing it records that choice in the run profile so any resulting evidence carries the caveat with it permanently.
 5. **Gate vLLM behind an explicit experimental acknowledgment** until it passes qualification on real hardware, consistent with what [limitations.md](docs/limitations.md) already says. Do not remove the code; label it accurately.
@@ -451,16 +451,16 @@ This is mostly process rather than code, which is exactly why it is worth doing 
 8. **Add qualification date and suite version to every entry**, and treat an entry older than a defined number of releases as stale, surfacing it as such rather than silently trusting it.
 9. **Dashboard**: display the support level of the engine that produced each loaded file, so a reader comparing two runs sees immediately that one came from an unverified path.
 10. **Tests**: support-level derivation from complete, partial, and absent evidence; staleness detection at the boundary; the readiness gate failing on an unsupported claim; matrix generation matching the underlying data; a test that a result produced under an experimental engine carries the caveat in its profile.
-11. **Docs**: a generated support matrix in [engines.md](docs/engines.md) and [setup.md](docs/setup.md); [governance.md](docs/governance.md) and [release-policy.md](docs/release-policy.md) for the qualification requirement; [limitations.md](docs/limitations.md) updated to reference the matrix rather than restating status in prose.
+11. **Docs**: a generated support matrix in the main [README.md](README.md), [engines.md](docs/engines.md), and [setup.md](docs/setup.md); [governance.md](docs/governance.md) and [release-policy.md](docs/release-policy.md) for the qualification requirement; [limitations.md](docs/limitations.md) updated to reference the matrix rather than restating status in prose.
 
-The maintainer builds validation and presentation, performs each real install/run/lifecycle checklist, records the evidence and failures, and applies the derived support rule without silently changing it. No automated test may claim that hardware was qualified.
+The maintainer builds validation and presentation, reviews each real setup and ordinary benchmark result, records the accepted evidence and failures, and applies the derived support rule without silently changing it. No automated test may claim that hardware was qualified.
 
 For a one-person team, platform qualification uses the normal setup and benchmark paths with explicit smallest-model selections. The ordinary benchmark result, journal, and generated-image directory are the evidence, and the launcher passes only when every compatible workload contains complete measured output. Installer lifecycle, packaging, offline operation, telemetry observer effects, and long-duration thermal behavior remain separate release gates instead of being duplicated inside platform qualification. Catalog-wide performance and model-specific compatibility claims remain separate evidence.
 
 ## Acceptance criteria
 
-- [x] A machine-readable matrix records platform, runtime, version, backend, date, suite version, and per-lifecycle-step results.
-- [x] A supported entry records measured smallest-model evidence for every workload compatible with its runtime; lifecycle-only evidence remains unverified.
+- [x] A machine-readable matrix records target, platform, architecture, accelerator identity, runtime version, backend, qualification date, suite version, workload/model coverage, and ordinary benchmark evidence.
+- [x] A supported entry records measured smallest-model evidence for every workload compatible with its runtime; setup-only or incomplete evidence remains unverified.
 - [x] Support level is derived from evidence; no code path sets it manually, asserted by test.
 - [x] Anything without qualification evidence is unverified by default.
 - [x] Experimental and unverified paths are labeled in the UI at selection time, and the choice is recorded in the run profile.
