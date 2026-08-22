@@ -54,6 +54,8 @@ The tracked register at `scripts/release/model_catalog_incumbents.json` assigns 
 | Image/large | FLUX.1-dev | Large-tier FLUX pipeline baseline | Pending audit |
 | Image/large | FLUX.2-dev | Highest-memory current FLUX pipeline | Pending audit |
 
+The metadata-only incumbent source audit was refreshed on August 21, 2026 with `bench-env/bin/python -m scripts.release.model_catalog_incumbent_audit --output docs/model-catalog-incumbent-source-audit-v6.json`; its complete pinned output is [model-catalog-incumbent-source-audit-v6.json](model-catalog-incumbent-source-audit-v6.json). Eight entries are source-ready under the audit's strict public Apache-2.0 gate. Eleven require review rather than automatic retirement: Gemma and Llama entries require accepted gated terms, NVIDIA entries carry custom licenses, current image baselines carry OpenRAIL or other gated terms, Qwen3-Coder-Next's selected GGUF card does not name the exact upstream repository, and the gated image repositories could not be configuration-inspected anonymously. These are explicit decision inputs; a familiar incumbent is not grandfathered past the same access, license, provenance, and artifact checks applied to candidates.
+
 ## Candidate register
 
 Repository names are hypotheses from the Version 6 plan until the source audit records an exact revision, artifact, license, and compatibility result.

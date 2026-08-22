@@ -148,6 +148,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `release/qualification.py` / `release/qualification_docs.py` | Evidence-derived platform support policy plus generated published matrices |
 | `release/model_catalog_audit.py` / `release/model_catalog_candidates.json` | Metadata-only candidate source audit plus its versioned repository register |
 | `release/model_catalog_inventory.py` / `release/model_catalog_incumbents.json` | Exact active-catalog artifact inventory plus its required upstream roles |
+| `release/model_catalog_incumbent_audit.py` | Pinned upstream and distributed-artifact source audit for every active catalog entry |
 | `release/model_catalog_screen.py` | Pinned custom-model import, normal benchmark interruption/resume, and contract-complete candidate evidence gate |
 | `release/qualification_run.py` / `release/qualification_targets.py` / `release/qualification_targets.ps1` / `release/qualification_setup.ps1` / `release/qualification_coverage.py` | Explicit platform selection, dependency-free Windows target parsing, setup evidence capture, normal benchmark launch, and smallest-model result validation |
 | `app/interface_mode.py` | Pure GUI/terminal/noninteractive selection for local desktop, SSH, and headless sessions |
