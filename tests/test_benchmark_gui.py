@@ -25,7 +25,7 @@ from scripts.app.benchmark_gui import (
     gpu_split_mode_labels, gpu_split_mode_value, history_row_height,
     launch_controlled_process, open_path_command, parse_progress_line,
     normalize_gui_option_values, prepare_benchmark_launch, restored_tg_tokens,
-    pending_qualification_profiles, qualification_profiles_for_engines,
+    pending_qualification_profiles, qualification_profiles_for_selection,
     process_completion_state, resolve_engine_selection,
     resolve_engine_names,
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
@@ -37,7 +37,8 @@ from scripts.app.benchmark_gui import (
     resolve_preset,
     preset_control_values, process_resource_usage, preset_after_control_change,
     restored_preset_name, should_finalize_process_exit,
-    resource_usage_rows, system_memory_usage,
+    resource_usage_rows, runtime_profiles_for_engines, split_modes_for_runtime_profiles,
+    system_memory_usage,
     start_qualification_profile_load,
     windows_host_utc_offset_minutes,
     update_progress_metrics, workload_preflight_errors,
@@ -61,32 +62,80 @@ def test_effective_gui_options_uses_defaults_without_saved_gui_settings():
     assert effective_gui_options(None) is not GUI_OPTION_DEFAULTS
 
 
-def test_gui_qualification_profiles_resolve_each_installed_runtime_version():
+def test_gui_runtime_profiles_resolve_accelerated_and_cpu_qualification_once_per_version():
     engines = {"llamacpp": object(), "vllm": object()}
     calls = []
 
     def build(engine, tests, **kwargs):
         calls.append((engine, tests, kwargs))
-        return {"engine_support": {"support_level": "supported", "runtime_version": "1.0"}}
+        cpu_only = kwargs["cpu_only"]
+        return {
+            "backend": "cpu" if cpu_only else "cuda",
+            "engine_support": {
+                "support_level": "unverified" if cpu_only else "supported",
+                "runtime_version": kwargs.get("runtime_version") or "1.0",
+            },
+        }
 
-    profiles = qualification_profiles_for_engines(
+    profiles = runtime_profiles_for_engines(
         engines, {"backend": "cuda"}, profile_builder=build,
     )
-    assert profiles == {
-        "llamacpp": {"support_level": "supported", "runtime_version": "1.0"},
-        "vllm": {"support_level": "supported", "runtime_version": "1.0"},
-    }
-    assert [call[2]["engine_name"] for call in calls] == ["llamacpp", "vllm"]
+    assert profiles["llamacpp"]["accelerated"]["support_level"] == "supported"
+    assert profiles["llamacpp"]["cpu"]["support_level"] == "unverified"
+    assert profiles["vllm"]["runtime_backend"] == "cuda"
+    assert [call[2]["engine_name"] for call in calls] == [
+        "llamacpp", "llamacpp", "vllm", "vllm",
+    ]
+    assert calls[1][2]["runtime_version"] == "1.0"
 
 
 def test_pending_gui_qualification_profiles_never_claim_support():
     profiles = pending_qualification_profiles(["llamacpp", "vllm"])
-    assert profiles["llamacpp"]["support_level"] == "unverified"
-    assert profiles["vllm"]["support_level"] == "unverified"
-    assert "Checking" in profiles["vllm"]["caveat"]
+    assert profiles["llamacpp"]["accelerated"]["support_level"] == "unverified"
+    assert profiles["vllm"]["cpu"]["support_level"] == "unverified"
+    assert profiles["vllm"]["runtime_backend"] is None
+    assert "Checking" in profiles["vllm"]["accelerated"]["caveat"]
     assert "could not be determined" in pending_qualification_profiles(
         ["vllm"], failed=True,
-    )["vllm"]["caveat"]
+    )["vllm"]["accelerated"]["caveat"]
+
+
+def test_cpu_only_selection_uses_cpu_qualification_profile():
+    profiles = {
+        "vllm": {
+            "accelerated": {"support_level": "supported"},
+            "cpu": {"support_level": "unverified"},
+        },
+    }
+    assert qualification_profiles_for_selection(
+        profiles, ["vllm"], cpu_only=False,
+    )["vllm"]["support_level"] == "supported"
+    assert qualification_profiles_for_selection(
+        profiles, ["vllm"], cpu_only=True,
+    )["vllm"]["support_level"] == "unverified"
+
+
+def test_split_modes_use_runtime_backend_intersection_and_cpu_constraint():
+    setup = {"gpu": {"devices": [
+        {"backend": "cuda"}, {"backend": "cuda"},
+    ]}}
+    profiles = {
+        "llamacpp": {"runtime_backend": "cuda"},
+        "vllm": {"runtime_backend": "vulkan"},
+    }
+    assert split_modes_for_runtime_profiles(
+        setup, ["llamacpp"], profiles, cpu_only=False,
+    ) == ("single", "layer", "tensor")
+    assert split_modes_for_runtime_profiles(
+        setup, ["llamacpp", "vllm"], profiles, cpu_only=False,
+    ) == ("layer",)
+    assert split_modes_for_runtime_profiles(
+        setup, ["llamacpp"], profiles, cpu_only=True,
+    ) == ("layer",)
+    assert split_modes_for_runtime_profiles(
+        setup, ["llamacpp"], pending_qualification_profiles(["llamacpp"]),
+        cpu_only=False,
+    ) == ("layer",)
 
 
 @pytest.mark.parametrize("fails", [False, True])
@@ -103,14 +152,20 @@ def test_gui_qualification_profile_loader_always_returns_a_terminal_profile(fail
     def load(_engines, _hardware):
         if fails:
             raise RuntimeError("probe failed")
-        return {"vllm": {"support_level": "supported", "caveat": "Qualified."}}
+        return {"vllm": {
+            "accelerated": {"support_level": "supported", "caveat": "Qualified."},
+            "cpu": {"support_level": "unverified", "caveat": "Unverified."},
+            "runtime_backend": "cuda",
+        }}
 
     start_qualification_profile_load(
         {"vllm": object()}, {"backend": "cuda"}, output,
         loader=load, thread_factory=ImmediateThread,
     )
     profile = output.get_nowait()["vllm"]
-    assert profile["support_level"] == ("unverified" if fails else "supported")
+    assert profile["accelerated"]["support_level"] == (
+        "unverified" if fails else "supported"
+    )
 
 
 def test_dual_gpu_modes_have_user_facing_labels_and_round_trip():
