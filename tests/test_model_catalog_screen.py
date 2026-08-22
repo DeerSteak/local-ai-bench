@@ -5,7 +5,7 @@ import pytest
 from scripts.release.model_catalog_screen import (
     ScreenSpec, build_screen_spec, candidate_import_matches, candidate_record,
     compatibility_screen_errors, interrupt_ready, select_exact_variant,
-    pipeline_asset_target, screen_image_artifacts,
+    pipeline_asset_target, screen_evidence_artifacts, screen_image_artifacts,
 )
 from scripts.runtime.sampling import baseline_sampling_profile
 from scripts.setup.model_import import ImportVariant, RepositoryInspection
@@ -261,4 +261,26 @@ def test_image_screen_report_hashes_every_generated_resolution(tmp_path):
     artifacts, errors = screen_image_artifacts(result, screen_spec)
     assert artifacts[0]["resolution"] == "1024x1024"
     assert artifacts[0]["size"] == 3
+    assert artifacts[0]["path"] == "images_result/z-image-turbo_1024x1024.png"
     assert errors == ["generated image is missing: 1536x1536"]
+
+
+def test_screen_evidence_manifest_is_relative_hashed_and_complete(tmp_path):
+    screen_spec = ScreenSpec(
+        "candidate", "Candidate", "llamacpp", "audit-candidate", "llm",
+        "owner/model", "a" * 40, (), None, tmp_path / "result.json", (),
+        baseline_sampling_profile("llamacpp"),
+    )
+    for name in ("result.json", "result.events.sqlite3", "initial.log", "resume.log"):
+        (tmp_path / name).write_bytes(name.encode())
+    artifacts, errors = screen_evidence_artifacts(screen_spec)
+    assert errors == []
+    assert [artifact["path"] for artifact in artifacts] == [
+        "result.json", "result.events.sqlite3", "initial.log", "resume.log",
+    ]
+    assert all(artifact["size"] > 0 and len(artifact["sha256"]) == 64
+               for artifact in artifacts)
+
+    (tmp_path / "resume.log").unlink()
+    _, errors = screen_evidence_artifacts(screen_spec)
+    assert errors == ["screen evidence is missing: resume.log"]

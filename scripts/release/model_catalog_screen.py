@@ -14,6 +14,7 @@ from pathlib import Path
 from scripts.app.benchmark_gui_process import launch_controlled_process
 from scripts.results.result_store import atomic_write_json
 from scripts.results.canonical_json import sha256_json
+from scripts.results.llm_event_stage import event_store_path
 from scripts.results.local_execution_context import images_dir_for_result
 from scripts.runtime import config
 from scripts.runtime.log_redaction import redact_log_text
@@ -260,8 +261,29 @@ def screen_image_artifacts(result: dict, spec: ScreenSpec) -> tuple[list[dict], 
             errors.append(f"generated image is missing: {resolution}")
             continue
         records.append({
-            "resolution": resolution, "path": str(path),
-            "size": path.stat().st_size, "sha256": Shared.file_hash(path),
+            "resolution": resolution,
+            "path": str(path.relative_to(spec.output_path.parent.resolve())),
+            "size": path.stat().st_size, "sha256": Shared.file_sha256(path),
+        })
+    return records, errors
+
+
+def screen_evidence_artifacts(spec: ScreenSpec) -> tuple[list[dict], list[str]]:
+    paths = (
+        spec.output_path,
+        event_store_path(spec.output_path),
+        spec.output_path.with_name("initial.log"),
+        spec.output_path.with_name("resume.log"),
+    )
+    records, errors = [], []
+    for path in paths:
+        if not path.is_file() or path.stat().st_size < 1:
+            errors.append(f"screen evidence is missing: {path.name}")
+            continue
+        records.append({
+            "path": str(path.relative_to(spec.output_path.parent)),
+            "size": path.stat().st_size,
+            "sha256": Shared.file_sha256(path),
         })
     return records, errors
 
@@ -276,14 +298,14 @@ def ensure_candidate_import(spec: ScreenSpec) -> str:  # pragma: no cover - real
                 destination = target.parent
                 expected = file.get("sha256")
                 if target.is_file():
-                    if not expected or Shared.file_hash(target) != expected:
+                    if not expected or Shared.file_sha256(target) != expected:
                         raise ValueError(f"candidate pipeline digest mismatch: {target.name}")
                     continue
                 if not download_hf_files(
                         dependency["repo"], file["name"], destination,
                         revision=dependency["revision"], token=token, save_as=target.name):
                     raise RuntimeError(f"candidate pipeline download failed: {target.name}")
-                if not expected or Shared.file_hash(target) != expected:
+                if not expected or Shared.file_sha256(target) != expected:
                     raise ValueError(f"candidate pipeline digest mismatch: {target.name}")
                 downloaded = True
         return "downloaded" if downloaded else "reused"
@@ -431,6 +453,8 @@ def execute_screen(spec: ScreenSpec, timeout: int) -> dict:  # pragma: no cover 
         if result is None:
             raise RuntimeError("candidate screen produced no result")
     errors = compatibility_screen_errors(result, spec)
+    evidence_artifacts, evidence_errors = screen_evidence_artifacts(spec)
+    errors.extend(evidence_errors)
     image_artifacts, artifact_errors = screen_image_artifacts(result, spec)
     errors.extend(artifact_errors)
     report = {
@@ -441,9 +465,10 @@ def execute_screen(spec: ScreenSpec, timeout: int) -> dict:  # pragma: no cover 
         "revision": spec.revision,
         "files": list(spec.files),
         "import": import_status,
-        "result": str(spec.output_path),
+        "result": spec.output_path.name,
         "status": "passed" if not errors else "failed",
         "errors": errors,
+        "evidence_artifacts": evidence_artifacts,
         "image_artifacts": image_artifacts,
     }
     atomic_write_json(spec.output_path.with_name("screen-report.json"), report)
