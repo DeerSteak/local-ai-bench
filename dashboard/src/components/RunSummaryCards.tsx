@@ -36,10 +36,6 @@ export default function RunSummaryCards({ files, containerRef, logoSrc, chartWid
                 {file.engine && <span>{engineLabel(file.engine)}{file.engineVersion ? ` ${file.engineVersion}` : ""}</span>}
                 {file.version && <span>suite v{file.version}</span>}
               </div>
-              <div className={styles.support} data-state={file.engineSupportLevel}>
-                <strong>Engine support · {(file.engineSupportLevel || "not_recorded").replace("_", " ")}</strong>
-                <span>{file.engineSupportCaveat || "Qualification status was not recorded."}</span>
-              </div>
               {gpuLabels.length > 0 && (
                 <div className={`${styles.metadata} ${styles.gpuMetadata}`}>
                   {gpuLabels.map(gpu => <span key={gpu}>{gpu}</span>)}
