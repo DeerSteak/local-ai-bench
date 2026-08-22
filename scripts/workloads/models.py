@@ -67,7 +67,7 @@ IMAGE_MODELS = [
                 "remote": "split_files/text_encoders/qwen_3_4b.safetensors",
             },
             {
-                "name": "ae.safetensors",
+                "name": "z_image_ae.safetensors",
                 "folder": "vae",
                 "repo": "Comfy-Org/z_image_turbo",
                 "remote": "split_files/vae/ae.safetensors",

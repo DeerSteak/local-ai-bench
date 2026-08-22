@@ -168,9 +168,18 @@ def test_checkpoint_names_from_object_info_handles_valid_and_malformed_data():
         "CheckpointLoaderSimple": {
             "input": {"required": {"ckpt_name": [["one.safetensors", "two.safetensors"]]}},
         },
+        "UNETLoader": {
+            "input": {"required": {"unet_name": [["z-image.safetensors"]]}},
+        },
     }
-    assert checkpoint_names_from_object_info(data) == {"one.safetensors", "two.safetensors"}
-    assert checkpoint_names_from_object_info({}) == set()
+    assert checkpoint_names_from_object_info(data, "CheckpointLoaderSimple") == {
+        "one.safetensors", "two.safetensors",
+    }
+    assert checkpoint_names_from_object_info(data, "UNETLoader") == {
+        "z-image.safetensors",
+    }
+    assert checkpoint_names_from_object_info(data, "UnknownLoader") == set()
+    assert checkpoint_names_from_object_info({}, "UNETLoader") == set()
 
 
 def test_managed_checkpoint_visibility_requires_overlap_when_models_exist():

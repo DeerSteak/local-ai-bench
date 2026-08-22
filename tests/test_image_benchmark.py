@@ -83,7 +83,7 @@ def test_z_image_workflow_matches_official_core_node_graph():
     assert wf["2"]["inputs"] == {
         "clip_name": "qwen_3_4b.safetensors", "type": "lumina2", "device": "default",
     }
-    assert wf["3"]["inputs"]["vae_name"] == "ae.safetensors"
+    assert wf["3"]["inputs"]["vae_name"] == "z_image_ae.safetensors"
     assert wf["4"]["inputs"]["text"] == "a cat"
     assert wf["5"] == {"class_type": "ConditioningZeroOut", "inputs": {
         "conditioning": ["4", 0],

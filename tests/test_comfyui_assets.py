@@ -63,7 +63,7 @@ def test_z_image_provisions_public_pipeline_in_comfyui_model_folders(tmp_path):
             {"name": "qwen_3_4b.safetensors", "folder": "text_encoders",
              "repo": "Comfy-Org/z_image_turbo",
              "remote": "split_files/text_encoders/qwen_3_4b.safetensors"},
-            {"name": "ae.safetensors", "folder": "vae",
+            {"name": "z_image_ae.safetensors", "folder": "vae",
              "repo": "Comfy-Org/z_image_turbo", "remote": "split_files/vae/ae.safetensors"},
         ],
     }]
@@ -86,7 +86,8 @@ def test_z_image_provisions_public_pipeline_in_comfyui_model_folders(tmp_path):
               "save_as": "qwen_3_4b.safetensors",
           }),
         (("Comfy-Org/z_image_turbo", "split_files/vae/ae.safetensors"), {
-              "token": "", "dest_dir": tmp_path / "vae", "save_as": "ae.safetensors",
+              "token": "", "dest_dir": tmp_path / "vae",
+              "save_as": "z_image_ae.safetensors",
           }),
     ]
 
@@ -153,5 +154,5 @@ def test_missing_download_size_uses_each_asset_folder_and_skips_existing():
     assert lookups == [
         ("z_image_turbo_bf16.safetensors", "diffusion_models"),
         ("qwen_3_4b.safetensors", "text_encoders"),
-        ("ae.safetensors", "vae"),
+        ("z_image_ae.safetensors", "vae"),
     ]

@@ -169,7 +169,7 @@ def test_z_image_catalog_uses_complete_official_comfyui_pipeline(tmp_path):
             for asset in model["support_assets"]] == [
         ("text_encoders", "qwen_3_4b.safetensors",
          "split_files/text_encoders/qwen_3_4b.safetensors"),
-        ("vae", "ae.safetensors", "split_files/vae/ae.safetensors"),
+        ("vae", "z_image_ae.safetensors", "split_files/vae/ae.safetensors"),
     ]
 
 
@@ -188,6 +188,16 @@ def test_image_checkpoint_groups_separate_comfyui_loader_inventories():
         "v1-5-pruned-emaonly.safetensors", "sd_xl_base_1.0.safetensors",
         "flux1-dev.safetensors", "flux2-dev.safetensors",
     }
+
+
+def test_image_support_asset_names_do_not_alias_different_sources():
+    sources = {}
+    for model in IMAGE_MODELS:
+        for asset in model.get("support_assets", ()):
+            local_key = (asset["folder"], asset["name"])
+            source = (asset["repo"], asset["remote"])
+            assert local_key not in sources or sources[local_key] == source
+            sources[local_key] = source
 
 
 def test_gated_image_models_expose_their_hugging_face_license_pages():

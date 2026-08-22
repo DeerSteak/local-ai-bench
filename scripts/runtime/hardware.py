@@ -272,6 +272,7 @@ ENCODER_SIZES_GB = {
     "clip_l.safetensors":                   0.3,
     "clip_g.safetensors":                   1.4,
     "ae.safetensors":                       0.4,
+    "z_image_ae.safetensors":               0.4,
     "flux2-vae.safetensors":                0.4,
     "mistral_3_small_flux2_fp8.safetensors": 18.1,
     "qwen_3_4b.safetensors":                 8.1,
@@ -279,7 +280,7 @@ ENCODER_SIZES_GB = {
 
 # Encoder files each image model's "short" name needs alongside its checkpoint. SD1.5/SDXL bundle their own.
 IMAGE_ENCODER_GROUPS = {
-    "z-image-turbo": ("qwen_3_4b.safetensors", "ae.safetensors"),
+    "z-image-turbo": ("qwen_3_4b.safetensors", "z_image_ae.safetensors"),
     "flux-dev":   ("t5xxl_fp16.safetensors", "clip_l.safetensors", "ae.safetensors"),
     "flux2-dev":  ("mistral_3_small_flux2_fp8.safetensors", "flux2-vae.safetensors"),
 }

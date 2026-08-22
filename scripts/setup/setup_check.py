@@ -1106,7 +1106,9 @@ def main() -> None:  # pragma: no cover - real interactive installer
                         with urllib.request.urlopen(
                             f"{config.COMFYUI_URL}/object_info/{loader}", timeout=3,
                         ) as response:
-                            available = checkpoint_names_from_object_info(json.load(response))
+                            available = checkpoint_names_from_object_info(
+                                json.load(response), loader,
+                            )
                         visible = visible and managed_checkpoints_visible(available, expected)
                     if visible:
                         ok("Running ComfyUI already sees Local AI Bench's managed models")

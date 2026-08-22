@@ -214,7 +214,7 @@ class ImageBenchmark:
                       "device": "default",
                   }},
             "3": {"class_type": "VAELoader",
-                  "inputs": {"vae_name": "ae.safetensors"}},
+                  "inputs": {"vae_name": "z_image_ae.safetensors"}},
             "4": {"class_type": "CLIPTextEncode",
                   "inputs": {"text": prompt, "clip": ["2", 0]}},
             "5": {"class_type": "ConditioningZeroOut",

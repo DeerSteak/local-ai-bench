@@ -361,7 +361,7 @@ def test_image_model_memory_requirement_includes_encoders():
 def test_z_image_memory_requirement_includes_qwen_encoder_and_vae():
     weights = (hardware.CHECKPOINT_SIZES_GB["z_image_turbo_bf16.safetensors"]
                + hardware.ENCODER_SIZES_GB["qwen_3_4b.safetensors"]
-               + hardware.ENCODER_SIZES_GB["ae.safetensors"])
+               + hardware.ENCODER_SIZES_GB["z_image_ae.safetensors"])
     assert hardware.image_model_weights_gb(
         "z_image_turbo_bf16.safetensors", "z-image-turbo",
     ) == pytest.approx(weights)

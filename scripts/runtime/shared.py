@@ -332,7 +332,7 @@ class Shared:
                                   if image_checkpoint_path(model, config.COMFYUI_MODELS_DIR).is_file()]
                 for loader, managed in image_checkpoint_groups(managed_models).items():
                     response = requests.get(f"{config.COMFYUI_URL}/object_info/{loader}", timeout=5)
-                    available = checkpoint_names_from_object_info(response.json())
+                    available = checkpoint_names_from_object_info(response.json(), loader)
                     if not managed_checkpoints_visible(available, managed):
                         Shared.warn("ComfyUI is running but has not loaded Local AI Bench's managed model path")
                         Shared.warn("Stop it without active work, restart it once, then retry the image workload")
