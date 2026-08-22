@@ -146,6 +146,29 @@ def test_server_command_accepts_an_explicit_chat_template(engine):
     assert command[command.index("--chat-template") + 1] == "/cache/chat_template.jinja"
 
 
+def test_server_command_enables_native_mtp_with_compact_json(engine):
+    command = engine.server_command(
+        "org/m", 4096,
+        mtp_config={"method": "mtp", "num_speculative_tokens": 1},
+    )
+    assert command[command.index("--speculative-config") + 1] == \
+        '{"method":"mtp","num_speculative_tokens":1}'
+
+
+def test_native_mtp_configuration_is_catalog_and_engine_specific(engine):
+    engine.set_mtp_enabled(True)
+    assert engine._native_mtp_config(TEST_TAG) == {
+        "method": "mtp", "num_speculative_tokens": 1,
+    }
+    assert engine._native_mtp_config(TEST_TAG, embedding=True) is None
+    with pytest.raises(RuntimeError, match="does not support native MTP"):
+        engine._native_mtp_config("gemma3:1b-it-q4_K_M")
+
+
+def test_native_mtp_is_disabled_by_default(engine):
+    assert engine._native_mtp_config(TEST_TAG) is None
+
+
 def test_dgx_reserves_host_memory_on_unified_gb10():
     from scripts.runtime.engines.vllm import vllm_gpu_memory_utilization
     assert vllm_gpu_memory_utilization("aarch64", [{"name": "NVIDIA GB10"}]) == 0.70

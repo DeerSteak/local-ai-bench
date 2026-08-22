@@ -879,6 +879,24 @@ def test_runner_restores_recorded_sampling_profile_on_engine():
     assert engine.profile is profile
 
 
+def test_runner_restores_recorded_mtp_mode_on_engine():
+    from scripts.runtime.workload_runner import configure_runner_engine
+
+    class Engine:
+        mtp_enabled = None
+
+        @staticmethod
+        def runtime_backend(hardware_backend, *, cpu_only=False):
+            return hardware_backend
+
+        def set_mtp_enabled(self, enabled):
+            self.mtp_enabled = enabled
+
+    engine = Engine()
+    assert configure_runner_engine(engine, "cuda", False, {"mtp_enabled": True}) == "auto"
+    assert engine.mtp_enabled is True
+
+
 def test_runner_initializes_runtime_without_cache_configuration_hook():
     from scripts.runtime.workload_runner import configure_runner_engine
 

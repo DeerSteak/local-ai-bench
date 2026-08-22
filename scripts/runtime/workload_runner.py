@@ -108,6 +108,9 @@ def configure_runner_engine(engine, hardware_backend: str, cpu_only: bool,
     )
     if settings and settings.get("sampling_profile"):
         engine.set_sampling_profile(settings["sampling_profile"])
+    configure_mtp = getattr(engine, "set_mtp_enabled", None)
+    if configure_mtp is not None:
+        configure_mtp(bool(settings and settings.get("mtp_enabled")))
     configure = getattr(engine, "configure_kv_cache", None)
     if configure is None:
         return "auto"
