@@ -24,6 +24,13 @@ def load_candidate_register(path: Path = DEFAULT_CANDIDATES) -> list[dict]:
     for candidate in candidates:
         if candidate.get("family") not in {"llm", "embedding", "image"}:
             raise ValueError(f"invalid candidate family: {candidate.get('id')}")
+        if not isinstance(candidate.get("role"), str) or not candidate["role"]:
+            raise ValueError(f"candidate requires a measurable role: {candidate.get('id')}")
+        incumbents = candidate.get("incumbents")
+        if not isinstance(incumbents, list) or not incumbents \
+                or any(not isinstance(item, str) or not item for item in incumbents) \
+                or len(incumbents) != len(set(incumbents)):
+            raise ValueError(f"candidate requires unique incumbent comparisons: {candidate.get('id')}")
         sources = candidate.get("sources")
         if not isinstance(sources, dict) or not isinstance(sources.get("upstream"), str):
             raise ValueError(f"candidate requires an upstream source: {candidate.get('id')}")

@@ -4,9 +4,11 @@ from types import SimpleNamespace
 import pytest
 
 from scripts.release.model_catalog_audit import (
-    audit_pipeline_source, audit_repository, build_source_audit, load_candidate_register,
+    DEFAULT_CANDIDATES, audit_pipeline_source, audit_repository, build_source_audit,
+    load_candidate_register,
     source_status,
 )
+from scripts.release.model_catalog_inventory import load_incumbent_register
 from scripts.setup.model_import import ImportVariant, RepositoryInspection
 
 
@@ -47,32 +49,52 @@ def inspection(repo, *, vllm=True, gguf=True):
 
 
 def test_candidate_register_rejects_duplicate_ids_and_missing_sources(tmp_path):
+    comparison = {"role": "role", "incumbents": ["incumbent"]}
     path = tmp_path / "candidates.json"
     path.write_text(json.dumps({"schema_version": 1, "candidates": [
-        {"id": "same", "family": "llm", "sources": {"upstream": "a/b", "gguf": "c/d"}},
-        {"id": "same", "family": "image", "sources": {"upstream": "e/f"}},
+        {"id": "same", "family": "llm", **comparison,
+         "sources": {"upstream": "a/b", "gguf": "c/d"}},
+        {"id": "same", "family": "image", **comparison, "sources": {"upstream": "e/f"}},
     ]}))
     with pytest.raises(ValueError, match="duplicate"):
         load_candidate_register(path)
 
     path.write_text(json.dumps({"schema_version": 1, "candidates": [
-        {"id": "embed", "family": "embedding", "sources": {"upstream": "a/b"}},
+        {"id": "embed", "family": "embedding", **comparison,
+         "sources": {"upstream": "a/b"}},
     ]}))
     with pytest.raises(ValueError, match="GGUF"):
         load_candidate_register(path)
 
     path.write_text(json.dumps({"schema_version": 1, "candidates": [
-        {"id": "image", "family": "image", "sources": {"upstream": "a/b"}},
+        {"id": "image", "family": "image", **comparison,
+         "sources": {"upstream": "a/b"}},
     ]}))
     with pytest.raises(ValueError, match="pipeline"):
         load_candidate_register(path)
 
     path.write_text(json.dumps({"schema_version": 1, "candidates": [{
-        "id": "embed", "family": "embedding", "gguf_provenance": "assumed",
+        "id": "embed", "family": "embedding", **comparison,
+        "gguf_provenance": "assumed",
         "sources": {"upstream": "a/b", "gguf": "a/b-GGUF"},
     }]}))
     with pytest.raises(ValueError, match="GGUF provenance"):
         load_candidate_register(path)
+
+    path.write_text(json.dumps({"schema_version": 1, "candidates": [{
+        "id": "model", "family": "llm", "sources": {"upstream": "a/b", "gguf": "c/d"},
+    }]}))
+    with pytest.raises(ValueError, match="measurable role"):
+        load_candidate_register(path)
+
+
+def test_candidate_comparisons_reference_current_incumbents_in_the_same_family():
+    incumbents = {record["id"]: record for record in load_incumbent_register()}
+    for candidate in load_candidate_register(DEFAULT_CANDIDATES):
+        assert candidate["incumbents"]
+        assert all(incumbent in incumbents for incumbent in candidate["incumbents"])
+        assert all(incumbents[incumbent]["family"] == candidate["family"]
+                   for incumbent in candidate["incumbents"])
 
 
 def test_repository_audit_records_exact_revision_and_artifact_identity():
@@ -173,6 +195,7 @@ def test_source_status_accepts_explicit_exact_variant_from_same_publisher():
 def test_full_audit_preserves_candidate_order_and_derives_status():
     candidates = [{
         "id": "model", "family": "embedding", "name": "Model",
+        "role": "role", "incumbents": ["incumbent"],
         "sources": {"upstream": "owner/model", "gguf": "owner/model-gguf"},
     }]
     api = FakeApi({

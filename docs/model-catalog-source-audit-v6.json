@@ -3,8 +3,12 @@
     {
       "family": "llm",
       "id": "qwen3.8-27b",
+      "incumbents": [
+        "gemma3:27b-it-q4_K_M"
+      ],
       "name": "Qwen 3.8 27B",
       "reasons": [],
+      "role": "Contemporary dense medium-tier Qwen coverage",
       "sources": {
         "gguf": {
           "artifact": {
@@ -114,8 +118,14 @@
     {
       "family": "llm",
       "id": "muse-glimmer-30b",
+      "incumbents": [
+        "gemma3:27b-it-q4_K_M",
+        "nemotron-cascade2:30b-a3b-q4_K_M",
+        "qwen3.6:35b-a3b"
+      ],
       "name": "Muse Glimmer 30B",
       "reasons": [],
+      "role": "Alternative medium-tier architecture and instruction behavior",
       "sources": {
         "gguf": {
           "artifact": {
@@ -205,12 +215,16 @@
     {
       "family": "llm",
       "id": "nemotron-3.5-lightning-30b-a3b",
+      "incumbents": [
+        "nemotron-cascade2:30b-a3b-q4_K_M"
+      ],
       "name": "NVIDIA Nemotron 3.5 Lightning 30B-A3B",
       "reasons": [
         "upstream other license requires review",
         "upstream LLM has no chat template",
         "GGUF provenance does not identify the selected upstream repository"
       ],
+      "role": "Newer NVIDIA sparse medium-tier coverage",
       "sources": {
         "gguf": {
           "artifact": {
@@ -306,8 +320,12 @@
     {
       "family": "llm",
       "id": "gemma-4-26b-a4b",
+      "incumbents": [
+        "gemma3:27b-it-q4_K_M"
+      ],
       "name": "Gemma 4 26B-A4B",
       "reasons": [],
+      "role": "Newer sparse Gemma medium-tier coverage",
       "sources": {
         "gguf": {
           "artifact": {
@@ -399,12 +417,17 @@
     {
       "family": "llm",
       "id": "nemotron-nano-9b-v2",
+      "incumbents": [
+        "granite4.1:8b-q4_K_M",
+        "qwen3.5:9b-q4_K_M"
+      ],
       "name": "NVIDIA Nemotron Nano 9B v2",
       "reasons": [
         "upstream other license requires review",
         "upstream requires custom code review",
         "GGUF license is not declared"
       ],
+      "role": "NVIDIA small-tier coverage",
       "sources": {
         "gguf": {
           "artifact": {
@@ -493,12 +516,16 @@
     {
       "family": "embedding",
       "id": "embeddinggemma-300m",
+      "incumbents": [
+        "nomic-embed-text"
+      ],
       "name": "EmbeddingGemma 300M",
       "reasons": [
         "upstream repository requires access approval",
         "upstream gemma license requires review",
         "upstream configuration could not be inspected"
       ],
+      "role": "Very small multilingual embedding baseline",
       "sources": {
         "gguf": {
           "artifact": {
@@ -570,8 +597,12 @@
       "family": "embedding",
       "gguf_provenance": "publisher_exact_variant",
       "id": "qwen3-embedding-0.6b",
+      "incumbents": [
+        "nomic-embed-text"
+      ],
       "name": "Qwen3 Embedding 0.6B",
       "reasons": [],
+      "role": "Compact instruction-aware embedding coverage",
       "sources": {
         "gguf": {
           "artifact": {
@@ -657,8 +688,12 @@
       "family": "embedding",
       "gguf_provenance": "publisher_exact_variant",
       "id": "qwen3-embedding-4b",
+      "incumbents": [
+        "mxbai-embed-large"
+      ],
       "name": "Qwen3 Embedding 4B",
       "reasons": [],
+      "role": "Larger instruction-aware embedding coverage",
       "sources": {
         "gguf": {
           "artifact": {
@@ -745,10 +780,15 @@
     {
       "family": "image",
       "id": "flux.2-klein-4b",
+      "incumbents": [
+        "flux-dev",
+        "flux2-dev"
+      ],
       "name": "FLUX.2 Klein 4B",
       "reasons": [
         "pipeline other license requires review: Comfy-Org/flux2-dev"
       ],
+      "role": "Smaller FLUX.2 pipeline",
       "sources": {
         "pipeline": [
           {
@@ -845,8 +885,14 @@
     {
       "family": "image",
       "id": "z-image-turbo",
+      "incumbents": [
+        "sdxl",
+        "flux-dev",
+        "flux2-dev"
+      ],
       "name": "Z-Image Turbo",
       "reasons": [],
+      "role": "Fast image-generation pipeline",
       "sources": {
         "pipeline": [
           {

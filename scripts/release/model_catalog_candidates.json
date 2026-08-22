@@ -5,6 +5,8 @@
       "id": "qwen3.8-27b",
       "family": "llm",
       "name": "Qwen 3.8 27B",
+      "role": "Contemporary dense medium-tier Qwen coverage",
+      "incumbents": ["gemma3:27b-it-q4_K_M"],
       "sources": {
         "upstream": "Qwen/Qwen3.8-27B",
         "gguf": "unsloth/Qwen3.8-27B-GGUF"
@@ -14,6 +16,12 @@
       "id": "muse-glimmer-30b",
       "family": "llm",
       "name": "Muse Glimmer 30B",
+      "role": "Alternative medium-tier architecture and instruction behavior",
+      "incumbents": [
+        "gemma3:27b-it-q4_K_M",
+        "nemotron-cascade2:30b-a3b-q4_K_M",
+        "qwen3.6:35b-a3b"
+      ],
       "sources": {
         "upstream": "meta-models/Muse-Glimmer-30B",
         "gguf": "meta-models/Muse-Glimmer-30B-GGUF"
@@ -23,6 +31,8 @@
       "id": "nemotron-3.5-lightning-30b-a3b",
       "family": "llm",
       "name": "NVIDIA Nemotron 3.5 Lightning 30B-A3B",
+      "role": "Newer NVIDIA sparse medium-tier coverage",
+      "incumbents": ["nemotron-cascade2:30b-a3b-q4_K_M"],
       "sources": {
         "upstream": "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16",
         "gguf": "ggml-org/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF"
@@ -32,6 +42,8 @@
       "id": "gemma-4-26b-a4b",
       "family": "llm",
       "name": "Gemma 4 26B-A4B",
+      "role": "Newer sparse Gemma medium-tier coverage",
+      "incumbents": ["gemma3:27b-it-q4_K_M"],
       "sources": {
         "upstream": "google/gemma-4-26B-A4B-it",
         "gguf": "ggml-org/gemma-4-26B-A4B-it-GGUF"
@@ -41,6 +53,8 @@
       "id": "nemotron-nano-9b-v2",
       "family": "llm",
       "name": "NVIDIA Nemotron Nano 9B v2",
+      "role": "NVIDIA small-tier coverage",
+      "incumbents": ["granite4.1:8b-q4_K_M", "qwen3.5:9b-q4_K_M"],
       "sources": {
         "upstream": "nvidia/NVIDIA-Nemotron-Nano-9B-v2",
         "gguf": "bartowski/nvidia_NVIDIA-Nemotron-Nano-9B-v2-GGUF"
@@ -50,6 +64,8 @@
       "id": "embeddinggemma-300m",
       "family": "embedding",
       "name": "EmbeddingGemma 300M",
+      "role": "Very small multilingual embedding baseline",
+      "incumbents": ["nomic-embed-text"],
       "sources": {
         "upstream": "google/embeddinggemma-300m",
         "gguf": "cstr/embeddinggemma-300m-GGUF"
@@ -59,6 +75,8 @@
       "id": "qwen3-embedding-0.6b",
       "family": "embedding",
       "name": "Qwen3 Embedding 0.6B",
+      "role": "Compact instruction-aware embedding coverage",
+      "incumbents": ["nomic-embed-text"],
       "gguf_provenance": "publisher_exact_variant",
       "sources": {
         "upstream": "Qwen/Qwen3-Embedding-0.6B",
@@ -69,6 +87,8 @@
       "id": "qwen3-embedding-4b",
       "family": "embedding",
       "name": "Qwen3 Embedding 4B",
+      "role": "Larger instruction-aware embedding coverage",
+      "incumbents": ["mxbai-embed-large"],
       "gguf_provenance": "publisher_exact_variant",
       "sources": {
         "upstream": "Qwen/Qwen3-Embedding-4B",
@@ -79,6 +99,8 @@
       "id": "flux.2-klein-4b",
       "family": "image",
       "name": "FLUX.2 Klein 4B",
+      "role": "Smaller FLUX.2 pipeline",
+      "incumbents": ["flux-dev", "flux2-dev"],
       "sources": {
         "upstream": "black-forest-labs/FLUX.2-klein-4B",
         "pipeline": [
@@ -102,6 +124,8 @@
       "id": "z-image-turbo",
       "family": "image",
       "name": "Z-Image Turbo",
+      "role": "Fast image-generation pipeline",
+      "incumbents": ["sdxl", "flux-dev", "flux2-dev"],
       "sources": {
         "upstream": "Tongyi-MAI/Z-Image-Turbo",
         "pipeline": [
