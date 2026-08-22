@@ -30,6 +30,8 @@ Every model first passes the hard gates below. Models that pass are compared onl
 
 All decisions begin as pending. Architecture, license, context, and source claims will be filled from pinned authoritative sources before compatibility testing.
 
+The tracked register at `scripts/release/model_catalog_incumbents.json` assigns every active entry an exact upstream identity and measurable role. `bench-env/bin/python -m scripts.release.model_catalog_inventory` joins that register to the live catalog and emits a machine-readable inventory containing the exact llama.cpp, vLLM, or ComfyUI artifacts, tier, parameter count, declared download size, gating state, and `pending_evidence` decision. It hard-fails if either side gains, loses, or duplicates an entry, so the table below cannot silently drift away from what setup ships.
+
 | Family/tier | Incumbent | Current measurable role | Initial decision |
 | --- | --- | --- | --- |
 | LLM/xsmall | Gemma 3 1B | Smallest low-memory llama.cpp baseline and qualification model | Pending audit |
