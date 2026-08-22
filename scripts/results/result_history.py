@@ -34,6 +34,7 @@ ETA_MATCH_KEYS = (
     "concurrency_tool_levels", "concurrency_chat_levels",
     "concurrency_tool_context", "concurrency_chat_context",
     "concurrency_chat_soft_exit_floor",
+    "mtp_enabled",
 )
 SUSTAINED_ETA_KEYS = (
     "sustained_duration_sec", "sustained_window_sec", "sustained_context_tokens",

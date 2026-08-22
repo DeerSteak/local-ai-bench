@@ -23,6 +23,7 @@ TEST_CHOICES = (
 )
 TG_TOKEN_CHOICES = (128, 512, 1024)
 TIER_CHOICES = ("xsmall", "small", "medium", "large")
+MTP_CHOICES = ("off", "on", "both")
 
 
 def _spec(value_type, classification, ui_status, ui_location, **kwargs):
@@ -57,6 +58,10 @@ PUBLIC_OPTION_SCHEMA = {
         "choice", "advanced", "exposed", "Graphical execution settings",
         default="layer", choices=("single", "layer", "tensor"),
     ),
+    "--mtp": _spec(
+        "choice", "advanced", "exposed", "Graphical execution settings",
+        default="off", choices=MTP_CHOICES,
+    ),
     "--llamacpp-no-repack": _spec(
         "boolean", "advanced", "exposed", "Graphical execution settings", default=False,
     ),
@@ -88,6 +93,7 @@ GUI_OPTION_FLAGS = {
     "warmup": "--warmup", "runs": "--runs", "timeout": "--timeout",
     "acc_timeout": "--acc-timeout", "acc_token_budget": "--acc-token-budget",
     "cpu_only": "--cpu-only", "gpu_split_mode": "--gpu-split-mode",
+    "mtp": "--mtp",
     "llamacpp_no_repack": "--llamacpp-no-repack",
     "force_all": "--force-all", "retry_crashed_models": "--retry-crashed-models",
     "offline": "--offline", "memory_telemetry": "--memory-telemetry",

@@ -16,6 +16,7 @@ def eta_config(**overrides):
         "concurrency_tool_levels": [1, 2], "concurrency_chat_levels": [1, 2],
         "concurrency_tool_context": 4096, "concurrency_chat_context": 4096,
         "concurrency_chat_soft_exit_floor": 8,
+        "mtp_enabled": False,
     }
     return {**config, **overrides}
 

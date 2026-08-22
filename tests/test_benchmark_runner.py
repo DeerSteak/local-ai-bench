@@ -836,6 +836,27 @@ def test_runner_names_its_progress_events_with_the_plan_engine(monkeypatch, tmp_
     assert progress_events is not None
 
 
+def test_runner_uses_the_comparison_pass_progress_identity(monkeypatch, tmp_path):
+    from scripts.runtime import workload_runner
+
+    recorded = []
+    monkeypatch.setattr(workload_runner, "set_progress_engine", recorded.append)
+    monkeypatch.setattr(workload_runner, "load_runner_plan",
+                        lambda path, job_id: SimpleNamespace(
+                            engine_name="vllm", retry_crashed_models=False,
+                            effective_config={
+                                "offline": False,
+                                "progress_engine_name": "vllm · MTP on",
+                            }))
+    monkeypatch.setattr(workload_runner, "execute_llm_job", lambda *a, **k: None)
+    monkeypatch.setenv("LOCAL_AI_BENCH_RUNNER_TOKEN", "token")
+    assert workload_runner.main([
+        "--job-id", "j1", "--stage", "llm",
+        "--event-store", str(tmp_path / "events.sqlite3"),
+    ]) == 0
+    assert recorded == ["vllm · MTP on"]
+
+
 def test_runner_reapplies_vllm_cache_policy_for_its_runtime_backend():
     from scripts.runtime.workload_runner import configure_runner_engine
 

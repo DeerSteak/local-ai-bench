@@ -7,17 +7,31 @@ from typing import Any
 from scripts.app.benchmark_frontend import LLM_BACKED_TESTS, TEST_STAGE_LABELS, engine_incompatible_tests
 from scripts.app.tk_utils import mousewheel_scroll_units
 from scripts.runtime import config
+from scripts.runtime.mtp import mtp_tests, native_mtp_config
 from scripts.stage_registry import STAGE_ORDER
+from scripts.workloads.models import LLM_MODELS
+
+
+def progress_engine_base(engine: str) -> str:
+    return engine.partition(" · MTP ")[0]
+
+
+def progress_engine_mtp_enabled(engine: str) -> bool:
+    return engine.endswith(" · MTP on")
 
 
 def progress_entries_for_engine(entries, engine: str,
                                 model_owners: dict[str, set[str]]) -> list:
     """Selected entries compatible with one engine; images remain engine-independent."""
+    base_engine = progress_engine_base(engine)
+    mtp_enabled = progress_engine_mtp_enabled(engine)
+    catalog = {model["tag"]: model for model in LLM_MODELS}
     return [
         entry for entry in entries if entry.checked and (
             entry.kind == "image" or entry.value not in model_owners
-            or engine in model_owners[entry.value]
+            or base_engine in model_owners[entry.value]
         )
+        and (not mtp_enabled or native_mtp_config(catalog.get(entry.value, {}), base_engine))
     ]
 
 
@@ -65,8 +79,10 @@ class ProgressScreen:
             for engine in engines
         }
         for engine_index, engine_name in enumerate(engines):
-            skipped = set(engine_incompatible_tests(tests, engine_name))
-            for stage in (key for key in STAGE_ORDER if key in tests):
+            base_engine = progress_engine_base(engine_name)
+            pass_tests = mtp_tests(tests, progress_engine_mtp_enabled(engine_name))
+            skipped = set(engine_incompatible_tests(pass_tests, base_engine))
+            for stage in (key for key in STAGE_ORDER if key in pass_tests):
                 if (stage == "img" and engine_index > 0) or stage in skipped:
                     continue
                 stage_entries = self._stage_entries(stage, selected_by_engine[engine_name])
@@ -85,8 +101,10 @@ class ProgressScreen:
         self.stage_vars.clear()
         self.model_vars.clear()
         for engine_index, engine_name in enumerate(engines):
-            skipped = set(engine_incompatible_tests(tests, engine_name))
-            for stage in (key for key in STAGE_ORDER if key in tests):
+            base_engine = progress_engine_base(engine_name)
+            pass_tests = mtp_tests(tests, progress_engine_mtp_enabled(engine_name))
+            skipped = set(engine_incompatible_tests(pass_tests, base_engine))
+            for stage in (key for key in STAGE_ORDER if key in pass_tests):
                 if (stage == "img" and engine_index > 0) or stage in skipped:
                     continue
                 if self._model_backed_stage(stage) and not self._stage_entries(

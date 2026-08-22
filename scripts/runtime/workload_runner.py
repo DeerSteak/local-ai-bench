@@ -668,7 +668,9 @@ def main(argv=None) -> int:
     plan = load_runner_plan(args.event_store, args.job_id)
     # A runner is its own process, so it does not inherit the parent's progress
     # engine; without this every event falls back to the first engine's rows.
-    set_progress_engine(plan.engine_name)
+    set_progress_engine(
+        plan.effective_config.get("progress_engine_name", plan.engine_name)
+    )
     config.RETRY_CRASHED_MODELS = plan.retry_crashed_models
     if plan.effective_config.get("offline", False):
         apply_offline_mode()

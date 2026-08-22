@@ -16,7 +16,9 @@ from pathlib import Path
 
 from scripts.runtime import config
 from scripts.runtime.execution_profile import build_execution_profile
-from scripts.app.benchmark_options import TEST_CHOICES, TG_TOKEN_CHOICES, TIER_CHOICES, option_value_errors
+from scripts.app.benchmark_options import (
+    MTP_CHOICES, TEST_CHOICES, TG_TOKEN_CHOICES, TIER_CHOICES, option_value_errors,
+)
 from scripts.runtime.progress_events import emit_result_saved, set_progress_engine
 from scripts.runtime.comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
 from scripts.workloads.conversation_selection import conv_skip_entry
@@ -70,6 +72,7 @@ from scripts.results.run_plan import RunPlan, load_run_plan
 from scripts.runtime.model_preflight import (
     filter_models, maximum_requested_context, run_runtime_preflight, run_static_preflight,
 )
+from scripts.runtime.mtp import expand_mtp_passes
 from scripts.results.resume_policy import build_engine_resume_identity
 from scripts.results.result_history import ETA_MATCH_KEYS, estimate_matching_plan_seconds
 from scripts.runtime.supervised_stage import relay_runner_log, run_supervised_llm, run_supervised_stage
@@ -165,9 +168,10 @@ def runtime_shaping_config(args) -> dict:
     }
 
 
-def eta_match_config(args) -> dict:
+def eta_match_config(args, *, mtp_enabled: bool = False) -> dict:
     """Runtime-shaping settings required for a historical ETA match."""
     values = runtime_shaping_config(args)
+    values["mtp_enabled"] = mtp_enabled
     matched = {key: values[key] for key in ETA_MATCH_KEYS}
     if "sustained" in getattr(args, "tests", []):
         matched.update({key: values[key] for key in (
@@ -777,6 +781,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "and uses f16 KV cache because llama.cpp does not support quantized KV there.",
     )
     parser.add_argument(
+        "--mtp", choices=MTP_CHOICES, default="off",
+        help="Native multi-token prediction for supported engine/model artifacts: off, on, "
+             "or both as separate comparable result passes (default: off). MTP applies only "
+             "to server-backed text workloads.",
+    )
+    parser.add_argument(
         "--llamacpp-no-repack", action="store_true",
         help="Disable llama.cpp weight repacking with --no-repack/-nr. This can reduce model "
              "startup time and peak loading memory but may reduce CPU inference throughput "
@@ -950,12 +960,27 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             Shared.err(error)
         sys.exit(2)
 
+    base_execution_scopes = [
+        {
+            **scope,
+            "tests": engine_scope_tests(
+                args.tests, scope, include_images=index == 0,
+            ),
+        }
+        for index, scope in enumerate(engine_scopes)
+    ]
+    execution_passes = expand_mtp_passes(base_execution_scopes, args.mtp)
+    if args.mtp == "on" and not execution_passes:
+        parser.error(
+            "--mtp on requires a selected vLLM model with cataloged native MTP support "
+            "and at least one server-backed text workload"
+        )
+
     hardware_profile = Shared.build_profile()
     if args.dry_run:
         previews = []
-        for run_idx, engine_scope in enumerate(engine_scopes):
-            include_images = len(engine_scopes) == 1 or run_idx == 0
-            tests = engine_scope_tests(args.tests, engine_scope, include_images=include_images)
+        for engine_scope in execution_passes:
+            tests = engine_scope["tests"]
             if not tests:
                 continue
             plan_models = selected_plan_models(
@@ -964,7 +989,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             )
             estimate = estimate_matching_plan_seconds(
                 config.RESULTS_DIR, engine_scope["name"], tests, plan_models,
-                eta_match_config(args), hardware_profile,
+                eta_match_config(args, mtp_enabled=engine_scope["mtp_enabled"]), hardware_profile,
             )
             display_models = {
                 "llm": engine_scope["llm_models"],
@@ -972,7 +997,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 "embeddings": engine_scope["embedding_models"], "images": image_models,
             }
             previews.append(format_resolved_plan(
-                engine_scope["name"], tests, display_models, estimate,
+                engine_scope["progress_name"], tests, display_models, estimate,
                 runs=args.runs, warmups=args.warmup,
                 max_prompt_tokens=args.max_prompt_tokens, sample_size=args.sample,
                 sustained_duration=args.sustained_duration,
@@ -991,7 +1016,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
     multi_engine = len(run_engine_names) > 1
 
-    for run_idx, engine_scope in enumerate(engine_scopes):
+    for run_idx, engine_scope in enumerate(execution_passes):
         engine_name = engine_scope["name"]
         engine = engine_scope["engine"]
         llm_models = engine_scope["llm_models"]
@@ -1001,17 +1026,29 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         # the finally block) can consult the live engine without threading it in.
         Shared._active_engine = engine
 
-        set_progress_engine(engine_name)
+        mtp_enabled = engine_scope["mtp_enabled"]
+        progress_name = engine_scope["progress_name"]
+        configure_mtp = getattr(engine, "set_mtp_enabled", None)
+        if configure_mtp is not None:
+            configure_mtp(mtp_enabled)
+        set_progress_engine(progress_name)
+        suffix_parts = []
         if multi_engine:
-            Shared.section(f"Engine: {engine_name} ({run_idx + 1}/{len(run_engine_names)})")
+            suffix_parts.append(engine_name)
+        if args.mtp != "off":
+            suffix_parts.append(f"mtp-{'on' if mtp_enabled else 'off'}")
+        if suffix_parts:
             _base = Path(base_out_path)
-            out_path = str(_base.with_name(f"{_base.stem}_{engine_name}{_base.suffix}"))
+            suffix = "_".join(suffix_parts)
+            out_path = str(_base.with_name(f"{_base.stem}_{suffix}{_base.suffix}"))
         else:
             out_path = base_out_path
+        if len(execution_passes) > 1:
+            Shared.section(
+                f"Pass: {progress_name} ({run_idx + 1}/{len(execution_passes)})"
+            )
 
-        # Image generation doesn't depend on --engine (separate ComfyUI call) — run it once, first pass only.
-        include_images = not multi_engine or run_idx == 0
-        if not include_images and "img" in args.tests:
+        if "img" not in engine_scope["tests"] and "img" in args.tests:
             Shared.log("Image generation doesn't depend on --engine — already "
                        f"captured in the {run_engine_names[0]} pass, skipping for {engine_name}")
 
@@ -1021,7 +1058,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                      else "run only under their native engines")
             Shared.log(f"{', '.join(native_elsewhere)} {scope} — skipping for {engine_name}")
 
-        tests = engine_scope_tests(args.tests, engine_scope, include_images=include_images)
+        tests = engine_scope["tests"]
         if not tests:
             Shared.log(f"No selected workloads apply to {engine_name} — skipping this engine pass")
             continue
@@ -1050,6 +1087,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             Shared.output(f"  Hardware:  {profile['hardware_backend']}")
         Shared.output(f"  RAM:       {profile['ram_gb']} GB")
         Shared.output(f"  Engine:    {engine_name}")
+        Shared.output(f"  MTP:       {'on' if mtp_enabled else 'off'}")
         if runtime_version:
             Shared.output(f"  Runtime:   {runtime_version}")
         Shared.output(f"  Runs:      {config.N_RUNS} measured + {args.warmup} warmup")
@@ -1112,6 +1150,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             engine_name=engine_name, tests=tests, cpu_only=args.cpu_only,
             vllm_kv_cache_dtype=vllm_kv_cache_dtype,
             vllm_launcher_args=vllm_launcher_args,
+            mtp_enabled=mtp_enabled,
         )
         if "sampling_profile" in methodology:
             engine.set_sampling_profile(methodology["sampling_profile"])
@@ -1145,6 +1184,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "gpu_split_mode": args.gpu_split_mode,
             "llamacpp_no_repack": args.llamacpp_no_repack,
             "offline": args.offline,
+            "mtp_enabled": mtp_enabled,
+            "progress_engine_name": progress_name,
             "memory_telemetry": args.memory_telemetry,
             "memory_telemetry_interval_sec": (
                 config.TELEMETRY_INTERVAL_SEC if args.memory_telemetry else None

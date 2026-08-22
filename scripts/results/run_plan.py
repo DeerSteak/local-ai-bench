@@ -22,6 +22,7 @@ SAFE_CONFIG_KEYS = {
     "concurrency_tool_context", "concurrency_chat_context",
     "concurrency_chat_soft_exit_floor",
     "methodology_profile", "effective_optimizations", "sampling_profile", "offline",
+    "mtp_enabled", "progress_engine_name",
     "gpu_split_mode",
     "llamacpp_no_repack",
     "memory_telemetry", "memory_telemetry_interval_sec",
@@ -35,6 +36,7 @@ MODEL_FAMILIES = {"llm", "concurrency", "embeddings", "images"}
 SAFE_MODEL_KEYS = {"tag", "short", "size_gb", "params_b"}
 EXECUTION_CONFIG_KEYS = set(SAFE_CONFIG_KEYS) - {
     "methodology_profile", "effective_optimizations", "sampling_profile", "offline", "gpu_split_mode",
+    "mtp_enabled", "progress_engine_name",
     "retry_crashed_models", "llamacpp_no_repack",
     "memory_telemetry", "memory_telemetry_interval_sec",
     "power_telemetry", "power_telemetry_interval_sec", "power_source", "power_scope",

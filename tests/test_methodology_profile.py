@@ -121,6 +121,17 @@ def test_vllm_profile_records_one_cache_policy_for_server_and_native_workloads()
     assert "vllm:kv_cache=fp8" in profile["effective_optimizations"]
 
 
+def test_vllm_profile_records_native_mtp_only_for_server_text_generation():
+    enabled = resolve_methodology_profile(
+        engine_name="vllm", tests=["llm"], cpu_only=False, mtp_enabled=True,
+    )
+    native_only = resolve_methodology_profile(
+        engine_name="vllm", tests=["vllmbench"], cpu_only=False, mtp_enabled=True,
+    )
+    assert "vllm:native_mtp=on" in enabled["effective_optimizations"]
+    assert "vllm:native_mtp=on" not in native_only["effective_optimizations"]
+
+
 def test_vllm_profile_records_redacted_platform_launcher_overrides():
     profile = resolve_methodology_profile(
         engine_name="vllm", tests=["conv"], cpu_only=False,

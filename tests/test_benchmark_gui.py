@@ -315,12 +315,14 @@ def test_normalize_gui_option_values_converts_controls_and_trims_paths():
     raw = {
         **GUI_OPTION_DEFAULTS, "runs": "5", "timeout": "bad",
         "gpu_split_mode": "Tensor parallel (experimental)", "out": " result.json ",
+        "mtp": "Both",
         "comfyui": " /ComfyUI ",
     }
     options = normalize_gui_option_values(raw)
     assert options["runs"] == 5
     assert options["timeout"] == "bad"
     assert options["gpu_split_mode"] == "tensor"
+    assert options["mtp"] == "both"
     assert options["out"] == "result.json"
     assert options["comfyui"] == "/ComfyUI"
 

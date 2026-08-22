@@ -107,7 +107,7 @@ def test_frontend_gap_gate_can_report_declared_and_unbound_gaps():
 def test_build_command_includes_execution_modes_when_selected():
     options = dict(
         GUI_OPTION_DEFAULTS, offline=True, gpu_split_mode="tensor",
-        retry_crashed_models=True, llamacpp_no_repack=True,
+        retry_crashed_models=True, llamacpp_no_repack=True, mtp="both",
     )
     command = build_benchmark_command(
         "llamacpp", Path("ComfyUI"), ["llm"],
@@ -117,6 +117,7 @@ def test_build_command_includes_execution_modes_when_selected():
     assert "--retry-crashed-models" in command
     assert "--llamacpp-no-repack" in command
     assert command[command.index("--gpu-split-mode") + 1] == "tensor"
+    assert command[command.index("--mtp") + 1] == "both"
 
 
 def test_build_command_explicitly_disables_default_memory_telemetry():
@@ -257,6 +258,15 @@ def test_saved_gui_state_defaults_legacy_missing_gpu_split_to_layer(tmp_path):
     path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
     loaded = load_frontend_state(path)
     assert loaded is not None and loaded["gui_options"]["gpu_split_mode"] == "layer"
+
+
+def test_saved_gui_state_defaults_legacy_missing_mtp_to_off(tmp_path):
+    path = tmp_path / "state.json"
+    options = dict(GUI_OPTION_DEFAULTS)
+    del options["mtp"]
+    path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
+    loaded = load_frontend_state(path)
+    assert loaded is not None and loaded["gui_options"]["mtp"] == "off"
 
 
 def test_saved_gui_state_rejects_unknown_gpu_split_mode(tmp_path):

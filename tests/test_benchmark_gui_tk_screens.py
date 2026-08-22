@@ -201,6 +201,28 @@ def test_progress_rows_partition_selected_models_by_engine(tk_shell):
     screen.window.destroy()
 
 
+def test_progress_rows_separate_mtp_pass_and_filter_incompatible_models(tk_shell):
+    root, _notebook, tk, ttk = tk_shell
+    entries = [
+        MenuEntry("qwen3.5:4b-q4_K_M", "Qwen", "llm", "Small", True),
+        MenuEntry("gemma3:1b-it-q4_K_M", "Gemma", "llm", "Small", True),
+    ]
+    owners = {entry.value: {"vllm"} for entry in entries}
+    screen = ProgressScreen(
+        root, tk, ttk, update_progress_metrics, progress_summary_rows,
+        progress_event_engine, progress_model_identity,
+    )
+    screen.show(
+        ["llm", "emb", "vllmbench", "img"], entries,
+        ["vllm · MTP off", "vllm · MTP on"], owners, show_vram=False,
+    )
+    root.update_idletasks()
+    assert ("vllm · MTP on", "llm", "qwen3.5:4b-q4_K_M") in screen.model_vars
+    assert ("vllm · MTP on", "llm", "gemma3:1b-it-q4_K_M") not in screen.model_vars
+    assert ("vllm · MTP on", "emb") not in screen.stage_vars
+    assert ("vllm · MTP on", "vllmbench") not in screen.stage_vars
+    screen.window.destroy()
+
 def descendants(widget):
     children = list(widget.winfo_children())
     return [*children, *(item for child in children for item in descendants(child))]

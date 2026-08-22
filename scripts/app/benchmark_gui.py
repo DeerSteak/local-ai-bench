@@ -58,8 +58,10 @@ from scripts.setup.runtime_update import (
 from scripts.stage_registry import STAGE_ORDER
 from scripts.runtime.pause_control import PAUSE_CONTROL_ENV, create_pause_control, write_pause_state
 from scripts.runtime.progress_events import PROGRESS_PREFIX
+from scripts.runtime.mtp import mtp_progress_names
 from scripts.runtime.crash_cache import clear_crash_caches, crash_cache_paths
 from scripts.runtime.shared import Shared
+from scripts.workloads.models import LLM_MODELS
 from scripts.setup.setup_config import (
     available_gpu_split_modes, configured_comfyui_dir, configured_gpu_devices,
     load_setup_config,
@@ -96,6 +98,7 @@ from scripts.app.benchmark_gui_support import (
     BENCHMARK_PRESETS,
     CUSTOM_PRESET,
     GPU_SPLIT_MODE_LABELS,
+    MTP_MODE_LABELS,
     apply_hardware_model_defaults,
     build_discovery_report,
     build_plan_preview,
@@ -106,6 +109,7 @@ from scripts.app.benchmark_gui_support import (
     format_run_outcome,
     gpu_split_mode_labels,
     gpu_split_mode_value,
+    mtp_mode_value,
     history_row_height,
     parse_progress_line,
     plan_preview_sections,
@@ -225,6 +229,7 @@ def normalize_gui_option_values(values: dict[str, Any]) -> dict[str, Any]:
     except (TypeError, ValueError):
         options["ambient_temp_c"] = values["ambient_temp_c"]
     options["gpu_split_mode"] = gpu_split_mode_value(values["gpu_split_mode"])
+    options["mtp"] = mtp_mode_value(values["mtp"])
     for key in ("cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
                 "power_telemetry", "llamacpp_no_repack"):
         options[key] = values[key]
@@ -442,6 +447,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         for key, value in options.items()
     }
     option_vars["gpu_split_mode"].set(GPU_SPLIT_MODE_LABELS[options["gpu_split_mode"]])
+    option_vars["mtp"].set(MTP_MODE_LABELS[options["mtp"]])
     if not option_vars["comfyui"].get():
         option_vars["comfyui"].set(str(detected_comfyui))
     preset_var = tk.StringVar(value=restored_preset_name(saved))
@@ -632,6 +638,18 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         gpu_mode_row, text="Reset", width=6,
         command=lambda: option_vars["gpu_split_mode"].set(GPU_SPLIT_MODE_LABELS["layer"]),
     ).grid(row=0, column=2, padx=(8, 0))
+    mtp_row = execution_row(pady=2)
+    ttk.Label(mtp_row, text="Native MTP (supported vLLM models)").grid(
+        row=0, column=0, sticky="w",
+    )
+    ttk.Combobox(
+        mtp_row, state="readonly", textvariable=option_vars["mtp"],
+        values=tuple(MTP_MODE_LABELS.values()), width=30,
+    ).grid(row=0, column=1, sticky="w", padx=(10, 0))
+    ttk.Button(
+        mtp_row, text="Reset", width=6,
+        command=lambda: option_vars["mtp"].set(MTP_MODE_LABELS["off"]),
+    ).grid(row=0, column=2, padx=(8, 0))
     labels = (("warmup", f"Warmup runs (default {config.WARMUP_RUNS})"),
               ("runs", f"Measured runs (1–10; default {config.N_RUNS})"),
               ("timeout", f"Run timeout, seconds (default {config.RUN_TIMEOUT})"),
@@ -727,10 +745,14 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         defaults = custom_option_defaults(detected_comfyui)
         for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget",
                     "sustained_duration", "ambient_temp_c", "gpu_split_mode",
+                    "mtp",
                     "cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
                     "power_telemetry", "llamacpp_no_repack"):
             variable = option_vars[key]
-            value = GPU_SPLIT_MODE_LABELS[defaults[key]] if key == "gpu_split_mode" else defaults[key]
+            value = (
+                GPU_SPLIT_MODE_LABELS[defaults[key]] if key == "gpu_split_mode"
+                else MTP_MODE_LABELS[defaults[key]] if key == "mtp" else defaults[key]
+            )
             variable.set(value)
 
     def reset_paths():
@@ -807,6 +829,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             for key, value in state.get("gui_options", {}).items():
                 if key == "gpu_split_mode":
                     option_vars[key].set(GPU_SPLIT_MODE_LABELS[requested_split])
+                elif key == "mtp":
+                    option_vars[key].set(MTP_MODE_LABELS[mtp_mode_value(value)])
                 else:
                     option_vars[key].set(value if isinstance(value, bool) else str(value))
         finally:
@@ -1144,7 +1168,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         launch_process(
             preparation.command, "benchmark", [],
             "Benchmark is running. Results are checkpointed throughout the run.",
-            tests, entries, parse_engine_selection(engine_var.get()),
+            tests, entries, mtp_progress_names(
+                parse_engine_selection(engine_var.get()), gui_options["mtp"], LLM_MODELS,
+            ),
             "Benchmark could not start",
         )
 

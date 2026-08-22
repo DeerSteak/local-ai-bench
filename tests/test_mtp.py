@@ -1,7 +1,8 @@
 import pytest
 
 from scripts.runtime.mtp import (
-    mtp_mode_states, mtp_pass_label, mtp_tests, native_mtp_config, native_mtp_models,
+    expand_mtp_passes, mtp_mode_states, mtp_pass_label, mtp_progress_names, mtp_tests,
+    native_mtp_config, native_mtp_models,
 )
 from scripts.workloads.models import LLM_MODELS
 
@@ -51,3 +52,48 @@ def test_mtp_on_keeps_only_server_backed_generation_workloads():
 def test_mtp_pass_label_distinguishes_progress_identity():
     assert mtp_pass_label("vllm", False) == "vllm · MTP off"
     assert mtp_pass_label("vllm", True) == "vllm · MTP on"
+
+
+def test_both_mode_keeps_full_baseline_and_filters_native_mtp_pass():
+    capable = {"tag": "capable", "native_mtp": {"vllm": {"num_speculative_tokens": 1}}}
+    unsupported = {"tag": "unsupported"}
+    scope = {
+        "name": "vllm", "tests": ["llm", "emb", "conc_chat", "img"],
+        "llm_models": [capable, unsupported],
+        "concurrency_models": [capable, unsupported],
+        "embedding_models": [{"tag": "embed"}],
+    }
+    passes = expand_mtp_passes([scope], "both")
+    assert [(item["mtp_enabled"], item["tests"]) for item in passes] == [
+        (False, ["llm", "emb", "conc_chat", "img"]),
+        (True, ["llm", "conc_chat"]),
+    ]
+    assert [model["tag"] for model in passes[1]["llm_models"]] == ["capable"]
+    assert [model["tag"] for model in passes[1]["concurrency_models"]] == ["capable"]
+    assert passes[1]["progress_name"] == "vllm · MTP on"
+
+
+def test_on_mode_drops_engines_and_workloads_without_native_mtp_support():
+    scope = {
+        "name": "llamacpp", "tests": ["llm", "llamabench", "img"],
+        "llm_models": [{"tag": "plain"}], "concurrency_models": [],
+    }
+    assert expand_mtp_passes([scope], "on") == []
+
+
+def test_on_mode_can_run_only_a_capable_concurrency_scope():
+    capable = {"tag": "capable", "native_mtp": {"vllm": {"num_speculative_tokens": 1}}}
+    scope = {
+        "name": "vllm", "tests": ["llm", "conc_tool"],
+        "llm_models": [], "concurrency_models": [capable],
+    }
+    assert expand_mtp_passes([scope], "on")[0]["tests"] == ["conc_tool"]
+
+
+def test_progress_names_include_only_engines_with_an_mtp_pass():
+    models = [{
+        "tag": "capable", "native_mtp": {"vllm": {"num_speculative_tokens": 1}},
+    }]
+    assert mtp_progress_names(["llamacpp", "vllm"], "both", models) == [
+        "llamacpp · MTP off", "vllm · MTP off", "vllm · MTP on",
+    ]

@@ -19,7 +19,8 @@ def effective_gpu_split_mode(cpu_only: bool) -> str:
 
 def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
                                 vllm_kv_cache_dtype: str = "auto",
-                                vllm_launcher_args: list[str] | None = None) -> dict:
+                                vllm_launcher_args: list[str] | None = None,
+                                mtp_enabled: bool = False) -> dict:
     optimizations = []
     selected = set(tests)
     if engine_name == "llamacpp" and selected & ENGINE_STAGES:
@@ -39,6 +40,8 @@ def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
         optimizations.append(f"vllm:bench_iters={config.VLLMBENCH_ITERS}")
     if engine_name == "vllm" and selected & (ENGINE_STAGES | {"vllmbench"}):
         optimizations.append(f"vllm:kv_cache={vllm_kv_cache_dtype}")
+        if mtp_enabled and selected & TEXT_GENERATION_STAGES:
+            optimizations.append("vllm:native_mtp=on")
         if vllm_launcher_args and selected & ENGINE_STAGES:
             optimizations.append(f"vllm:launcher_args={' '.join(vllm_launcher_args)}")
     if selected & {"llamabench", "llamabenchconc"}:
