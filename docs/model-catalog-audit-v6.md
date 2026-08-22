@@ -111,7 +111,7 @@ Image decisions use complete dependency size, peak memory, supported resolution,
 
 ## Sampling profiles
 
-The comparable baseline will explicitly resolve every supported text-generation sampler control for llama.cpp and vLLM rather than inheriting engine or repository defaults. Temperature remains zero; neutral top-k/top-p/min-p, presence penalty, frequency penalty, repetition penalty, and seed semantics will be mapped per engine and recorded in the methodology identity before candidate performance runs begin.
+The comparable `deterministic-baseline-v1` sampler is implemented under methodology profile `neutral-v2`. It pins temperature zero; neutral top-k/top-p/min-p, presence penalty, frequency penalty, repetition penalty, seed, and logit bias across llama.cpp and vLLM; neutralizes llama.cpp-specific active samplers; and launches managed vLLM with repository generation defaults disabled. The semantic and engine-resolved controls are stored in run-plan schema 5 methodology identity before candidate performance runs begin.
 
 Publisher-recommended sampling will be optional, source-pinned to an exact model-card revision, and assigned a distinct methodology identity. Publisher-profile results will never pool with or replace deterministic-baseline evidence.
 

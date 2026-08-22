@@ -7,10 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from scripts.results.canonical_json import canonical_json, sha256_json
+from scripts.runtime.sampling import baseline_sampling_profile
 
 
-PLAN_SCHEMA_VERSION = 4
-SUPPORTED_PLAN_SCHEMAS = {1, 2, 3, PLAN_SCHEMA_VERSION}
+PLAN_SCHEMA_VERSION = 5
+SUPPORTED_PLAN_SCHEMAS = {1, 2, 3, 4, PLAN_SCHEMA_VERSION}
 IDENTITY_SCHEME = "sha256-v1"
 SAFE_CONFIG_KEYS = {
     "runs", "warmup_runs", "run_timeout_seconds", "accuracy_timeout_seconds",
@@ -20,7 +21,7 @@ SAFE_CONFIG_KEYS = {
     "concurrency_tool_levels", "concurrency_chat_levels",
     "concurrency_tool_context", "concurrency_chat_context",
     "concurrency_chat_soft_exit_floor",
-    "methodology_profile", "effective_optimizations", "offline",
+    "methodology_profile", "effective_optimizations", "sampling_profile", "offline",
     "gpu_split_mode",
     "llamacpp_no_repack",
     "memory_telemetry", "memory_telemetry_interval_sec",
@@ -33,7 +34,7 @@ REQUIRED_CONFIG_KEYS = {"warmup_runs", "cpu_only", "force_all"}
 MODEL_FAMILIES = {"llm", "concurrency", "embeddings", "images"}
 SAFE_MODEL_KEYS = {"tag", "short", "size_gb", "params_b"}
 EXECUTION_CONFIG_KEYS = set(SAFE_CONFIG_KEYS) - {
-    "methodology_profile", "effective_optimizations", "offline", "gpu_split_mode",
+    "methodology_profile", "effective_optimizations", "sampling_profile", "offline", "gpu_split_mode",
     "retry_crashed_models", "llamacpp_no_repack",
     "memory_telemetry", "memory_telemetry_interval_sec",
     "power_telemetry", "power_telemetry_interval_sec", "power_source", "power_scope",
@@ -164,6 +165,10 @@ class RunPlan:
                 "profile": settings["methodology_profile"],
                 "effective_optimizations": settings.get("effective_optimizations", []),
             }
+            if "sampling_profile" in settings:
+                identity["methodology"]["sampling"] = settings["sampling_profile"]
+        elif "sampling_profile" in settings:
+            raise ValueError("sampling profile requires a methodology profile")
         telemetry = {}
         if settings.get("power_telemetry"):
             telemetry["power"] = {
@@ -295,13 +300,31 @@ class RunPlan:
         if settings.get("gpu_split_mode", "layer") not in ("single", "layer", "tensor"):
             raise ValueError("invalid execution setting: gpu_split_mode")
         if "methodology_profile" in settings:
-            if settings["methodology_profile"] != "neutral-v1":
+            allowed_profiles = {"neutral-v1", "neutral-v2"}
+            if settings["methodology_profile"] not in allowed_profiles:
                 raise ValueError("invalid execution setting: methodology_profile")
+            if self.schema_version >= 5 and settings["methodology_profile"] != "neutral-v2":
+                raise ValueError("run-plan schema 5 requires neutral-v2 methodology")
             optimizations = settings.get("effective_optimizations")
             if (not isinstance(optimizations, list)
                     or any(not isinstance(value, str) or not value for value in optimizations)
                     or len(optimizations) != len(set(optimizations))):
                 raise ValueError("invalid execution setting: effective_optimizations")
+        elif "sampling_profile" in settings:
+            raise ValueError("sampling profile requires a methodology profile")
+        generation_stages = {
+            "llm", "conv", "mcq", "math", "reasoning", "code", "tool",
+            "conc_tool", "conc_chat",
+        }
+        requires_sampling = (
+            self.schema_version >= 5
+            and self.engine_name in {"llamacpp", "vllm"}
+            and bool(set(self.tests) & generation_stages)
+            and "methodology_profile" in settings
+        )
+        if requires_sampling and settings.get("sampling_profile") != baseline_sampling_profile(
+                self.engine_name):
+            raise ValueError("invalid execution setting: sampling_profile")
         for key in (
             "max_prompt_tokens", "sample_size", "concurrency_tool_context",
             "concurrency_chat_context", "concurrency_chat_soft_exit_floor",

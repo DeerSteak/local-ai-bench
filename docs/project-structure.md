@@ -154,6 +154,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `results/result_store.py` | Atomic JSON writer plus the narrow result-section and run/stage transition API |
 | `runtime/llamacpp_tools.py` | System-first discovery shared by setup, llama-server, llama-bench, and llama-batched-bench |
 | `runtime/config.py` | Shared constants (URLs, paths, timeouts, run counts) |
+| `runtime/sampling.py` | Versioned semantic sampler profiles and exact llama.cpp/vLLM payload mappings |
 | `runtime/model_identity.py` | Filesystem-safe normalization shared by engine and setup model paths |
 | `setup/model_inventory.py` | Installed-model discovery/classification plus narrowly scoped non-catalog llama.cpp folder cleanup |
 | `setup/custom_models.py` | Gitignored engine-specific custom-model provenance registry |

@@ -7,7 +7,8 @@ def test_neutral_profile_records_only_settings_for_selected_runtime_paths():
     profile = resolve_methodology_profile(
         engine_name="llamacpp", tests=["llm", "llamabench", "img"], cpu_only=False,
     )
-    assert profile["profile"] == "neutral-v1"
+    assert profile["profile"] == "neutral-v2"
+    assert profile["sampling_profile"]["profile"] == "deterministic-baseline-v1"
     assert profile["effective_optimizations"] == [
         f"llamacpp:batch={config.LLAMACPP_NUM_BATCH}",
         f"llamacpp:kv_cache={config.LLAMACPP_KV_CACHE_TYPE}",
@@ -72,7 +73,26 @@ def test_non_llamacpp_engine_does_not_inherit_llamacpp_settings():
     profile = resolve_methodology_profile(
         engine_name="future", tests=["llm"], cpu_only=False,
     )
-    assert profile == {"profile": "neutral-v1", "effective_optimizations": []}
+    assert profile == {"profile": "neutral-v2", "effective_optimizations": []}
+
+
+def test_embedding_only_profile_does_not_claim_text_sampling_controls():
+    profile = resolve_methodology_profile(
+        engine_name="vllm", tests=["emb"], cpu_only=False,
+    )
+    assert "sampling_profile" not in profile
+
+
+def test_text_sampling_profile_maps_to_the_selected_engine():
+    llama = resolve_methodology_profile(
+        engine_name="llamacpp", tests=["llm"], cpu_only=False,
+    )["sampling_profile"]
+    vllm = resolve_methodology_profile(
+        engine_name="vllm", tests=["llm"], cpu_only=False,
+    )["sampling_profile"]
+    assert llama["semantic_controls"] == vllm["semantic_controls"]
+    assert "repeat_penalty" in llama["engine_controls"]
+    assert "repetition_penalty" in vllm["engine_controls"]
 
 
 def test_vllm_profile_records_one_cache_policy_for_server_and_native_workloads():

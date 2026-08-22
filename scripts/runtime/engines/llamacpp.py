@@ -20,6 +20,7 @@ import gguf
 import requests
 
 from scripts.runtime import config
+from scripts.runtime.sampling import baseline_sampling_payload
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool, probe_llamacpp_backend
 from scripts.runtime.engines.base import ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine
 from scripts.runtime.engines import openai_api
@@ -541,9 +542,9 @@ class LlamaCppEngine(InferenceEngine):
         model_load_sec = time.perf_counter() - operation_start
 
         payload = json.dumps({
+            **baseline_sampling_payload(self.name),
             "prompt": prompt,
             "n_predict": config.GENERATE_MAX_TOKENS,
-            "temperature": 0.0,
             "stream": True,
             "return_tokens": True,
             "cache_prompt": False,
@@ -623,9 +624,9 @@ class LlamaCppEngine(InferenceEngine):
                       deadline: float, num_predict: int,
                       check_loop: bool, budget_nudged: bool) -> dict:
         payload = {
+            **baseline_sampling_payload(self.name),
             "messages": messages,
             "n_predict": num_predict,
-            "temperature": 0.0,
             "stream": True,
             "stream_options": {"include_usage": True},
         }

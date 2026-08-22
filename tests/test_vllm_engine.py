@@ -95,6 +95,7 @@ def test_bare_serve_is_used_without_a_launcher(engine):
     command = engine.server_command("org/m", 4096)
     assert command[:3] == ["/usr/bin/vllm", "serve", "org/m"]
     assert "--port" in command
+    assert command[command.index("--generation-config") + 1] == "vllm"
 
 
 def test_fp8_cache_is_selected_only_for_supported_accelerator_backends(engine):
@@ -372,6 +373,10 @@ def test_generate_counts_tokens_from_streamed_usage(engine, monkeypatch):
     assert captured["payload"]["stream_options"] == {"include_usage": True}
     assert isinstance(captured["payload"]["cache_salt"], str)
     assert len(captured["payload"]["cache_salt"]) >= 32
+    from scripts.runtime.sampling import baseline_sampling_payload
+    assert {
+        key: captured["payload"][key] for key in baseline_sampling_payload("vllm")
+    } == baseline_sampling_payload("vllm")
 
 
 def test_generate_uses_a_fresh_cache_salt_per_request(engine, monkeypatch):
@@ -437,6 +442,10 @@ def test_chat_uses_usage_for_tokens_and_prompt_count(engine, monkeypatch):
     assert (result.generated_tokens, result.prompt_tokens) == (5, 12)
     assert result.response_text == "Yes indeed"
     assert captured["path"] == "/v1/chat/completions"
+    from scripts.runtime.sampling import baseline_sampling_payload
+    assert {
+        key: captured["payload"][key] for key in baseline_sampling_payload("vllm")
+    } == baseline_sampling_payload("vllm")
 
 
 def test_chat_measurement_routes_the_combined_tps_through_sanitize_tps(engine, monkeypatch):

@@ -22,6 +22,7 @@ import requests
 import psutil
 
 from scripts.runtime import config
+from scripts.runtime.sampling import baseline_sampling_payload
 from scripts.runtime.engines import openai_api
 from scripts.runtime.engines.chat_flow import chat_measurement, run_bounded_chat, validate_chat_budget
 from scripts.runtime.engines.base import (
@@ -716,6 +717,7 @@ class VllmEngine(InferenceEngine):
                        chat_template: str | None = None) -> list[str]:
         """Argv serving `repo` from the managed runtime, with a platform launcher fallback."""
         options = ["--served-model-name", repo,
+                    "--generation-config", "vllm",
                     "--max-num-seqs", str(n_parallel),
                     "--gpu-memory-utilization", str(self._gpu_memory_utilization)]
         if self._kv_cache_dtype != "auto" and not embedding:
@@ -918,10 +920,10 @@ class VllmEngine(InferenceEngine):
         model_load_sec = time.perf_counter() - operation_start
 
         payload = {
+            **baseline_sampling_payload(self.name),
             "model": self._loaded_model_id or self._repo(tag),
             "prompt": prompt,
             "max_tokens": config.GENERATE_MAX_TOKENS,
-            "temperature": 0.0,
             "stream": True,
             "stream_options": {"include_usage": True},
             "cache_salt": secrets.token_urlsafe(32),
@@ -974,9 +976,9 @@ class VllmEngine(InferenceEngine):
                       deadline: float, num_predict: int,
                       check_loop: bool, budget_nudged: bool) -> dict:
         payload = {
+            **baseline_sampling_payload(self.name),
             "model": self._loaded_model_id or self._repo(tag),
             "messages": messages,
-            "temperature": 0.0,
             "stream": True,
             "stream_options": {"include_usage": True},
         }

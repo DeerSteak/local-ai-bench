@@ -221,7 +221,7 @@ If you see repeated connection errors or crashes during the embedding tests (som
 
 ## Accuracy
 
-All five accuracy workloads use the same `--llm-models` selection as single-shot and conversation; `--models` remains its backward-compatible alias. Since decoding is deterministic (temperature 0), each workload makes one measured pass and ignores `--runs`.
+All five accuracy workloads use the same `--llm-models` selection as single-shot and conversation; `--models` remains its backward-compatible alias. Since decoding uses the identity-bearing `deterministic-baseline-v1` profile—temperature 0 plus explicit neutral shared and engine-specific logit controls—each workload makes one measured pass and ignores `--runs`.
 
 Question banks are validated when loaded, before any model inference begins: every question needs an ID and category, IDs must be unique, and each workload requires the fields it consumes during inference and scoring. Scoring repeats the common validation defensively for programmatically supplied questions but omits a missing optional breakdown value instead of discarding completed measurements.
 

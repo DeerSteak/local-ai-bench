@@ -401,6 +401,10 @@ def test_generate_requests_n_predict_from_config_constant(monkeypatch):
     LlamaCppEngine().generate("some-tag", "prompt")
     assert captured[0]["n_predict"] == config.GENERATE_MAX_TOKENS
     assert captured[0]["cache_prompt"] is False
+    from scripts.runtime.sampling import baseline_sampling_payload
+    assert {
+        key: captured[0][key] for key in baseline_sampling_payload("llamacpp")
+    } == baseline_sampling_payload("llamacpp")
 
 
 def test_generate_uses_server_reported_timings(monkeypatch):
@@ -758,6 +762,11 @@ def test_budgeted_chat_two_streams_send_exact_split_and_return_second(monkeypatc
         timeout=60, num_predict=-1, token_budget=10,
     )
     assert [request["payload"]["n_predict"] for request in captured] == [6, 4]
+    from scripts.runtime.sampling import baseline_sampling_payload
+    for request in captured:
+        assert {
+            key: request["payload"][key] for key in baseline_sampling_payload("llamacpp")
+        } == baseline_sampling_payload("llamacpp")
     assert captured[1]["payload"]["messages"][-2:] == [
         {"role": "assistant", "content": "unfinished"},
         {"role": "user", "content": config.ACC_FINALIZE_MESSAGE},

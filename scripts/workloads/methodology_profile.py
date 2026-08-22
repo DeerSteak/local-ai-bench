@@ -1,12 +1,14 @@
 """Resolved neutral methodology profile and effective runtime settings."""
 
 from scripts.runtime import config
+from scripts.runtime.sampling import baseline_sampling_profile
 
 
 ENGINE_STAGES = {
     "llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool",
     "conc_tool", "conc_chat",
 }
+TEXT_GENERATION_STAGES = ENGINE_STAGES - {"emb"}
 
 
 def effective_gpu_split_mode(cpu_only: bool) -> str:
@@ -55,7 +57,10 @@ def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
             )
     if "img" in selected:
         optimizations.append("comfyui:dynamic_vram=disabled")
-    return {
-        "profile": "neutral-v1",
+    resolved = {
+        "profile": "neutral-v2",
         "effective_optimizations": optimizations,
     }
+    if engine_name in {"llamacpp", "vllm"} and selected & TEXT_GENERATION_STAGES:
+        resolved["sampling_profile"] = baseline_sampling_profile(engine_name)
+    return resolved

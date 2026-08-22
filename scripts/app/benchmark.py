@@ -1123,6 +1123,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "ambient_temp_c": args.ambient_temp_c,
             "methodology_profile": methodology["profile"],
             "effective_optimizations": methodology["effective_optimizations"],
+            **({"sampling_profile": methodology["sampling_profile"]}
+               if "sampling_profile" in methodology else {}),
         }
         plan_models = selected_plan_models(
             tests, llm_models, conc_models, embedding_models, image_models,

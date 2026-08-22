@@ -516,7 +516,7 @@ Repository entries below are starting points for the audit, not compatibility cl
 - [ ] Selection and retirement criteria were committed before candidate benchmark results were interpreted.
 - [ ] Every registered LLM candidate has exact upstream identity, license, context, architecture, GGUF, and current llama.cpp compatibility recorded.
 - [ ] Every candidate has a pinned safetensors and GGUF repository plus exact artifact and revision, or an explicit not-applicable entry, before compatibility testing begins.
-- [ ] The baseline explicitly pins every supported sampling control across llama.cpp and vLLM; it never silently inherits engine or repository defaults.
+- [x] The baseline explicitly pins every supported sampling control across llama.cpp and vLLM; it never silently inherits engine or repository defaults.
 - [ ] Publisher-recommended sampling is an opt-in, source-pinned profile with a distinct methodology identity and is never pooled with the deterministic baseline.
 - [ ] EmbeddingGemma 300M and Qwen3 Embedding 0.6B/4B are compared with both current embedding entries, with quality limitations stated explicitly.
 - [ ] FLUX.2 Klein 4B and Z-Image Turbo are compared with the current image lineup using complete pipeline size and a fixed quality/performance workflow.

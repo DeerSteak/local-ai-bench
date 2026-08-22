@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from scripts.results.run_plan import IDENTITY_SCHEME, PLAN_SCHEMA_VERSION, RunPlan, load_run_plan
+from scripts.runtime.sampling import baseline_sampling_profile
 
 
 def make_plan(**overrides):
@@ -97,20 +98,38 @@ def test_measurement_affecting_changes_produce_a_new_plan_identity(change):
 def test_methodology_profile_is_identity_bearing_and_validated():
     config = complete_plan().effective_config
     config.update({
-        "methodology_profile": "neutral-v1",
+        "methodology_profile": "neutral-v2",
         "effective_optimizations": ["llamacpp:flash_attention=on"],
+        "sampling_profile": baseline_sampling_profile("llamacpp"),
     })
     plan = make_plan(effective_config=config)
     methodology = plan.execution_identity["methodology"]
     assert methodology == {
-        "profile": "neutral-v1",
+        "profile": "neutral-v2",
         "effective_optimizations": ["llamacpp:flash_attention=on"],
+        "sampling": baseline_sampling_profile("llamacpp"),
     }
     changed = dict(config, effective_optimizations=["llamacpp:flash_attention=off"])
     assert make_plan(effective_config=changed).plan_id != plan.plan_id
     invalid = dict(config, methodology_profile="vendor-fast")
     with pytest.raises(ValueError, match="methodology_profile"):
         make_plan(effective_config=invalid).validate_for_execution()
+
+    missing = dict(config)
+    del missing["sampling_profile"]
+    with pytest.raises(ValueError, match="sampling_profile"):
+        make_plan(effective_config=missing).validate_for_execution()
+
+
+def test_schema_4_neutral_v1_plan_remains_readable_without_sampling_identity():
+    config = complete_plan().effective_config
+    config.update({
+        "methodology_profile": "neutral-v1",
+        "effective_optimizations": ["llamacpp:flash_attention=on"],
+    })
+    plan = make_plan(effective_config=config, schema_version=4)
+    plan.validate_for_execution()
+    assert "sampling" not in plan.execution_identity["methodology"]
 
 
 def test_offline_mode_is_identity_bearing_without_changing_legacy_plans():
