@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 _REPO_RE = re.compile(r"^[A-Za-z0-9][\w.-]*/[A-Za-z0-9][\w.-]*$")
 _PART_RE = re.compile(r"^(.*)-(\d{5})-of-(\d{5})\.gguf$", re.IGNORECASE)
 _TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-_AUX_GGUF_RE = re.compile(r"(?:^|[-_.])(mmproj|dflash|draft)(?:[-_.]|$)", re.IGNORECASE)
+_AUX_GGUF_RE = re.compile(r"(?:^|[-_.])(mmproj|dflash|draft|mtp)(?:[-_.]|$)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
