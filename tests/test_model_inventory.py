@@ -123,6 +123,32 @@ def test_installed_images_resolve_catalog_checkpoint_folder(tmp_path):
     assert installed[0]["size"] == 7
 
 
+def test_installed_image_requires_every_support_asset(tmp_path):
+    model = {
+        "short": "pipeline", "label": "Pipeline", "checkpoint": "model.safetensors",
+        "checkpoint_folder": "diffusion_models",
+        "support_assets": [
+            {"folder": "text_encoders", "name": "encoder.safetensors"},
+            {"folder": "vae", "name": "vae.safetensors"},
+        ],
+    }
+    for folder, name in (
+        ("diffusion_models", "model.safetensors"),
+        ("text_encoders", "encoder.safetensors"),
+    ):
+        path = tmp_path / folder / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"asset")
+
+    assert installed_image_models(tmp_path, [model]) == []
+    vae = tmp_path / "vae" / "vae.safetensors"
+    vae.parent.mkdir(parents=True)
+    vae.write_bytes(b"asset")
+    assert [entry["short"] for entry in installed_image_models(tmp_path, [model])] == [
+        "pipeline",
+    ]
+
+
 def test_installed_images_empty_when_checkpoint_directory_missing(tmp_path):
     assert installed_image_models(tmp_path, IMAGE_CATALOG) == []
 

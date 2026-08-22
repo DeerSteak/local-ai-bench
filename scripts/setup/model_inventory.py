@@ -8,6 +8,7 @@ from scripts.runtime import config, hardware
 from scripts.setup.custom_models import forget_custom_models
 from scripts.workloads.models import (
     EMBED_MODELS, IMAGE_MODELS, LLM_MODELS, image_checkpoint_path,
+    image_required_asset_paths,
 )
 from scripts.runtime.model_identity import model_tag_slug
 
@@ -187,7 +188,7 @@ def installed_image_models(models_dir: Path, image_catalog: list[dict] | None = 
     installed = []
     for model in image_catalog:
         path = image_checkpoint_path(model, models_dir)
-        if path.exists():
+        if all(asset.is_file() for asset in image_required_asset_paths(model, models_dir)):
             installed.append({**model, "size": path.stat().st_size, "path": path})
     return installed
 

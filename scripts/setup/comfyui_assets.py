@@ -46,17 +46,21 @@ def provision(selected_images: list[dict], models_dir: Path, *, find_asset, down
             fail(f"{model['label']} download failed — check token and license acceptance")
         else:
             warn(f"{model['label']} download failed — image benchmarks will run without it")
+    ready = []
     for model in selected_images:
         if model["checkpoint"] not in found:
             continue
+        complete = True
         for asset in model.get("support_assets", ()):
-            _download_support(
+            complete = _download_support(
                 asset["name"], asset["folder"], asset["repo"], asset["remote"],
                 models_dir / asset["folder"], find_asset, download, load_token, warn, ok,
                 save_as=asset["name"], gated=asset.get("gated", False),
-            )
+            ) and complete
+        if complete:
+            ready.append(model["checkpoint"])
 
-    return found
+    return ready
 
 
 def missing_download_size_gb(selected_images: list[dict], find_asset) -> float:
@@ -81,15 +85,17 @@ def missing_download_size_gb(selected_images: list[dict], find_asset) -> float:
 def _download_support(filename: str, subdir: str, repo: str, remote: str,
                       destination: Path, find_asset, download, load_token,
                       warn, ok, *, save_as: str | None = None,
-                      gated: bool = False) -> None:
+                      gated: bool = False) -> bool:
     if find_asset(filename, subdir):
         ok(f"{filename} already present")
-        return
+        return True
     token = load_token()
     if gated and not token:
         warn(f"Skipping {filename} — no token provided")
-        return
+        return False
     if download(repo, remote, token=token, dest_dir=destination, save_as=save_as):
         ok(f"{filename} downloaded")
+        return True
     else:
         warn(f"{filename} download failed — image generation will error")
+        return False

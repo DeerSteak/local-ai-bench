@@ -115,6 +115,24 @@ def test_z_image_existing_pipeline_is_not_redownloaded(tmp_path):
     assert downloads == []
 
 
+def test_pipeline_is_not_ready_when_a_support_asset_download_fails(tmp_path):
+    selected = [{
+        "short": "pipeline", "label": "Pipeline", "checkpoint": "model.safetensors",
+        "support_assets": [
+            {"name": "encoder.safetensors", "folder": "text_encoders",
+             "repo": "owner/model", "remote": "encoder.safetensors"},
+        ],
+    }]
+
+    found = provision(
+        selected, tmp_path, find_asset=lambda *_args: None,
+        download=lambda _repo, remote, **_kwargs: remote == "model.safetensors",
+        load_token=lambda: "", info=_log, warn=_log, fail=_log, ok=_log,
+    )
+
+    assert found == []
+
+
 def test_missing_download_size_counts_complete_z_image_pipeline_once():
     z_image = next(model for model in IMAGE_MODELS if model["short"] == "z-image-turbo")
     duplicate = dict(z_image)

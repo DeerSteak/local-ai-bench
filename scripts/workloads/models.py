@@ -346,6 +346,15 @@ def image_checkpoint_path(model: dict, models_dir: Path) -> Path:
     return Path(models_dir) / image_checkpoint_folder(model) / model["checkpoint"]
 
 
+def image_required_asset_paths(model: dict, models_dir: Path) -> list[Path]:
+    paths = [image_checkpoint_path(model, models_dir)]
+    paths.extend(
+        Path(models_dir) / asset["folder"] / asset["name"]
+        for asset in model.get("support_assets", ())
+    )
+    return paths
+
+
 def image_checkpoint_loader(model: dict) -> str:
     return model.get("checkpoint_loader", "CheckpointLoaderSimple")
 
