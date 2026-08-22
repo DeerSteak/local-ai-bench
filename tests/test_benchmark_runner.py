@@ -682,6 +682,7 @@ def test_embedding_runner_reconstructs_plan_and_commits_projection(monkeypatch, 
             "sample_size": None, "concurrency_tool_levels": [1],
             "concurrency_chat_levels": [1], "concurrency_tool_context": 512,
             "concurrency_chat_context": 1024, "concurrency_chat_soft_exit_floor": 1,
+            "mtp_enabled": False, "mtp_configurations": {},
         },
     )
     identity = {
@@ -736,6 +737,7 @@ def test_image_runner_uses_private_paths_and_commits_projection(monkeypatch, tmp
             "sample_size": None, "concurrency_tool_levels": [1],
             "concurrency_chat_levels": [1], "concurrency_tool_context": 512,
             "concurrency_chat_context": 1024, "concurrency_chat_soft_exit_floor": 1,
+            "mtp_enabled": False, "mtp_configurations": {},
         },
     )
     identity = {"plan_id": plan.plan_id, "artifacts": {}, "runtimes": {},

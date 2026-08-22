@@ -473,7 +473,7 @@ For a one-person team, platform qualification uses the normal setup and benchmar
 
 # 9. Model catalog audit and refresh
 
-**Status: complete.** The medium tier now uses Gemma 4 26B-A4B, Qwen 3.8 27B, and Nemotron 3.5 Lightning 30B-A3B. Gemma 3 27B, Qwen 3.6 35B-A3B, and Nemotron Cascade 2 remain dashboard-only legacy identities; Muse Glimmer remains available through custom import. The embedding and image lineups are unchanged.
+**Status: implementation complete; hardware validation pending.** The medium tier now uses Gemma 4 26B-A4B, Qwen 3.8 27B, and Nemotron 3.5 Lightning 30B-A3B. Gemma 3 27B, Qwen 3.6 35B-A3B, and Nemotron Cascade 2 remain dashboard-only legacy identities; Muse Glimmer remains available through custom import. The embedding lineup is unchanged, while Z-Image Turbo replaces SD3.5 Large. Native MTP comparison is implemented for the selected compatible llama.cpp and vLLM artifacts with engine-specific token maximums recorded in run-plan methodology identity.
 
 ## Why this is ninth
 
@@ -513,17 +513,19 @@ Repository entries below are starting points for the audit, not compatibility cl
 
 ## Acceptance criteria
 
-- [x] Every active LLM incumbent has a keep, replace, or legacy-only decision; embedding and image entries remain unchanged.
+- [x] Every active incumbent has a keep, replace, or legacy-only decision; embeddings remain unchanged and Z-Image Turbo replaces SD3.5 Large.
 - [x] Selection and retirement criteria were committed before candidate benchmark results were interpreted.
 - [x] Every accepted LLM candidate has exact runtime artifacts and passed the llama.cpp compatibility screen.
 - [x] Every candidate has a pinned safetensors and GGUF repository plus exact artifact and revision, or an explicit not-applicable entry, before compatibility testing begins.
 - [x] The baseline explicitly pins every supported sampling control across llama.cpp and vLLM; it never silently inherits engine or repository defaults.
-- [x] Embedding and image candidates were deferred without expanding their current lineups.
+- [x] Embedding candidates were deferred, and the accepted image replacement does not expand the active lineup.
 - [x] Accepted candidate screens cover ordinary generation, conversation, interruption, and recovery behavior.
 - [x] Every accepted addition replaces an incumbent rather than expanding the default lineup.
 - [x] No performance-ranking claim is made from the compatibility evidence.
 - [x] Retired entries remain in the legacy dashboard registry and old results render unchanged.
 - [x] The accepted catalog is documented in the permanent catalog and workload documentation.
+- [ ] Native MTP `both` passes complete on real hardware for the four selected llama.cpp artifacts and the selected vLLM artifacts.
+- [ ] Z-Image Turbo completes the managed ComfyUI image workload on real hardware with retained generated-image evidence.
 
 ---
 

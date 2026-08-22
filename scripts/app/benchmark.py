@@ -23,6 +23,7 @@ from scripts.runtime.progress_events import emit_result_saved, set_progress_engi
 from scripts.runtime.comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
 from scripts.workloads.conversation_selection import conv_skip_entry
 from scripts.runtime.shared import Shared
+from scripts.runtime.mtp import active_mtp_configurations
 from scripts.runtime.engines import get_engine, engine_names as registered_engine_names
 from scripts.runtime.engines.vllm import VllmEngine
 from scripts.results.event_store import EventStore
@@ -162,6 +163,7 @@ def runtime_shaping_config(args) -> dict:
         "concurrency_tool_context": config.CONCURRENCY_TOOL_CONTEXT,
         "concurrency_chat_context": config.CONCURRENCY_CHAT_CONTEXT,
         "concurrency_chat_soft_exit_floor": config.CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT,
+        "mtp_enabled": False, "mtp_configurations": {},
         "sustained_duration_sec": getattr(args, "sustained_duration", config.SUSTAINED_DURATION_SEC),
         "sustained_window_sec": config.SUSTAINED_WINDOW_SEC,
         "sustained_context_tokens": config.SUSTAINED_CONTEXT_TOKENS,
@@ -1141,6 +1143,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 sys.exit(interruption_exit_code(sig))
 
         stage_order = ordered_stage_keys(tuple(tests))
+        mtp_configurations = active_mtp_configurations(
+            [*llm_models, *conc_models], engine_name, mtp_enabled,
+        )
         vllm_kv_cache_dtype = "auto"
         vllm_launcher_args = []
         if isinstance(engine, VllmEngine):
@@ -1151,6 +1156,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             vllm_kv_cache_dtype=vllm_kv_cache_dtype,
             vllm_launcher_args=vllm_launcher_args,
             mtp_enabled=mtp_enabled,
+            mtp_configurations=mtp_configurations,
         )
         if "sampling_profile" in methodology:
             engine.set_sampling_profile(methodology["sampling_profile"])
@@ -1185,6 +1191,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "llamacpp_no_repack": args.llamacpp_no_repack,
             "offline": args.offline,
             "mtp_enabled": mtp_enabled,
+            "mtp_configurations": methodology.get("mtp_configurations", {}),
             "progress_engine_name": progress_name,
             "memory_telemetry": args.memory_telemetry,
             "memory_telemetry_interval_sec": (

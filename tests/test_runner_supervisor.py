@@ -218,6 +218,7 @@ def test_internal_runner_executes_journal_plan_and_emits_commit(monkeypatch, tmp
             "concurrency_tool_levels": [1, 2], "concurrency_chat_levels": [1, 2],
             "concurrency_tool_context": 512, "concurrency_chat_context": 1024,
             "concurrency_chat_soft_exit_floor": 2,
+            "mtp_enabled": False, "mtp_configurations": {},
         },
     )
     stage = LLMEventStage(path, plan, lambda _: None)
@@ -281,6 +282,7 @@ def test_conversation_runner_uses_llm_preflight_and_commits_projection(
             "concurrency_tool_levels": [1, 2], "concurrency_chat_levels": [1, 2],
             "concurrency_tool_context": 512, "concurrency_chat_context": 1024,
             "concurrency_chat_soft_exit_floor": 2,
+            "mtp_enabled": False, "mtp_configurations": {},
         },
     )
     model = {"tag": "fake:model", "short": "fake", "label": "Fake"}
@@ -352,6 +354,7 @@ def test_native_runner_reconstructs_plan_and_streams_rows_to_journal(tmp_path):
             "concurrency_tool_levels": [1, 2], "concurrency_chat_levels": [1, 2],
             "concurrency_tool_context": 512, "concurrency_chat_context": 1024,
             "concurrency_chat_soft_exit_floor": 2,
+            "mtp_enabled": False, "mtp_configurations": {},
         },
     )
     owner = NativeBenchEventStage(path, plan, lambda _: None)
@@ -399,6 +402,7 @@ def test_vllm_bench_runner_reconstructs_plan_and_commits_case(tmp_path):
             "concurrency_tool_levels": [1], "concurrency_chat_levels": [1],
             "concurrency_tool_context": 512, "concurrency_chat_context": 1024,
             "concurrency_chat_soft_exit_floor": 1,
+            "mtp_enabled": False, "mtp_configurations": {},
         },
     )
     owner = VllmBenchEventStage(path, plan, lambda _: None)
@@ -436,6 +440,7 @@ def test_concurrency_runner_uses_plan_shape_and_commits_final_batch(tmp_path):
             "concurrency_tool_levels": [1, 2], "concurrency_chat_levels": [1, 4],
             "concurrency_tool_context": 512, "concurrency_chat_context": 2048,
             "concurrency_chat_soft_exit_floor": 4,
+            "mtp_enabled": False, "mtp_configurations": {},
         },
     )
     owner = LLMEventStage(

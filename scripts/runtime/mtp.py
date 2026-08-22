@@ -37,6 +37,28 @@ def native_mtp_models(models: Sequence[dict], engine_name: str) -> list[dict]:
     return [model for model in models if native_mtp_config(model, engine_name)]
 
 
+def active_mtp_configurations(models: Sequence[dict], engine_name: str,
+                              enabled: bool) -> dict[str, dict]:
+    if not enabled:
+        return {}
+    configurations = {}
+    for model in models:
+        config = native_mtp_config(model, engine_name)
+        if config is None:
+            continue
+        tag = model.get("tag")
+        if not isinstance(tag, str) or not tag:
+            raise ValueError("MTP-capable model requires a tag")
+        recorded = {
+            "num_speculative_tokens": config["num_speculative_tokens"],
+            "predictor": "separate" if "draft_file" in config else "embedded",
+        }
+        if tag in configurations and configurations[tag] != recorded:
+            raise ValueError(f"conflicting MTP configuration for model: {tag}")
+        configurations[tag] = recorded
+    return configurations
+
+
 def mtp_mode_states(mode: str) -> tuple[bool, ...]:
     if mode == "off":
         return (False,)

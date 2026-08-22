@@ -275,7 +275,10 @@ LLM_MODELS_MEDIUM = sorted([
         "hf_file":        "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-UD-Q4_K_M.gguf",
         "vllm_repo":      "Local-Axiom-AI/Nemotron-3.5-Lightning-awq",
         "vllm_download_size": "~18.1 GB",
-        "native_mtp":     {"vllm": {"num_speculative_tokens": 1}},
+        "native_mtp":     {
+            "llamacpp": {"num_speculative_tokens": 1},
+            "vllm": {"num_speculative_tokens": 1},
+        },
     },
 ], key=lambda m: m["params_b"])
 

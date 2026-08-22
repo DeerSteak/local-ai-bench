@@ -1,8 +1,8 @@
 import pytest
 
 from scripts.runtime.mtp import (
-    expand_mtp_passes, mtp_mode_states, mtp_pass_label, mtp_progress_names, mtp_tests,
-    native_mtp_config, native_mtp_models,
+    active_mtp_configurations, expand_mtp_passes, mtp_mode_states, mtp_pass_label,
+    mtp_progress_names, mtp_tests, native_mtp_config, native_mtp_models,
 )
 from scripts.workloads.models import LLM_MODELS
 
@@ -22,6 +22,7 @@ def test_catalog_marks_every_confirmed_native_mtp_artifact():
         "qwen3.5:4b-q4_K_M",
         "qwen3.5:9b-q4_K_M",
         "qwen3.8:27b-ud-q4_K_M",
+        "nemotron3.5-lightning:30b-a3b-ud-q4_K_M",
     }
 
 
@@ -70,6 +71,50 @@ def test_native_mtp_config_does_not_forward_llamacpp_draft_fields_to_vllm():
 ])
 def test_native_mtp_config_rejects_incomplete_separate_draft_metadata(config):
     assert native_mtp_config({"native_mtp": {"llamacpp": config}}, "llamacpp") is None
+
+
+def test_active_mtp_configurations_record_engine_specific_tokens_and_predictor_mode():
+    models = [
+        {"tag": "embedded", "native_mtp": {
+            "llamacpp": {"num_speculative_tokens": 3},
+            "vllm": {"num_speculative_tokens": 1},
+        }},
+        {"tag": "separate", "native_mtp": {"llamacpp": {
+            "num_speculative_tokens": 2,
+            "draft_repo": "owner/model", "draft_file": "draft.gguf",
+        }}},
+        {"tag": "unsupported"},
+    ]
+    assert active_mtp_configurations(models, "llamacpp", True) == {
+        "embedded": {"num_speculative_tokens": 3, "predictor": "embedded"},
+        "separate": {"num_speculative_tokens": 2, "predictor": "separate"},
+    }
+    assert active_mtp_configurations(models, "vllm", True) == {
+        "embedded": {"num_speculative_tokens": 1, "predictor": "embedded"},
+    }
+    assert active_mtp_configurations(models, "llamacpp", False) == {}
+
+
+def test_active_mtp_configurations_deduplicate_identical_models_and_reject_bad_identity():
+    capable = {"tag": "same", "native_mtp": {
+        "llamacpp": {"num_speculative_tokens": 3},
+    }}
+    assert active_mtp_configurations([capable, capable], "llamacpp", True) == {
+        "same": {"num_speculative_tokens": 3, "predictor": "embedded"},
+    }
+    with pytest.raises(ValueError, match="requires a tag"):
+        active_mtp_configurations([
+            {"native_mtp": {"llamacpp": {"num_speculative_tokens": 3}}},
+        ], "llamacpp", True)
+
+
+def test_active_mtp_configurations_reject_conflicting_duplicate_tags():
+    models = [
+        {"tag": "same", "native_mtp": {"llamacpp": {"num_speculative_tokens": 1}}},
+        {"tag": "same", "native_mtp": {"llamacpp": {"num_speculative_tokens": 3}}},
+    ]
+    with pytest.raises(ValueError, match="conflicting MTP configuration"):
+        active_mtp_configurations(models, "llamacpp", True)
 
 
 def test_mtp_mode_states_expand_comparison_mode():

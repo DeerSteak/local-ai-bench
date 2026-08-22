@@ -133,14 +133,22 @@ def test_vllm_profile_records_native_mtp_only_for_server_text_generation():
 
 
 def test_llamacpp_profile_records_native_mtp_only_for_server_text_generation():
+    configurations = {
+        "qwen3.5:4b-q4_K_M": {
+            "num_speculative_tokens": 3, "predictor": "embedded",
+        },
+    }
     enabled = resolve_methodology_profile(
         engine_name="llamacpp", tests=["llm"], cpu_only=False, mtp_enabled=True,
+        mtp_configurations=configurations,
     )
     native_only = resolve_methodology_profile(
         engine_name="llamacpp", tests=["llamabench"], cpu_only=False, mtp_enabled=True,
     )
     assert "llamacpp:native_mtp=on" in enabled["effective_optimizations"]
+    assert enabled["mtp_configurations"] == configurations
     assert "llamacpp:native_mtp=on" not in native_only["effective_optimizations"]
+    assert "mtp_configurations" not in native_only
 
 
 def test_vllm_profile_records_redacted_platform_launcher_overrides():

@@ -121,6 +121,52 @@ def test_methodology_profile_is_identity_bearing_and_validated():
         make_plan(effective_config=missing).validate_for_execution()
 
 
+def test_mtp_configuration_is_structured_methodology_and_identity_bearing():
+    config = complete_plan().effective_config
+    config.update({
+        "mtp_enabled": True,
+        "mtp_configurations": {
+            "model:4b": {"num_speculative_tokens": 3, "predictor": "embedded"},
+        },
+        "methodology_profile": "neutral-v2",
+        "effective_optimizations": ["llamacpp:native_mtp=on"],
+        "sampling_profile": baseline_sampling_profile("llamacpp"),
+    })
+    plan = make_plan(effective_config=config)
+    plan.validate_for_execution()
+    assert plan.execution_identity["methodology"]["native_mtp"] == {
+        "model:4b": {"num_speculative_tokens": 3, "predictor": "embedded"},
+    }
+    changed = dict(config, mtp_configurations={
+        "model:4b": {"num_speculative_tokens": 1, "predictor": "embedded"},
+    })
+    assert make_plan(effective_config=changed).plan_id != plan.plan_id
+
+
+@pytest.mark.parametrize("configurations", [
+    None,
+    {"model:4b": {"num_speculative_tokens": True, "predictor": "embedded"}},
+    {"model:4b": {"num_speculative_tokens": 0, "predictor": "embedded"}},
+    {"model:4b": {"num_speculative_tokens": 1, "predictor": "external"}},
+    {"model:4b": {"num_speculative_tokens": 1}},
+])
+def test_current_plan_rejects_missing_or_malformed_mtp_configuration(configurations):
+    settings = complete_plan().effective_config
+    settings["mtp_configurations"] = configurations
+    with pytest.raises(ValueError, match="mtp_configurations"):
+        make_plan(effective_config=settings).validate_for_execution()
+
+
+def test_current_plan_rejects_mtp_mode_configuration_mismatch():
+    settings = complete_plan().effective_config
+    settings["mtp_enabled"] = False
+    settings["mtp_configurations"] = {
+        "model:4b": {"num_speculative_tokens": 1, "predictor": "embedded"},
+    }
+    with pytest.raises(ValueError, match="inconsistent"):
+        make_plan(effective_config=settings).validate_for_execution()
+
+
 def test_schema_4_neutral_v1_plan_remains_readable_without_sampling_identity():
     config = complete_plan().effective_config
     config.update({
@@ -395,6 +441,7 @@ def complete_plan():
         "concurrency_tool_levels": [1, 2], "concurrency_chat_levels": [1, 2, 4],
         "concurrency_tool_context": 4096, "concurrency_chat_context": 16384,
         "concurrency_chat_soft_exit_floor": 8,
+        "mtp_enabled": False, "mtp_configurations": {},
     })
     return make_plan(effective_config=config)
 
