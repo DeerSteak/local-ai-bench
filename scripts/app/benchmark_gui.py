@@ -963,7 +963,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         has_discrete_vram[0] = show_vram_usage(configured_gpu_devices(setup))
         system_memory_baseline[0] = system_memory_usage()[0]
         run_engines = list(engines or parse_engine_selection(engine_var.get()))
-        progress_screen.show(tests, entries, run_engines, show_vram=has_discrete_vram[0])
+        progress_screen.show(
+            tests, entries, run_engines, model_owners,
+            show_vram=has_discrete_vram[0],
+        )
         progress_metrics = progress_screen.metrics
         progress_started_at = progress_screen.started_at
 

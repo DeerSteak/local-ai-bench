@@ -10,6 +10,17 @@ from scripts.runtime import config
 from scripts.stage_registry import STAGE_ORDER
 
 
+def progress_entries_for_engine(entries, engine: str,
+                                model_owners: dict[str, set[str]]) -> list:
+    """Selected entries compatible with one engine; images remain engine-independent."""
+    return [
+        entry for entry in entries if entry.checked and (
+            entry.kind == "image" or entry.value not in model_owners
+            or engine in model_owners[entry.value]
+        )
+    ]
+
+
 @dataclass
 class ProgressScreen:
     root: Any
@@ -29,7 +40,9 @@ class ProgressScreen:
     started_at: float | None = None
     remaining_var: Any = None
 
-    def show(self, tests, entries, engines: list[str], *, show_vram: bool) -> None:
+    def show(self, tests, entries, engines: list[str],
+             model_owners: dict[str, set[str]] | None = None,
+             *, show_vram: bool) -> None:
         if self.window is not None and self.window.winfo_exists():
             self.window.destroy()
         self.window = self.tk.Toplevel(self.root)
@@ -45,13 +58,21 @@ class ProgressScreen:
             shell, text="Live workload/model status, quality, resources, and remaining time.",
             wraplength=390,
         ).pack(anchor="w", pady=(2, 12))
-        selected = [entry for entry in entries if entry.checked]
-        total = sum(
-            1 for stage in STAGE_ORDER if stage in tests for entry in selected
-            if ((stage == "emb" and entry.kind == "embedding")
-                or (stage == "img" and entry.kind == "image")
-                or (stage in LLM_BACKED_TESTS and entry.kind in {"llm", "custom"}))
-        )
+        model_owners = {} if model_owners is None else model_owners
+        total = 0
+        selected_by_engine = {
+            engine: progress_entries_for_engine(entries, engine, model_owners)
+            for engine in engines
+        }
+        for engine_index, engine_name in enumerate(engines):
+            skipped = set(engine_incompatible_tests(tests, engine_name))
+            for stage in (key for key in STAGE_ORDER if key in tests):
+                if (stage == "img" and engine_index > 0) or stage in skipped:
+                    continue
+                stage_entries = self._stage_entries(stage, selected_by_engine[engine_name])
+                if self._model_backed_stage(stage) and not stage_entries:
+                    continue
+                total += len(stage_entries)
         self.metrics = {
             "total_models": total, "finished_models": set(), "usable_models": set(),
             "retries": 0, "valid": 0, "invalid": 0, "last_completion_elapsed": None,
@@ -68,7 +89,13 @@ class ProgressScreen:
             for stage in (key for key in STAGE_ORDER if key in tests):
                 if (stage == "img" and engine_index > 0) or stage in skipped:
                     continue
-                self._add_stage(status_list, engine_name, stage, selected, len(engines) > 1)
+                if self._model_backed_stage(stage) and not self._stage_entries(
+                        stage, selected_by_engine[engine_name]):
+                    continue
+                self._add_stage(
+                    status_list, engine_name, stage, selected_by_engine[engine_name],
+                    len(engines) > 1,
+                )
         self.window.lift()
 
     def update(self, event: dict) -> None:
@@ -165,11 +192,22 @@ class ProgressScreen:
         self.ttk.Label(row, text=heading, font=("TkDefaultFont", 10, "bold")).pack(side="left")
         self.stage_vars[(engine, stage)] = self.tk.StringVar(value="○ Queued")
         self.ttk.Label(row, textvariable=self.stage_vars[(engine, stage)]).pack(side="right")
-        kinds = {"embedding"} if stage == "emb" else {"image"} if stage == "img" else {"llm", "custom"} if stage in LLM_BACKED_TESTS else set()
-        for entry in (item for item in selected if item.kind in kinds):
+        for entry in self._stage_entries(stage, selected):
             model_row = self.ttk.Frame(parent)
             model_row.pack(fill="x", padx=(14, 0), pady=2)
             self.ttk.Label(model_row, text=entry.label).pack(side="left", fill="x", expand=True)
             variable = self.tk.StringVar(value="○ Queued")
             self.model_vars[(engine, stage, entry.value)] = variable
             self.ttk.Label(model_row, textvariable=variable).pack(side="right")
+
+    @staticmethod
+    def _stage_entries(stage: str, entries) -> list:
+        kinds = (
+            {"embedding"} if stage == "emb" else {"image"} if stage == "img"
+            else {"llm", "custom"} if stage in LLM_BACKED_TESTS else set()
+        )
+        return [entry for entry in entries if entry.kind in kinds]
+
+    @staticmethod
+    def _model_backed_stage(stage: str) -> bool:
+        return stage == "emb" or stage == "img" or stage in LLM_BACKED_TESTS

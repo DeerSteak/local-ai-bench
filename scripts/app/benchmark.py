@@ -376,12 +376,24 @@ def engine_pass_tests(tests: list[str], engine_name: str, *, include_images: boo
     ]
 
 
+def engine_scope_tests(tests: list[str], scope: dict, *, include_images: bool) -> list[str]:
+    """Workloads with at least one compatible model in this engine pass."""
+    selected = engine_pass_tests(tests, scope["name"], include_images=include_images)
+    if "llm_models" in scope and not scope["llm_models"]:
+        selected = [test for test in selected if test not in LLM_TESTS]
+    if "concurrency_models" in scope and not scope["concurrency_models"]:
+        selected = [test for test in selected if test not in CONCURRENCY_TESTS]
+    if "embedding_models" in scope and not scope["embedding_models"]:
+        selected = [test for test in selected if test != "emb"]
+    return selected
+
+
 def build_engine_execution_profiles(engine_scopes: list[dict], tests: list[str], *,
                                     cpu_only: bool, hardware_profile: dict,
                                     profile_builder=build_execution_profile) -> dict[str, dict]:
     profiles = {}
     for index, scope in enumerate(engine_scopes):
-        pass_tests = engine_pass_tests(tests, scope["name"], include_images=index == 0)
+        pass_tests = engine_scope_tests(tests, scope, include_images=index == 0)
         if pass_tests:
             profiles[scope["name"]] = profile_builder(
                 scope["engine"], pass_tests, cpu_only=cpu_only,
@@ -485,17 +497,18 @@ def validate_engine_scopes(tests: list[str], engine_name: str, llm_patterns: lis
 
 
 def resolve_engine_scopes(engine_names: list[str], engine_factory, tier_models: list[dict],
-                          tier_label: str, llm_patterns: list[str] | None, tests: list[str]
+                          tier_label: str, llm_patterns: list[str] | None, tests: list[str],
+                          *, embedding_models: list[dict] | None = None,
+                          embedding_patterns: list[str] | None = None,
                           ) -> tuple[list[dict], list[str]]:
     """Resolve and validate every engine before benchmark orchestration."""
+    embedding_models = [] if embedding_models is None else embedding_models
     concurrency_enabled = any(test in tests for test in CONCURRENCY_TESTS)
     normal_llm_enabled = any(test in tests for test in LLM_TESTS)
-    known_tags = [model["tag"] for model in LLM_MODELS + EMBED_MODELS]
-    custom_lookup_needed = bool(
+    embedding_enabled = "emb" in tests
+    inventory_needed = concurrency_enabled or bool(
         llm_patterns and normal_llm_enabled
-        and any(pattern not in known_tags for pattern in llm_patterns)
-    )
-    inventory_needed = custom_lookup_needed or concurrency_enabled
+    ) or bool(embedding_patterns and embedding_enabled)
     scopes = []
     errors = []
     for engine_name in engine_names:
@@ -505,18 +518,67 @@ def resolve_engine_scopes(engine_names: list[str], engine_factory, tier_models: 
             [model["tag"] for model in engine.list_installed_models()]
             if inventory_needed else []
         )
+        engine_tier_models = (
+            downloaded_models(tier_models, installed_tags)
+            if llm_patterns and normal_llm_enabled else tier_models
+        )
         llm_models, concurrency_models = resolve_model_scopes(
-            tier_models, installed_tags, llm_patterns, concurrency_enabled,
+            engine_tier_models, installed_tags, llm_patterns, concurrency_enabled,
+        )
+        engine_embeddings = (
+            downloaded_models(embedding_models, installed_tags)
+            if embedding_patterns and embedding_enabled else embedding_models
         )
         scopes.append({
             "name": engine_name,
             "engine": engine,
             "llm_models": llm_models,
             "concurrency_models": concurrency_models,
+            "embedding_models": engine_embeddings,
         })
-        errors.extend(validate_engine_scopes(
-            engine_tests, engine_name, llm_patterns, llm_models, concurrency_models, tier_label,
-        ))
+        if len(engine_names) == 1:
+            errors.extend(validate_engine_scopes(
+                engine_tests, engine_name, llm_patterns,
+                llm_models, concurrency_models, tier_label,
+            ))
+            if embedding_patterns and "emb" in engine_tests and not engine_embeddings:
+                errors.append(
+                    f"--embedding-models {' '.join(embedding_patterns)} matched no installed "
+                    f"embedding models for {engine_name}"
+                )
+    if len(engine_names) > 1:
+        relevant_llm = [
+            model for scope in scopes
+            if any(test in engine_pass_tests(
+                tests, scope["name"], include_images=True,
+            ) for test in LLM_TESTS)
+            for model in scope["llm_models"]
+        ]
+        relevant_concurrency = [
+            model for scope in scopes
+            if any(test in engine_pass_tests(
+                tests, scope["name"], include_images=True,
+            ) for test in CONCURRENCY_TESTS)
+            for model in scope["concurrency_models"]
+        ]
+        relevant_embeddings = [
+            model for scope in scopes for model in scope["embedding_models"]
+        ]
+        if llm_patterns and normal_llm_enabled and not relevant_llm:
+            errors.append(
+                f"--llm-models {' '.join(llm_patterns)} matched no LLM models in the "
+                f"selected tier ({tier_label}) or installed for the selected engines"
+            )
+        if llm_patterns and concurrency_enabled and not relevant_concurrency:
+            errors.append(
+                f"--llm-models {' '.join(llm_patterns)} matched no downloaded concurrency "
+                "models for the selected engines"
+            )
+        if embedding_patterns and embedding_enabled and not relevant_embeddings:
+            errors.append(
+                f"--embedding-models {' '.join(embedding_patterns)} matched no installed "
+                "embedding models for the selected engines"
+            )
     return scopes, errors
 
 
@@ -898,6 +960,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     )
     engine_scopes, engine_errors = resolve_engine_scopes(
         run_engine_names, get_engine, tier_models, tier_label, args.llm_models, args.tests,
+        embedding_models=embedding_models, embedding_patterns=args.embedding_models,
     )
     validation_errors.extend(engine_errors)
     if validation_errors:
@@ -910,12 +973,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         previews = []
         for run_idx, engine_scope in enumerate(engine_scopes):
             include_images = len(engine_scopes) == 1 or run_idx == 0
-            tests = engine_pass_tests(args.tests, engine_scope["name"], include_images=include_images)
+            tests = engine_scope_tests(args.tests, engine_scope, include_images=include_images)
             if not tests:
                 continue
             plan_models = selected_plan_models(
                 tests, engine_scope["llm_models"], engine_scope["concurrency_models"],
-                embedding_models, image_models,
+                engine_scope["embedding_models"], image_models,
             )
             estimate = estimate_matching_plan_seconds(
                 config.RESULTS_DIR, engine_scope["name"], tests, plan_models,
@@ -924,7 +987,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             display_models = {
                 "llm": engine_scope["llm_models"],
                 "concurrency": engine_scope["concurrency_models"],
-                "embeddings": embedding_models, "images": image_models,
+                "embeddings": engine_scope["embedding_models"], "images": image_models,
             }
             previews.append(format_resolved_plan(
                 engine_scope["name"], tests, display_models, estimate,
@@ -951,6 +1014,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         engine = engine_scope["engine"]
         llm_models = engine_scope["llm_models"]
         conc_models = engine_scope["concurrency_models"]
+        embedding_models = engine_scope["embedding_models"]
         # Held on Shared so shutdown_managed() (called from the signal handler and
         # the finally block) can consult the live engine without threading it in.
         Shared._active_engine = engine
@@ -975,7 +1039,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                      else "run only under their native engines")
             Shared.log(f"{', '.join(native_elsewhere)} {scope} — skipping for {engine_name}")
 
-        tests = engine_pass_tests(args.tests, engine_name, include_images=include_images)
+        tests = engine_scope_tests(args.tests, engine_scope, include_images=include_images)
         if not tests:
             Shared.log(f"No selected workloads apply to {engine_name} — skipping this engine pass")
             continue

@@ -3,6 +3,7 @@ import argparse
 from scripts.app.benchmark import (
     LLM_TESTS,
     add_model_selection_arguments,
+    engine_scope_tests,
     filter_models_by_pattern,
     resolve_catalog_scopes,
     resolve_engine_scopes,
@@ -160,17 +161,18 @@ def test_engine_validation_ignores_irrelevant_llm_selector():
     assert errors == []
 
 
-def test_engine_prepass_does_not_read_inventory_for_catalog_only_normal_run():
+def test_engine_prepass_requires_explicit_catalog_model_to_be_installed():
     engine = FakeEngine("fake", [])
     scopes, errors = resolve_engine_scopes(
         ["fake"], lambda _: engine, LLM_MODELS, "all",
         ["qwen3.5:4b-q4_K_M"], ["llm"],
     )
-    assert engine.list_calls == 0
-    assert [model["tag"] for model in scopes[0]["llm_models"]] == [
-        "qwen3.5:4b-q4_K_M",
+    assert engine.list_calls == 1
+    assert scopes[0]["llm_models"] == []
+    assert errors == [
+        "--llm-models qwen3.5:4b-q4_K_M matched no LLM models in the selected tier "
+        "(all) or installed for fake",
     ]
-    assert errors == []
 
 
 def test_engine_prepass_reads_inventory_when_wildcard_can_match_custom_models():
@@ -181,7 +183,7 @@ def test_engine_prepass_reads_inventory_when_wildcard_can_match_custom_models():
     tags = {model["tag"] for model in scopes[0]["llm_models"]}
     assert engine.list_calls == 1
     assert "llama-local-finetune" in tags
-    assert {model["tag"] for model in LLM_MODELS if model["tag"].startswith("llama")} < tags
+    assert tags == {"llama-local-finetune"}
     assert errors == []
 
 
@@ -227,7 +229,7 @@ def test_engine_prepass_applies_explicit_selector_to_downloaded_concurrency_scop
     assert errors == []
 
 
-def test_engine_prepass_aggregates_failure_from_any_engine():
+def test_engine_prepass_allows_a_model_owned_by_only_one_selected_engine():
     engines = {
         "first": FakeEngine("first", ["my-custom-model"]),
         "second": FakeEngine("second", []),
@@ -237,9 +239,48 @@ def test_engine_prepass_aggregates_failure_from_any_engine():
         ["my-custom-model"], ["llm"],
     )
     assert [scope["engine"] for scope in scopes] == [engines["first"], engines["second"]]
+    assert errors == []
+    assert [model["tag"] for model in scopes[0]["llm_models"]] == ["my-custom-model"]
+    assert scopes[1]["llm_models"] == []
+    assert engine_scope_tests(["llm"], scopes[0], include_images=True) == ["llm"]
+    assert engine_scope_tests(["llm"], scopes[1], include_images=True) == []
+
+
+def test_engine_prepass_partitions_catalog_custom_and_embedding_models_by_engine():
+    catalog_tag = LLM_MODELS[0]["tag"]
+    embedding_tag = EMBED_MODELS[0]["tag"]
+    engines = {
+        "llamacpp": FakeEngine("llamacpp", [catalog_tag, "llama-custom"]),
+        "vllm": FakeEngine("vllm", ["vllm-custom", embedding_tag]),
+    }
+    scopes, errors = resolve_engine_scopes(
+        ["llamacpp", "vllm"], engines.get, LLM_MODELS, "all",
+        [catalog_tag, "*-custom"], ["llm", "emb"],
+        embedding_models=EMBED_MODELS, embedding_patterns=[embedding_tag],
+    )
+    assert errors == []
+    assert [[model["tag"] for model in scope["llm_models"]] for scope in scopes] == [
+        [catalog_tag, "llama-custom"], ["vllm-custom"],
+    ]
+    assert [scope["embedding_models"] for scope in scopes] == [[], [EMBED_MODELS[0]]]
+    assert engine_scope_tests(["llm", "emb"], scopes[0], include_images=True) == ["llm"]
+    assert engine_scope_tests(["llm", "emb"], scopes[1], include_images=True) == [
+        "llm", "emb",
+    ]
+
+
+def test_multi_engine_prepass_rejects_selector_missing_from_every_engine():
+    engines = {
+        "llamacpp": FakeEngine("llamacpp", []),
+        "vllm": FakeEngine("vllm", []),
+    }
+    _scopes, errors = resolve_engine_scopes(
+        ["llamacpp", "vllm"], engines.get, LLM_MODELS, "all",
+        ["missing-custom"], ["llm"],
+    )
     assert errors == [
-        "--llm-models my-custom-model matched no LLM models in the selected tier "
-        "(all) or installed for second"
+        "--llm-models missing-custom matched no LLM models in the selected tier "
+        "(all) or installed for the selected engines",
     ]
 
 
@@ -288,7 +329,7 @@ def test_installed_embedding_tag_does_not_reappear_as_custom_llm():
     scopes, errors = resolve_engine_scopes(
         ["fake"], lambda _: engine, LLM_MODELS, "all", [embedding_tag], ["llm"],
     )
-    assert engine.list_calls == 0
+    assert engine.list_calls == 1
     assert scopes[0]["llm_models"] == []
     assert errors == [
         f"--llm-models {embedding_tag} matched no LLM models in the selected tier "
