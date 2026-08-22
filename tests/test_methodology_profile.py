@@ -151,6 +151,21 @@ def test_llamacpp_profile_records_native_mtp_only_for_server_text_generation():
     assert "mtp_configurations" not in native_only
 
 
+def test_sustained_profile_records_sampling_and_native_mtp_identity():
+    configurations = {
+        "qwen3.5:4b-q4_K_M": {
+            "num_speculative_tokens": 3, "predictor": "embedded",
+        },
+    }
+    profile = resolve_methodology_profile(
+        engine_name="llamacpp", tests=["sustained"], cpu_only=False,
+        mtp_enabled=True, mtp_configurations=configurations,
+    )
+    assert "llamacpp:native_mtp=on" in profile["effective_optimizations"]
+    assert profile["mtp_configurations"] == configurations
+    assert profile["sampling_profile"]["profile"] == "deterministic-baseline-v1"
+
+
 def test_vllm_profile_records_redacted_platform_launcher_overrides():
     profile = resolve_methodology_profile(
         engine_name="vllm", tests=["conv"], cpu_only=False,

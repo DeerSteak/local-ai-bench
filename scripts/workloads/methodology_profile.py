@@ -6,7 +6,7 @@ from scripts.runtime.sampling import baseline_sampling_profile
 
 ENGINE_STAGES = {
     "llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool",
-    "conc_tool", "conc_chat",
+    "conc_tool", "conc_chat", "sustained",
 }
 TEXT_GENERATION_STAGES = ENGINE_STAGES - {"emb"}
 

@@ -73,7 +73,7 @@ from scripts.results.run_plan import RunPlan, load_run_plan
 from scripts.runtime.model_preflight import (
     filter_models, maximum_requested_context, run_runtime_preflight, run_static_preflight,
 )
-from scripts.runtime.mtp import expand_mtp_passes
+from scripts.runtime.mtp import expand_mtp_passes, mtp_on_selection_error
 from scripts.results.resume_policy import build_engine_resume_identity
 from scripts.results.result_history import ETA_MATCH_KEYS, estimate_matching_plan_seconds
 from scripts.runtime.supervised_stage import relay_runner_log, run_supervised_llm, run_supervised_stage
@@ -971,6 +971,14 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         }
         for index, scope in enumerate(engine_scopes)
     ]
+    mtp_error = mtp_on_selection_error(
+        run_engine_names, args.mtp,
+        [model for scope in engine_scopes
+         for model in scope["llm_models"] + scope["concurrency_models"]],
+        args.tests,
+    )
+    if mtp_error:
+        parser.error(mtp_error)
     execution_passes = expand_mtp_passes(base_execution_scopes, args.mtp)
     if args.mtp == "on" and not execution_passes:
         parser.error(

@@ -2,7 +2,8 @@ import pytest
 
 from scripts.runtime.mtp import (
     active_mtp_configurations, expand_mtp_passes, mtp_mode_states, mtp_pass_label,
-    mtp_progress_names, mtp_tests, native_mtp_config, native_mtp_models,
+    mtp_on_selection_error, mtp_progress_names, mtp_tests, native_mtp_config,
+    native_mtp_models,
 )
 from scripts.workloads.models import LLM_MODELS
 
@@ -144,6 +145,27 @@ def test_mtp_on_keeps_only_server_backed_generation_workloads():
     tests = ["llm", "conv", "llamabench", "vllmbench", "emb", "mcq", "conc_chat", "img"]
     assert mtp_tests(tests, False) == tests
     assert mtp_tests(tests, True) == ["llm", "conv", "mcq", "conc_chat"]
+
+
+def test_mtp_on_rejects_non_mtp_workloads_instead_of_dropping_them():
+    capable = {"tag": "capable", "native_mtp": {"llamacpp": {
+        "num_speculative_tokens": 1,
+    }}}
+    assert mtp_on_selection_error(
+        ["llamacpp"], "on", [capable], ["llm", "img", "emb", "llamabench"],
+    ) == (
+        "--mtp on cannot run non-MTP workloads: img, emb, llamabench; "
+        "use --mtp both to run them once in the baseline pass"
+    )
+    assert mtp_on_selection_error(
+        ["llamacpp"], "both", [capable], ["llm", "img"],
+    ) is None
+
+
+def test_mtp_on_requires_support_in_the_selected_models():
+    assert mtp_on_selection_error(
+        ["llamacpp", "vllm"], "on", [{"tag": "plain"}], ["llm"],
+    ) == "--mtp on requires a selected model with cataloged native MTP support"
 
 
 def test_mtp_pass_label_distinguishes_progress_identity():

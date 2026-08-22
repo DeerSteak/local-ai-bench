@@ -58,7 +58,7 @@ from scripts.setup.runtime_update import (
 from scripts.stage_registry import STAGE_ORDER
 from scripts.runtime.pause_control import PAUSE_CONTROL_ENV, create_pause_control, write_pause_state
 from scripts.runtime.progress_events import PROGRESS_PREFIX
-from scripts.runtime.mtp import mtp_progress_names
+from scripts.runtime.mtp import mtp_on_selection_error, mtp_progress_names
 from scripts.runtime.crash_cache import clear_crash_caches, crash_cache_paths
 from scripts.runtime.shared import Shared
 from scripts.workloads.models import LLM_MODELS
@@ -328,6 +328,12 @@ def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[Men
     selection_error = model_selection_error(entries, tests)
     if selection_error:
         errors.append(selection_error)
+    selected_catalog = selected_catalog_models(entries)
+    mtp_error = mtp_on_selection_error(
+        parse_engine_selection(engine), gui_options["mtp"], selected_catalog, tests,
+    )
+    if mtp_error:
+        errors.append(mtp_error)
     if TG_TOKEN_TESTS & set(tests) and not tg_tokens:
         errors.append("Select at least one llama-bench generation size.")
     custom_comfyui = (
@@ -355,6 +361,11 @@ def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[Men
         gui_options=gui_options,
     )
     return BenchmarkLaunchReady(preview, state, command)
+
+
+def selected_catalog_models(entries: list[MenuEntry]) -> list[dict]:
+    selected = {entry.value for entry in entries if entry.checked}
+    return [model for model in LLM_MODELS if model["tag"] in selected]
 
 
 def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
@@ -1169,7 +1180,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             preparation.command, "benchmark", [],
             "Benchmark is running. Results are checkpointed throughout the run.",
             tests, entries, mtp_progress_names(
-                parse_engine_selection(engine_var.get()), gui_options["mtp"], LLM_MODELS,
+                parse_engine_selection(engine_var.get()), gui_options["mtp"],
+                selected_catalog_models(entries),
             ),
             "Benchmark could not start",
         )

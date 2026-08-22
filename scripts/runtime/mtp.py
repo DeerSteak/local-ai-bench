@@ -73,6 +73,21 @@ def mtp_tests(tests: Sequence[str], enabled: bool) -> list[str]:
     return list(tests) if not enabled else [test for test in tests if test in MTP_SERVER_TESTS]
 
 
+def mtp_on_selection_error(engine_names: Sequence[str], mode: str,
+                           models: Sequence[dict], tests: Sequence[str]) -> str | None:
+    if mode != "on":
+        return None
+    incompatible = [test for test in tests if test not in MTP_SERVER_TESTS]
+    if incompatible:
+        return (
+            "--mtp on cannot run non-MTP workloads: " + ", ".join(incompatible)
+            + "; use --mtp both to run them once in the baseline pass"
+        )
+    if not any(native_mtp_models(models, engine_name) for engine_name in engine_names):
+        return "--mtp on requires a selected model with cataloged native MTP support"
+    return None
+
+
 def mtp_pass_label(engine_name: str, enabled: bool) -> str:
     return f"{engine_name} · MTP {'on' if enabled else 'off'}"
 

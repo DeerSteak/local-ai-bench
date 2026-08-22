@@ -29,6 +29,7 @@ from scripts.app.benchmark_gui import (
     pending_runtime_profiles,
     process_completion_state, resolve_engine_selection,
     resolve_engine_names,
+    selected_catalog_models,
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
     query_gpu_process_memory, query_gpu_usage,
     query_vram_usage, show_vram_usage,
@@ -391,6 +392,32 @@ def test_prepare_benchmark_launch_requires_a_selected_model(tmp_path):
     )
     assert isinstance(preparation, BenchmarkLaunchError)
     assert any("model" in error.lower() for error in preparation.errors)
+
+
+def test_prepare_benchmark_launch_rejects_non_mtp_workloads_before_progress(tmp_path):
+    entries = [MenuEntry(
+        "qwen3.5:4b-q4_K_M", "Qwen", "llm", "LLM", True,
+    )]
+    preparation = prepare_benchmark_launch(
+        engine="llamacpp", tests=["llm", "img"], entries=entries,
+        max_prompt_tokens=None, tg_tokens=[],
+        gui_options=dict(GUI_OPTION_DEFAULTS, mtp="on"),
+        selected_preset="Custom", detected_tools={"llama-server": "/bin/server"},
+        found_comfyui=tmp_path, detected_comfyui=tmp_path,
+    )
+    assert isinstance(preparation, BenchmarkLaunchError)
+    assert any("cannot run non-MTP workloads: img" in error for error in preparation.errors)
+
+
+def test_selected_catalog_models_limits_mtp_progress_to_checked_entries():
+    entries = [
+        MenuEntry("qwen3.5:4b-q4_K_M", "MTP", "llm", "LLM", False),
+        MenuEntry("gemma3:1b-it-q4_K_M", "Plain", "llm", "LLM", True),
+        MenuEntry("custom", "Custom", "custom", "Custom", True),
+    ]
+    assert [model["tag"] for model in selected_catalog_models(entries)] == [
+        "gemma3:1b-it-q4_K_M",
+    ]
 
 
 def test_resolve_engine_names_restores_default_without_model_checks():
