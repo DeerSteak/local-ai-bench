@@ -19,7 +19,7 @@ QUALIFICATION_MATRIX: tuple[dict, ...] = (
         "platform": "macos",
         "architecture": "arm64",
         "runtime": "llamacpp",
-        "runtime_version": "b10488",
+        "runtime_version": "0.1.2-dev",
         "backend": "metal",
         "accelerator": "MacBook Pro\nM5 Pro 48 GB",
         "qualified_at": "2026-08-18",

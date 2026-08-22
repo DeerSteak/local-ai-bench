@@ -17,6 +17,7 @@ from typing import Any, Protocol, Sequence
 
 from scripts.runtime import config, hardware
 from scripts.runtime.shared import RUN_LOG_UTC_OFFSET_ENV
+from scripts.runtime.execution_profile import build_execution_profile
 import psutil
 from scripts.app.benchmark_frontend import (
     merge_model_inventories, models_runnable_by,
@@ -59,7 +60,7 @@ from scripts.runtime.progress_events import PROGRESS_PREFIX
 from scripts.runtime.crash_cache import clear_crash_caches, crash_cache_paths
 from scripts.runtime.shared import Shared
 from scripts.release.qualification import (
-    engine_selection_label, engine_support_profile, experimental_acknowledgement_required,
+    engine_selection_label, experimental_acknowledgement_required,
 )
 from scripts.setup.setup_config import (
     available_gpu_split_modes, configured_comfyui_dir, configured_gpu_devices,
@@ -240,6 +241,17 @@ def restored_tg_tokens(state: dict[str, Any] | None) -> set[int]:
     return set(state["tg_tokens"])
 
 
+def qualification_profiles_for_engines(engines: dict, hardware_profile: dict,
+                                       profile_builder=build_execution_profile) -> dict[str, dict]:
+    return {
+        name: profile_builder(
+            engine, ["llm"], cpu_only=False, engine_name=name,
+            hardware_profile=hardware_profile,
+        )["engine_support"]
+        for name, engine in engines.items()
+    }
+
+
 def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[MenuEntry],
                              max_prompt_tokens: int | None, tg_tokens: list[int],
                              gui_options: dict[str, Any], selected_preset: str,
@@ -308,25 +320,22 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     selected_engine = saved["engine"] if saved and saved["engine"] in available_engines else available_engines[0]
     # Every installed engine's models, so switching engines re-gates the list instead of
     # offering models the newly selected engine cannot run.
+    engine_instances = {name: get_engine(name) for name in available_engines}
     engine_inventories = {
-        name: build_model_inventory(get_engine(name), config.COMFYUI_MODELS_DIR)
+        name: build_model_inventory(engine_instances[name], config.COMFYUI_MODELS_DIR)
         for name in available_engines
     }
     inventory, model_owners = merge_model_inventories(engine_inventories)
     detected_tools = {name: find_llamacpp_tool(name) for name in (
         "llama-server", "llama-bench", "llama-batched-bench",
     )}
-    system_ram_gb = Shared.system_ram_gb()
-    hardware_backend = Shared.detect_backend()
-    qualification_profiles = {
-        name: engine_support_profile(
-            system=platform.system(), architecture=platform.machine(),
-            wsl=Shared.detect_wsl(platform.system(), platform.release()), runtime=name,
-            runtime_version=None, backend=hardware_backend, current_version=config.VERSION,
-        )
-        for name in available_engines
-    }
-    runtime_backend = get_engine(selected_engine).runtime_backend(hardware_backend)
+    hardware_profile = Shared.build_profile()
+    system_ram_gb = hardware_profile["ram_gb"]
+    hardware_backend = hardware_profile["backend"]
+    qualification_profiles = qualification_profiles_for_engines(
+        engine_instances, hardware_profile,
+    )
+    runtime_backend = engine_instances[selected_engine].runtime_backend(hardware_backend)
     gpu_split_modes = available_gpu_split_modes(setup, runtime_backend)
     discovery = build_discovery_report(
         platform_name=platform.system(), architecture=platform.machine(),
@@ -1033,6 +1042,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                     "result will retain that caveat?",
                     parent=root):
                 return
+        if "vllm" in selected_engines:
+            preparation.command.append("--ack-experimental-engine")
         authorization_error = authorize_macos_power_telemetry(
             gui_options["power_telemetry"],
         )

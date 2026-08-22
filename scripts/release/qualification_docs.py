@@ -15,8 +15,8 @@ PUBLISHED_DOCS = ("docs/engines.md", "docs/setup.md")
 def render_qualification_matrix(current_version: str) -> str:
     lines = [
         START_MARKER,
-        "| Platform | Architecture | Runtime | Backend | Runtime support | ComfyUI images | Evidence |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
+        "| Platform | Architecture | Runtime | Backend | Accelerator | Runtime support | ComfyUI images | Evidence |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for row in qualification_rows(current_version):
         evidence = (
@@ -30,9 +30,10 @@ def render_qualification_matrix(current_version: str) -> str:
             support += " (stale)"
             if row["runtime"] == "llamacpp" and image_support != "Unverified":
                 image_support += " (stale)"
+        accelerator = " / ".join(str(row["accelerator"]).splitlines())
         lines.append(
             f"| {row['platform']} | {row['architecture']} | {row['runtime']} | "
-            f"{row['backend']} | {support} | {image_support} | {evidence} |"
+            f"{row['backend']} | {accelerator} | {support} | {image_support} | {evidence} |"
         )
     lines.append(END_MARKER)
     return "\n".join(lines)

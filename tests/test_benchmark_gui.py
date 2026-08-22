@@ -24,6 +24,7 @@ from scripts.app.benchmark_gui import (
     gpu_split_mode_labels, gpu_split_mode_value, history_row_height,
     launch_controlled_process, open_path_command, parse_progress_line,
     normalize_gui_option_values, prepare_benchmark_launch, restored_tg_tokens,
+    qualification_profiles_for_engines,
     process_completion_state, resolve_engine_selection,
     resolve_engine_names,
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
@@ -56,6 +57,24 @@ def test_effective_gui_options_uses_defaults_without_saved_gui_settings():
     assert effective_gui_options(None) == GUI_OPTION_DEFAULTS
     assert effective_gui_options({"tests": ["llm"]}) == GUI_OPTION_DEFAULTS
     assert effective_gui_options(None) is not GUI_OPTION_DEFAULTS
+
+
+def test_gui_qualification_profiles_resolve_each_installed_runtime_version():
+    engines = {"llamacpp": object(), "vllm": object()}
+    calls = []
+
+    def build(engine, tests, **kwargs):
+        calls.append((engine, tests, kwargs))
+        return {"engine_support": {"support_level": "supported", "runtime_version": "1.0"}}
+
+    profiles = qualification_profiles_for_engines(
+        engines, {"backend": "cuda"}, profile_builder=build,
+    )
+    assert profiles == {
+        "llamacpp": {"support_level": "supported", "runtime_version": "1.0"},
+        "vllm": {"support_level": "supported", "runtime_version": "1.0"},
+    }
+    assert [call[2]["engine_name"] for call in calls] == ["llamacpp", "vllm"]
 
 
 def test_dual_gpu_modes_have_user_facing_labels_and_round_trip():

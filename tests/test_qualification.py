@@ -51,7 +51,7 @@ def test_vllm_support_requires_its_smallest_tool_capable_model():
 
 def test_reviewed_macos_m5_pro_qualification_is_supported():
     evidence = qualification_entry(
-        "macos", "arm64", "llamacpp", "metal", "b10488",
+        "macos", "arm64", "llamacpp", "metal", "0.1.2-dev",
         accelerator="MacBook Pro\nM5 Pro 48 GB",
     )
     assert evidence == QUALIFICATION_MATRIX[0]

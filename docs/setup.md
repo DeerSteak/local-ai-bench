@@ -7,25 +7,25 @@
 This generated matrix reports the current evidence-backed runtime and ComfyUI image status of each platform path. One qualification invocation may exercise both components, but each is graded independently; installation availability does not by itself establish support.
 
 <!-- qualification-matrix:start -->
-| Platform | Architecture | Runtime | Backend | Runtime support | ComfyUI images | Evidence |
-| --- | --- | --- | --- | --- | --- | --- |
-| macos | arm64 | llamacpp | metal | Supported | Supported | b10488, 2026-08-18, suite 6.0-pre8 |
-| windows | x86_64 | llamacpp | cuda | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
-| windows | x86_64 | llamacpp | vulkan | Supported | Supported | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
-| windows | x86_64 | llamacpp | xpu | Unverified | Unverified | No qualification record |
-| wsl2 | x86_64 | llamacpp | cuda | Supported | Supported | b10488, 2026-08-19, suite 6.0-pre8 |
-| wsl2 | x86_64 | vllm | cuda | Supported | Not applicable | 0.27.1, 2026-08-19, suite 6.0-pre8 |
-| wsl2 | x86_64 | llamacpp | rocm | Supported | Supported | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
-| linux | x86_64 | llamacpp | cuda | Unverified | Unverified | No qualification record |
-| linux | x86_64 | vllm | cuda | Unverified | Not applicable | No qualification record |
-| linux | x86_64 | llamacpp | rocm | Supported | Supported | 0.1.2-dev, 2026-08-21, suite 6.0-pre8 |
-| linux | x86_64 | vllm | rocm | Supported | Not applicable | 0.27.1+rocm723, 2026-08-21, suite 6.0-pre8 |
-| linux | x86_64 | llamacpp | xpu | Supported | Supported | 0.1.2-dev, 2026-08-21, suite 6.0-pre8 |
-| linux | x86_64 | vllm | xpu | Supported | Not applicable | 0.27.1+xpu, 2026-08-21, suite 6.0-pre8 |
-| linux | x86_64 | llamacpp | rocm | Supported | Unverified | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
-| linux | x86_64 | vllm | rocm | Unverified | Not applicable | No qualification record |
-| linux | aarch64 | llamacpp | cuda | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
-| linux | aarch64 | vllm | cuda | Supported | Not applicable | 0.27.1, 2026-08-19, suite 6.0-pre8 |
+| Platform | Architecture | Runtime | Backend | Accelerator | Runtime support | ComfyUI images | Evidence |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| macos | arm64 | llamacpp | metal | M5 Pro | Supported | Supported | 0.1.2-dev, 2026-08-18, suite 6.0-pre8 |
+| windows | x86_64 | llamacpp | cuda | NVIDIA GeForce | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
+| windows | x86_64 | llamacpp | vulkan | AMD Radeon | Supported | Supported | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
+| windows | x86_64 | llamacpp | xpu | B65 | Unverified | Unverified | No qualification record |
+| wsl2 | x86_64 | llamacpp | cuda | NVIDIA GeForce | Supported | Supported | b10488, 2026-08-19, suite 6.0-pre8 |
+| wsl2 | x86_64 | vllm | cuda | NVIDIA GeForce | Supported | Not applicable | 0.27.1, 2026-08-19, suite 6.0-pre8 |
+| wsl2 | x86_64 | llamacpp | rocm | Radeon RX 9060 XT | Supported | Supported | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
+| linux | x86_64 | llamacpp | cuda | NVIDIA | Unverified | Unverified | No qualification record |
+| linux | x86_64 | vllm | cuda | NVIDIA | Unverified | Not applicable | No qualification record |
+| linux | x86_64 | llamacpp | rocm | Radeon RX 9060 XT | Supported | Supported | 0.1.2-dev, 2026-08-21, suite 6.0-pre8 |
+| linux | x86_64 | vllm | rocm | Radeon RX 9060 XT | Supported | Not applicable | 0.27.1+rocm723, 2026-08-21, suite 6.0-pre8 |
+| linux | x86_64 | llamacpp | xpu | 8086:e222 | Supported | Supported | 0.1.2-dev, 2026-08-21, suite 6.0-pre8 |
+| linux | x86_64 | vllm | xpu | 8086:e222 | Supported | Not applicable | 0.27.1+xpu, 2026-08-21, suite 6.0-pre8 |
+| linux | x86_64 | llamacpp | rocm | Radeon 8060S | Supported | Unverified | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
+| linux | x86_64 | vllm | rocm | Radeon 8060S | Unverified | Not applicable | No qualification record |
+| linux | aarch64 | llamacpp | cuda | NVIDIA GB10 | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
+| linux | aarch64 | vllm | cuda | NVIDIA GB10 | Supported | Not applicable | 0.27.1, 2026-08-19, suite 6.0-pre8 |
 <!-- qualification-matrix:end -->
 
 ### Explicitly unsupported paths

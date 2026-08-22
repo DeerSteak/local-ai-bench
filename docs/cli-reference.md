@@ -39,7 +39,7 @@ run_bench.bat [options]   # Windows
 
 See [Flag details](#flag-details) below for what each flag actually does.
 
-When `--engine` includes vLLM, direct CLI runs require `--ack-experimental-engine` until that exact platform and runtime have passed complete smallest-model qualification. The graphical launcher adds the flag only after displaying its experimental-engine confirmation. The resulting support caveat remains recorded in the run profile.
+When `--engine` includes vLLM, direct CLI runs require `--ack-experimental-engine` until that exact platform and runtime have passed complete smallest-model qualification. The graphical and terminal launchers resolve the installed runtime's exact qualification status and add the flag only after displaying an experimental-engine confirmation when one is required; a qualified runtime proceeds without that extra prompt. The resulting support caveat remains recorded in the run profile.
 
 ## Launch modes
 
