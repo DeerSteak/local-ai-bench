@@ -22,6 +22,7 @@
 | `Launch Local AI Bench Dashboard.bat` | Double-clickable Windows launcher that builds, serves, and opens the dashboard |
 | `run_bench.sh` | Activates the venv; auto-selects GUI/terminal with no arguments or forwards benchmark arguments directly on Linux / macOS |
 | `run_qualification.sh` / `run_qualification.bat` | Thin platform launchers that run normal setup and the normal smallest-model benchmark |
+| `run_model_catalog_screens.sh` | Unattended four-model by two-engine Milestone 9 compatibility-screen matrix |
 | `run_telemetry_trials.sh` | Resumable alternating telemetry-off/on qualification runner for memory and power on Linux / macOS |
 | `run_sustained_qualification_linux.sh` | Repeated ten-minute sustained-load evidence wrapper for Linux small systems |
 | `run_temperature_qualification_linux.sh` | Unattended Linux temperature observer-effect matrix across latency/sustained screens and all candidate intervals |
