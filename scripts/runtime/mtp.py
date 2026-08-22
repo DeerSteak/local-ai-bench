@@ -24,7 +24,7 @@ def native_mtp_config(model: dict, engine_name: str) -> dict | None:
     resolved: dict = {"num_speculative_tokens": tokens}
     draft_repo = config.get("draft_repo")
     draft_file = config.get("draft_file")
-    if draft_repo is not None or draft_file is not None:
+    if engine_name == "llamacpp" and (draft_repo is not None or draft_file is not None):
         if not isinstance(draft_repo, str) or not draft_repo.strip():
             return None
         if not isinstance(draft_file, str) or not draft_file.strip():

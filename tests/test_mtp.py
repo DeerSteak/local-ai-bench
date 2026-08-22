@@ -53,6 +53,16 @@ def test_native_mtp_config_returns_validated_separate_draft_metadata():
     }
 
 
+def test_native_mtp_config_does_not_forward_llamacpp_draft_fields_to_vllm():
+    source = {"vllm": {
+        "num_speculative_tokens": 1,
+        "draft_repo": "ignored", "draft_file": "ignored.gguf",
+    }}
+    assert native_mtp_config({"native_mtp": source}, "vllm") == {
+        "num_speculative_tokens": 1,
+    }
+
+
 @pytest.mark.parametrize("config", [
     {"num_speculative_tokens": 3, "draft_repo": "owner/model"},
     {"num_speculative_tokens": 3, "draft_file": "draft.gguf"},
