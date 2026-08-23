@@ -22,6 +22,7 @@ from scripts.app.benchmark_gui import (
     PsutilLike, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults, default_control_values,
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
+    gui_option_control_value,
     gpu_split_mode_availability_error, gpu_split_mode_labels, gpu_split_mode_value,
     history_row_height,
     launch_controlled_process, open_path_command, parse_progress_line,
@@ -326,6 +327,16 @@ def test_normalize_gui_option_values_converts_controls_and_trims_paths():
     assert options["mtp"] == "both"
     assert options["out"] == "result.json"
     assert options["comfyui"] == "/ComfyUI"
+    assert options["ambient_temp_c"] is None
+
+
+def test_optional_gui_values_stay_blank_when_written_to_controls():
+    assert gui_option_control_value("ambient_temp_c", None) == ""
+    assert gui_option_control_value("ambient_temp_c", 18.5) == "18.5"
+    assert gui_option_control_value(
+        "gpu_split_mode", "tensor",
+    ) == "Tensor parallel (experimental)"
+    assert gui_option_control_value("mtp", "both") == "Both"
 
 
 def test_normalize_gui_option_values_accepts_canonical_gpu_mode():
@@ -368,6 +379,33 @@ def test_prepare_benchmark_launch_builds_review_state_and_command(tmp_path):
     assert "--tg-tokens" not in preparation.command
     assert preparation.command[preparation.command.index("--max-prompt-tokens") + 1] == "8192"
     assert preparation.command[preparation.command.index("--out") + 1] == "result.json"
+
+
+def test_prepare_benchmark_launch_ignores_ambient_without_sustained(tmp_path):
+    entries = [MenuEntry("model", "Model", "llm", "LLM", True)]
+    preparation = prepare_benchmark_launch(
+        engine="llamacpp", tests=["llm"], entries=entries,
+        max_prompt_tokens=None, tg_tokens=[],
+        gui_options=dict(GUI_OPTION_DEFAULTS, ambient_temp_c="None"),
+        selected_preset="Custom", detected_tools={"llama-server": "/bin/server"},
+        found_comfyui=None, detected_comfyui=tmp_path,
+    )
+    assert isinstance(preparation, BenchmarkLaunchReady)
+    assert preparation.state["gui_options"]["ambient_temp_c"] is None
+    assert "--ambient-temp-c" not in preparation.command
+
+
+def test_prepare_benchmark_launch_validates_ambient_for_sustained(tmp_path):
+    entries = [MenuEntry("model", "Model", "llm", "LLM", True)]
+    preparation = prepare_benchmark_launch(
+        engine="llamacpp", tests=["sustained"], entries=entries,
+        max_prompt_tokens=None, tg_tokens=[],
+        gui_options=dict(GUI_OPTION_DEFAULTS, ambient_temp_c="None"),
+        selected_preset="Custom", detected_tools={"llama-server": "/bin/server"},
+        found_comfyui=None, detected_comfyui=tmp_path,
+    )
+    assert isinstance(preparation, BenchmarkLaunchError)
+    assert "--ambient-temp-c must be a number." in preparation.errors
 
 
 def test_prepare_benchmark_launch_requires_tg_selection_for_llamabench(tmp_path):

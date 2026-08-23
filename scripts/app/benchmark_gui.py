@@ -215,6 +215,16 @@ def process_completion_state(kind: str | None, exit_code: int) -> ProcessComplet
     return ProcessCompletionState(status, exit_code == 0)
 
 
+def gui_option_control_value(key: str, value: Any) -> Any:
+    if key == "gpu_split_mode":
+        return GPU_SPLIT_MODE_LABELS[gpu_split_mode_value(value)]
+    if key == "mtp":
+        return MTP_MODE_LABELS[mtp_mode_value(value)]
+    if value is None:
+        return ""
+    return value if isinstance(value, bool) else str(value)
+
+
 def normalize_gui_option_values(values: dict[str, Any]) -> dict[str, Any]:
     options = dict(GUI_OPTION_DEFAULTS)
     for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget",
@@ -322,7 +332,10 @@ def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[Men
                              detected_tools: dict[str, str | None],
                              found_comfyui: Path | None,
                              detected_comfyui: Path) -> BenchmarkLaunchError | BenchmarkLaunchReady:
-    errors = validate_gui_options(gui_options)
+    launch_options = dict(gui_options)
+    if "sustained" not in tests:
+        launch_options["ambient_temp_c"] = None
+    errors = validate_gui_options(launch_options)
     if not tests:
         errors.append("Select at least one benchmark test.")
     selection_error = model_selection_error(entries, tests)
@@ -330,7 +343,7 @@ def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[Men
         errors.append(selection_error)
     selected_catalog = selected_catalog_models(entries)
     mtp_error = mtp_selection_error(
-        parse_engine_selection(engine), gui_options["mtp"], selected_catalog, tests,
+        parse_engine_selection(engine), launch_options["mtp"], selected_catalog, tests,
     )
     if mtp_error:
         errors.append(mtp_error)
@@ -344,21 +357,21 @@ def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[Men
     if errors:
         return BenchmarkLaunchError(errors)
     preview = build_plan_preview(
-        engine=engine, tests=tests, entries=entries, options=gui_options,
+        engine=engine, tests=tests, entries=entries, options=launch_options,
         max_prompt_tokens=max_prompt_tokens, tg_tokens=tg_tokens,
         comfyui_dir=custom_comfyui or detected_comfyui,
     )
     state = build_frontend_state(
         engine, tests, entries, max_prompt_tokens=max_prompt_tokens,
         tg_tokens=tg_tokens,
-        gui_options=gui_options, selected_preset=selected_preset,
+        gui_options=launch_options, selected_preset=selected_preset,
     )
     command = build_benchmark_command(
         engine, detected_comfyui, tests, entries,
         max_prompt_tokens=(max_prompt_tokens
                            if MAX_PROMPT_TOKEN_TESTS & set(tests) else None),
         tg_tokens=tg_tokens if TG_TOKEN_TESTS & set(tests) else None,
-        gui_options=gui_options,
+        gui_options=launch_options,
     )
     return BenchmarkLaunchReady(preview, state, command)
 
@@ -454,11 +467,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     options = effective_gui_options(saved)
     option_vars: dict[str, tk.Variable] = {
         key: (tk.BooleanVar(value=value) if isinstance(value, bool)
-              else tk.StringVar(value="" if value is None else str(value)))
+              else tk.StringVar(value=gui_option_control_value(key, value)))
         for key, value in options.items()
     }
-    option_vars["gpu_split_mode"].set(GPU_SPLIT_MODE_LABELS[options["gpu_split_mode"]])
-    option_vars["mtp"].set(MTP_MODE_LABELS[options["mtp"]])
     if not option_vars["comfyui"].get():
         option_vars["comfyui"].set(str(detected_comfyui))
     preset_var = tk.StringVar(value=restored_preset_name(saved))
@@ -760,11 +771,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                     "cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
                     "power_telemetry", "llamacpp_no_repack"):
             variable = option_vars[key]
-            value = (
-                GPU_SPLIT_MODE_LABELS[defaults[key]] if key == "gpu_split_mode"
-                else MTP_MODE_LABELS[defaults[key]] if key == "mtp" else defaults[key]
-            )
-            variable.set(value)
+            variable.set(gui_option_control_value(key, defaults[key]))
 
     def reset_paths():
         defaults = custom_option_defaults(detected_comfyui)
@@ -838,12 +845,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             for value, variable in tg_vars.items():
                 variable.set(value in selected_tg)
             for key, value in state.get("gui_options", {}).items():
-                if key == "gpu_split_mode":
-                    option_vars[key].set(GPU_SPLIT_MODE_LABELS[requested_split])
-                elif key == "mtp":
-                    option_vars[key].set(MTP_MODE_LABELS[mtp_mode_value(value)])
-                else:
-                    option_vars[key].set(value if isinstance(value, bool) else str(value))
+                control_value = requested_split if key == "gpu_split_mode" else value
+                option_vars[key].set(gui_option_control_value(key, control_value))
         finally:
             applying_configuration[0] = False
         preset_var.set(CUSTOM_PRESET)
