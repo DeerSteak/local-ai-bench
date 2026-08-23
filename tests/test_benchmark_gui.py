@@ -395,12 +395,26 @@ def test_prepare_benchmark_launch_ignores_ambient_without_sustained(tmp_path):
     assert "--ambient-temp-c" not in preparation.command
 
 
+def test_prepare_benchmark_launch_preserves_valid_ambient_without_sustained(tmp_path):
+    entries = [MenuEntry("model", "Model", "llm", "LLM", True)]
+    preparation = prepare_benchmark_launch(
+        engine="llamacpp", tests=["llm"], entries=entries,
+        max_prompt_tokens=None, tg_tokens=[],
+        gui_options=dict(GUI_OPTION_DEFAULTS, ambient_temp_c=18.5),
+        selected_preset="Custom", detected_tools={"llama-server": "/bin/server"},
+        found_comfyui=None, detected_comfyui=tmp_path,
+    )
+    assert isinstance(preparation, BenchmarkLaunchReady)
+    assert preparation.state["gui_options"]["ambient_temp_c"] == 18.5
+    assert "--ambient-temp-c" not in preparation.command
+
+
 def test_prepare_benchmark_launch_validates_ambient_for_sustained(tmp_path):
     entries = [MenuEntry("model", "Model", "llm", "LLM", True)]
     preparation = prepare_benchmark_launch(
         engine="llamacpp", tests=["sustained"], entries=entries,
         max_prompt_tokens=None, tg_tokens=[],
-        gui_options=dict(GUI_OPTION_DEFAULTS, ambient_temp_c="None"),
+        gui_options=dict(GUI_OPTION_DEFAULTS, ambient_temp_c="invalid"),
         selected_preset="Custom", detected_tools={"llama-server": "/bin/server"},
         found_comfyui=None, detected_comfyui=tmp_path,
     )

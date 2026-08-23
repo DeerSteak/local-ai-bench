@@ -354,7 +354,11 @@ def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[Men
                              detected_tools: dict[str, str | None],
                              found_comfyui: Path | None,
                              detected_comfyui: Path) -> BenchmarkLaunchError | BenchmarkLaunchReady:
-    launch_options = dict(gui_options)
+    state_options = dict(gui_options)
+    if (isinstance(state_options["ambient_temp_c"], str)
+            and state_options["ambient_temp_c"].strip().lower() == "none"):
+        state_options["ambient_temp_c"] = None
+    launch_options = dict(state_options)
     if "sustained" not in tests:
         launch_options["ambient_temp_c"] = None
     errors = validate_gui_options(launch_options)
@@ -386,14 +390,14 @@ def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[Men
     state = build_frontend_state(
         engine, tests, entries, max_prompt_tokens=max_prompt_tokens,
         tg_tokens=tg_tokens,
-        gui_options=launch_options, selected_preset=selected_preset,
+        gui_options=state_options, selected_preset=selected_preset,
     )
     command = build_benchmark_command(
         engine, detected_comfyui, tests, entries,
         max_prompt_tokens=(max_prompt_tokens
                            if MAX_PROMPT_TOKEN_TESTS & set(tests) else None),
         tg_tokens=tg_tokens if TG_TOKEN_TESTS & set(tests) else None,
-        gui_options=launch_options,
+        gui_options=state_options,
     )
     return BenchmarkLaunchReady(preview, state, command)
 
