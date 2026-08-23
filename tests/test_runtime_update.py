@@ -9,9 +9,11 @@ import pytest
 
 from scripts.setup.runtime_update import (
     detect_nvidia_compute_capability, detect_nvidia_max_cuda_version,
-    fetch_llamacpp_release, fetch_llamacpp_releases, homebrew_llamacpp_prefix,
+    fetch_latest_llamacpp_source_tag, fetch_llamacpp_release, fetch_llamacpp_releases,
+    homebrew_llamacpp_prefix,
     llamacpp_clone_command,
-    llamacpp_cmake_flags, llamacpp_source_release, normalize_llamacpp_release_tag,
+    latest_llamacpp_tag_from_refs, llamacpp_cmake_flags, llamacpp_source_release,
+    normalize_llamacpp_release_tag,
     rebuild_managed_llamacpp,
     RuntimeUpdateControl, select_macos_llamacpp_asset, select_windows_llamacpp_assets,
     update_homebrew_llamacpp, update_macos_llamacpp, update_windows_llamacpp,
@@ -30,6 +32,26 @@ def test_llamacpp_source_release_provides_tag_and_numeric_build():
         llamacpp_source_release({"tag_name": "latest"})
 
 
+def test_latest_llamacpp_source_tag_uses_numeric_tag_order():
+    refs = "\n".join([
+        "aaa\trefs/tags/b9999",
+        "bbb\trefs/tags/b10000",
+        "ccc\trefs/tags/not-a-build",
+    ])
+
+    assert latest_llamacpp_tag_from_refs(refs) == "b10000"
+
+
+def test_latest_llamacpp_source_tag_reports_git_failure():
+    def run(command, **kwargs):
+        assert command[-1] == "b*"
+        assert kwargs["timeout"] == 30
+        return SimpleNamespace(returncode=1, stdout="", stderr="network unavailable")
+
+    with pytest.raises(RuntimeError, match="network unavailable"):
+        fetch_latest_llamacpp_source_tag(run=run)
+
+
 def test_llamacpp_release_tag_accepts_prefixed_or_numeric_values():
     assert normalize_llamacpp_release_tag("b10362") == "b10362"
     assert normalize_llamacpp_release_tag(" 10362 ") == "b10362"
@@ -37,9 +59,9 @@ def test_llamacpp_release_tag_accepts_prefixed_or_numeric_values():
         normalize_llamacpp_release_tag("main")
 
 
-def test_release_history_keeps_recent_published_build_tags():
+def test_release_history_keeps_numeric_builds_including_prereleases():
     payload = [
-        {"tag_name": "b10362", "draft": False, "prerelease": False},
+        {"tag_name": "b10362", "draft": False, "prerelease": True},
         {"tag_name": "b10361", "draft": False, "prerelease": False},
         {"tag_name": "b10360", "draft": True, "prerelease": False},
         {"tag_name": "nightly", "draft": False, "prerelease": False},

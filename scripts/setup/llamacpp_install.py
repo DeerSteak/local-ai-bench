@@ -13,8 +13,8 @@ from scripts.setup.archive_safety import safe_extract_zip
 from scripts.setup.intel_xpu_install import oneapi_environment
 from scripts.setup.resumable_download import download_file
 from scripts.setup.runtime_update import (
-    fetch_llamacpp_release, fetch_llamacpp_release_tag, llamacpp_clone_command,
-    llamacpp_source_release, select_windows_llamacpp_release,
+    fetch_latest_llamacpp_source_tag, fetch_llamacpp_release, fetch_llamacpp_release_tag,
+    llamacpp_clone_command, llamacpp_source_release, select_windows_llamacpp_release,
     update_macos_llamacpp, update_windows_llamacpp,
 )
 
@@ -174,8 +174,17 @@ def install(runtime_dir: Path, download_dir: Path, platform_name: str, *,
             release = release_fetcher() if release_fetcher else fetch_llamacpp_release()
             tag, build_number = llamacpp_source_release(release)
         except Exception as exc:
-            fail(f"Could not resolve the latest llama.cpp source release: {exc}")
-            return False
+            if release_fetcher:
+                fail(f"Could not resolve the requested llama.cpp source release: {exc}")
+                return False
+            warn(f"Could not resolve llama.cpp through GitHub releases: {exc}")
+            info("Falling back to the latest official llama.cpp Git tag ...")
+            try:
+                tag = fetch_latest_llamacpp_source_tag()
+                build_number = tag[1:]
+            except Exception as tag_exc:
+                fail(f"Could not resolve the latest llama.cpp source tag: {tag_exc}")
+                return False
         if subprocess.run(llamacpp_clone_command(runtime_dir, tag)).returncode != 0:
             fail("git clone failed")
             return False

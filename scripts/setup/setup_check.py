@@ -107,6 +107,16 @@ def llamacpp_backend_rebuild_warning(installed_backend: str | None, required_bac
             "— it will be rebuilt")
 
 
+def llamacpp_install_action(required_backend: str | None, failure: str | None,
+                            runtime_dir: Path) -> str:
+    backend = {
+        "cuda": "CUDA", "rocm": "ROCm/HIP", "xpu": "Intel oneAPI/SYCL",
+    }.get(required_backend or "", "CPU")
+    detail = f" Last failure: {failure}." if failure else ""
+    return (f"Rerun setup to retry the managed llama.cpp {backend} build at "
+            f"{runtime_dir}.{detail} No manual llama.cpp installation is required.")
+
+
 def accessible_file(path: Path) -> bool:
     try:
         return path.is_file()
@@ -431,13 +441,19 @@ def main() -> None:  # pragma: no cover - real interactive installer
         info("Raise it with memory=<N>GB under [wsl2] in %UserProfile%\\.wslconfig, "
              "then run 'wsl --shutdown' — see docs/setup.md")
 
+    _llamacpp_install_failures: list[str] = []
+
     def install_llamacpp():
+        def record_failure(message: str) -> None:
+            _llamacpp_install_failures.append(message)
+            fail(message)
+
         return llamacpp_install.install(
             LLAMACPP_DIR, SCRIPT_DIR, os_name, nvidia=nvidia_ok, rocm=rocm_ok,
             intel_xpu=intel_linux or intel_windows,
             compute_capability=nvidia_compute_cap,
             max_cuda_version=nvidia_max_cuda_version,
-            info=info, warn=warn, fail=fail, ok=ok,
+            info=info, warn=warn, fail=record_failure, ok=ok,
         )
 
     # ── 4a. llama.cpp detection (read-only) ────────────────────────────────────────
@@ -918,9 +934,11 @@ def main() -> None:  # pragma: no cover - real interactive installer
                 warn("llama-batched-bench still not found after install — the llamabenchconc test won't be available")
         else:
             fail("llama.cpp installation failed")
-            issues.append("Install llama.cpp manually: https://github.com/ggml-org/llama.cpp "
-                           "(needs a 'llama-server' binary on PATH, or built under "
-                          f"{LLAMACPP_DIR})")
+            issues.append(llamacpp_install_action(
+                _required_llamacpp_backend,
+                _llamacpp_install_failures[-1] if _llamacpp_install_failures else None,
+                LLAMACPP_DIR,
+            ))
 
     if needs_python_headers(engine_entries, missing_python_header):
         if header_command is None:

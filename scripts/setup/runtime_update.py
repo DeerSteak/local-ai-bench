@@ -168,6 +168,28 @@ def llamacpp_clone_command(destination: Path, tag: str) -> list[str]:
     return ["git", "clone", "--branch", tag, "--depth", "1", LLAMACPP_REPO, str(destination)]
 
 
+def latest_llamacpp_tag_from_refs(output: str) -> str:
+    tags = []
+    for line in output.splitlines():
+        ref = line.rsplit("/", 1)[-1].strip()
+        if ref.startswith("b") and ref[1:].isdigit():
+            tags.append(ref)
+    if not tags:
+        raise ValueError("GitHub returned no llama.cpp source tags")
+    return max(tags, key=lambda tag: int(tag[1:]))
+
+
+def fetch_latest_llamacpp_source_tag(*, run=subprocess.run) -> str:
+    result = run(
+        ["git", "ls-remote", "--tags", "--refs", LLAMACPP_REPO, "b*"],
+        capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "git ls-remote failed").strip()
+        raise RuntimeError(detail)
+    return latest_llamacpp_tag_from_refs(result.stdout or "")
+
+
 def _terminate_process_tree(process) -> None:
     try:
         parent = psutil.Process(process.pid)
@@ -333,7 +355,7 @@ def fetch_llamacpp_releases(*, opener=urllib.request.urlopen) -> list[dict]:
         raise ValueError("GitHub returned invalid llama.cpp release history")
     return [
         release for release in payload
-        if isinstance(release, dict) and not release.get("draft") and not release.get("prerelease")
+        if isinstance(release, dict) and not release.get("draft")
         and isinstance(release.get("tag_name"), str)
         and release["tag_name"].startswith("b") and release["tag_name"][1:].isdigit()
     ]

@@ -372,6 +372,41 @@ def test_linux_intel_build_sources_oneapi_and_enables_sycl(monkeypatch, tmp_path
     assert build[1]["env"] == build_env
 
 
+def test_linux_source_install_falls_back_to_official_git_tags(monkeypatch, tmp_path):
+    runtime = tmp_path / "runtime"
+    commands, warnings = [], []
+    monkeypatch.setattr(llamacpp_install.shutil, "which", lambda _name: "/usr/bin/tool")
+    monkeypatch.setattr(
+        llamacpp_install, "fetch_llamacpp_release",
+        lambda: (_ for _ in ()).throw(ValueError("GitHub returned no releases")),
+    )
+    monkeypatch.setattr(
+        llamacpp_install, "fetch_latest_llamacpp_source_tag", lambda: "b10499",
+    )
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        if command[:2] == ["git", "clone"]:
+            runtime.mkdir()
+        if command[:2] == ["cmake", "--build"]:
+            build = runtime / "build"
+            build.mkdir()
+            (build / "llama-server").touch()
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(llamacpp_install.subprocess, "run", run)
+    assert llamacpp_install.install(
+        runtime, tmp_path, "Linux", nvidia=False, rocm=False, intel_xpu=False,
+        compute_capability=None, max_cuda_version=None,
+        info=_log, warn=warnings.append, fail=_log, ok=_log,
+    )
+    clone = next(command for command in commands if command[:2] == ["git", "clone"])
+    configure = next(command for command in commands if command[:2] == ["cmake", "-B"])
+    assert clone[2:4] == ["--branch", "b10499"]
+    assert "-DLLAMA_BUILD_NUMBER=10499" in configure
+    assert any("GitHub releases" in message for message in warnings)
+
+
 def test_linux_intel_build_fails_without_oneapi(monkeypatch, tmp_path):
     failures = []
     monkeypatch.setattr(llamacpp_install.shutil, "which", lambda _name: "/usr/bin/tool")
