@@ -48,6 +48,7 @@ def test_multi_variant_model_expands_distinct_executable_records():
         ("demo:q8_0", "demo", "Q8_0"),
     ]
     assert expanded[1]["hf_file"] == ["demo-q8-1.gguf", "demo-q8-2.gguf"]
+    assert expanded[1]["label"] == "Demo — Q8_0 (~8 GB)"
     assert "variants" not in expanded[0]
     assert default_model_variant(model())["tag"] == "demo:q4_K_M"
 

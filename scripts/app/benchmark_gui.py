@@ -900,6 +900,14 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     model_actions.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
     ttk.Button(model_actions, text="Reset Models", command=reset_models).pack(side="left")
     ttk.Button(
+        model_actions, text="Select All",
+        command=lambda: [variable.set(True) for variable in model_vars.values()],
+    ).pack(side="left", padx=(8, 0))
+    ttk.Button(
+        model_actions, text="Clear",
+        command=lambda: [variable.set(False) for variable in model_vars.values()],
+    ).pack(side="left", padx=(8, 0))
+    ttk.Button(
         model_actions, text="Import Hugging Face Model",
         command=lambda: open_model_import_dialog(),
     ).pack(side="right")

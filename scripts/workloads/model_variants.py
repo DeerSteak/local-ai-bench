@@ -61,6 +61,10 @@ def expanded_model_variants(model: dict) -> list[dict]:
             **deepcopy(variant),
             "base_model": model["base_model"],
             "variant": variant["quantization"],
+            "label": (
+                f"{model['label']} — {variant['quantization']} "
+                f"({variant['download_size']})"
+            ),
         }
         for variant in model["variants"]
     ]
