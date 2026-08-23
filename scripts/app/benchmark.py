@@ -62,7 +62,7 @@ from scripts.workloads.tool_benchmark import ToolBenchmark
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
 from scripts.workloads.models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS
 from scripts.workloads.model_variants import (
-    normalize_variant_selectors, select_model_variants,
+    normalize_variant_selectors, select_model_variants, variant_sweep_cost,
 )
 from scripts.setup.model_inventory import build_model_inventory, format_model_inventory, sanitize_tag_to_short
 from scripts.app.orchestration import (
@@ -188,7 +188,8 @@ def eta_match_config(args, *, mtp_enabled: bool = False) -> dict:
 def format_resolved_plan(engine: str, tests: list[str], models: dict[str, list[dict]],
                          estimate_seconds: float | None, *, runs: int, warmups: int,
                          max_prompt_tokens: int | None, sample_size: int | None,
-                         sustained_duration: int = config.SUSTAINED_DURATION_SEC) -> str:
+                         sustained_duration: int = config.SUSTAINED_DURATION_SEC,
+                         sweep_cost: dict | None = None) -> str:
     family_for = {
         "emb": "embeddings", "img": "images", "conc_tool": "concurrency",
         "conc_chat": "concurrency",
@@ -229,6 +230,12 @@ def format_resolved_plan(engine: str, tests: list[str], models: dict[str, list[d
             cases = "one document"
         lines.append(f"  {test}: {', '.join(labels) or '(no models)'} — {cases}")
     lines.append(f"Runs: {runs} measured + {warmups} warmup")
+    if sweep_cost:
+        lines.append(
+            f"Sweep cost: +{sweep_cost['added_disk_gb']:.1f} GB disk; "
+            f"{sweep_cost['download_gb']:.1f} GB download; "
+            f"~{sweep_cost['runtime_multiplier']:.2f}x model-work time"
+        )
     lines.append(f"Estimated duration: {format_duration_estimate(estimate_seconds)}")
     return "\n".join(lines)
 
@@ -1040,6 +1047,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 runs=args.runs, warmups=args.warmup,
                 max_prompt_tokens=args.max_prompt_tokens, sample_size=args.sample,
                 sustained_duration=args.sustained_duration,
+                sweep_cost=variant_sweep_cost(
+                    engine_scope["llm_models"], LLM_MODELS,
+                    [item["tag"] for item in engine_scope["engine"].list_installed_models()],
+                ),
             ))
         Shared.output(format_dry_run_output(previews))
         return

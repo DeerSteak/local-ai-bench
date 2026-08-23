@@ -180,6 +180,8 @@ The GUI's **Support Bundle** action creates a separate redacted `.labsupport` ar
 
 An explicitly supplied selector that resolves to no models for a selected workload is a command error and exits before hardware profiling, result-file creation, or server orchestration. This applies consistently to `--llm-models`/`--models`, `--embedding-models`, and `--image-models`. Selectors for workload families absent from `--tests` are ignored for this validation. Omitted selectors retain the defaults above; selecting a catalog model that is not downloaded still reaches the workload's existing missing-model handling.
 
+`--dry-run` reports a quantization sweep's incremental disk footprint relative to the catalog default, the selected artifacts still requiring download, and the model-work runtime multiplier before creating a result or launching a workload. The ordinary exact-plan historical duration remains separate: an unseen variant plan has no fabricated wall-clock estimate.
+
 ## Examples
 
 ```bash

@@ -1,9 +1,11 @@
 """Catalog validation and expansion for optional GGUF quantization variants."""
 
 from copy import deepcopy
+import re
 
 
 VARIANT_KEYS = ("tag", "short", "quantization", "hf_repo", "hf_file", "download_size")
+SIZE_PATTERN = re.compile(r"~?\s*([0-9]+(?:\.[0-9]+)?)\s*GB", re.IGNORECASE)
 
 
 def _nonempty_string(value) -> bool:
@@ -136,3 +138,34 @@ def select_model_variants(models: list[dict], selections: dict[str, tuple[str, .
         }
         resolved.extend(variants[name] for name in requested)
     return resolved
+
+
+def variant_sweep_cost(models: list[dict], catalog: list[dict], installed_tags=()) -> dict | None:
+    selected_variants = [model for model in models if model.get("base_model") and model.get("variant")]
+    if not selected_variants:
+        return None
+    installed = set(installed_tags)
+    catalog_by_base = {model.get("base_model"): model for model in catalog if model.get("variants")}
+
+    def size_gb(model: dict) -> float | None:
+        match = SIZE_PATTERN.fullmatch(str(model.get("download_size", "")).strip())
+        return float(match.group(1)) if match else None
+
+    added_disk = 0.0
+    download = 0.0
+    grouped: dict[str, list[dict]] = {}
+    for model in selected_variants:
+        grouped.setdefault(model["base_model"], []).append(model)
+        if model["tag"] not in installed and (size := size_gb(model)) is not None:
+            download += size
+    for base_model, selected in grouped.items():
+        catalog_model = catalog_by_base[base_model]
+        default = default_model_variant(catalog_model)
+        selected_size = sum(size_gb(model) or 0 for model in selected)
+        added_disk += max(0.0, selected_size - (size_gb(default) or 0))
+    baseline_units = len(models) - sum(len(selected) - 1 for selected in grouped.values())
+    return {
+        "added_disk_gb": round(added_disk, 1),
+        "download_gb": round(download, 1),
+        "runtime_multiplier": round(len(models) / baseline_units, 2),
+    }

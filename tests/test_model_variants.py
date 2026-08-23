@@ -4,6 +4,7 @@ from scripts.workloads.model_variants import (
     default_model_variant, expanded_model_variants, expanded_variant_catalog,
     normalize_variant_selectors,
     select_model_variants, validate_model_variants,
+    variant_sweep_cost,
 )
 from scripts.workloads.models import LLM_MODELS
 
@@ -99,6 +100,18 @@ def test_variant_selection_rejects_base_outside_selected_model_scope():
         select_model_variants(
             [{"tag": "other:q4", "short": "other"}], {"demo": ("Q4_K_M",)},
         )
+
+
+def test_variant_sweep_cost_reports_incremental_disk_download_and_runtime():
+    catalog = [model(), {"tag": "other:q4", "short": "other"}]
+    selected = select_model_variants(catalog, {"demo": ("Q4_K_M", "Q8_0")})
+
+    assert variant_sweep_cost(selected, catalog, installed_tags=["demo:q4_K_M"]) == {
+        "added_disk_gb": 8.0,
+        "download_gb": 8.0,
+        "runtime_multiplier": 1.5,
+    }
+    assert variant_sweep_cost(catalog, catalog) is None
 
 
 @pytest.mark.parametrize("mutate, message", [
