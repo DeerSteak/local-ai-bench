@@ -63,6 +63,7 @@ def expanded_model_variants(model: dict) -> list[dict]:
             **common,
             **deepcopy(variant),
             "base_model": model["base_model"],
+            "base_label": model["label"],
             "variant": variant["quantization"],
             "label": (
                 f"{model['label']} — {variant['quantization']} "
@@ -75,6 +76,39 @@ def expanded_model_variants(model: dict) -> list[dict]:
             record.pop("native_mtp", None)
         expanded.append(record)
     return expanded
+
+
+def variant_selection_state(tags, selected_tags) -> str:
+    """Return the aggregate checkbox state for one quantization family."""
+    members = set(tags)
+    selected = members & set(selected_tags)
+    if not selected:
+        return "none"
+    return "all" if selected == members else "some"
+
+
+def variant_selection_target(tags, selected_tags) -> set[str]:
+    """A family click clears a full selection; otherwise it selects every child."""
+    members = set(tags)
+    selected = set(selected_tags)
+    return selected - members if members <= selected else selected | members
+
+
+def collapse_variant_selection(models, selected_tags) -> set[str]:
+    """Replace each selected quantization family with only its default variant."""
+    selected = set(selected_tags)
+    grouped: dict[str, list[dict]] = {}
+    for model in models:
+        if isinstance(model.get("base_model"), str) and isinstance(model.get("variant"), str):
+            grouped.setdefault(model["base_model"], []).append(model)
+    for variants in grouped.values():
+        tags = {model["tag"] for model in variants}
+        if selected & tags:
+            selected -= tags
+            default = next((model["tag"] for model in variants if model.get("default")), None)
+            if default is not None:
+                selected.add(default)
+    return selected
 
 
 def default_model_variant(model: dict) -> dict:

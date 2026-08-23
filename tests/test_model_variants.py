@@ -1,11 +1,24 @@
 import pytest
 
 from scripts.workloads.model_variants import (
-    default_model_variant, expanded_model_variants, expanded_variant_catalog,
+    collapse_variant_selection, default_model_variant, expanded_model_variants, expanded_variant_catalog,
+    variant_selection_state, variant_selection_target,
     normalize_variant_selectors,
     select_model_variants, validate_model_variants,
     variant_sweep_cost,
 )
+
+
+def test_variant_family_selection_states_and_toggle_target():
+    tags = ["demo:q4", "demo:q6", "demo:q8"]
+
+    assert variant_selection_state(tags, set()) == "none"
+    assert variant_selection_state(tags, {"demo:q6"}) == "some"
+    assert variant_selection_state(tags, set(tags)) == "all"
+    assert variant_selection_target(tags, {"other"}) == {"other", *tags}
+    assert variant_selection_target(tags, {"other", *tags}) == {"other"}
+
+
 from scripts.workloads.models import LLM_MODELS
 
 
@@ -29,6 +42,14 @@ def model(**overrides):
     }
     value.update(overrides)
     return value
+
+
+def test_vllm_selection_collapses_quantization_family_to_default():
+    variants = expanded_model_variants(model())
+
+    assert collapse_variant_selection(variants, {"other", "demo:q8_0"}) == {
+        "other", "demo:q4_K_M",
+    }
 
 
 def test_single_variant_model_is_unchanged_and_copied():
