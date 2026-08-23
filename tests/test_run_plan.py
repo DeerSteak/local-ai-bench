@@ -121,6 +121,31 @@ def test_methodology_profile_is_identity_bearing_and_validated():
         make_plan(effective_config=missing).validate_for_execution()
 
 
+def test_sustained_plan_requires_the_deterministic_sampling_baseline():
+    config = complete_plan().effective_config
+    sampling = baseline_sampling_profile("llamacpp")
+    sampling["semantic_controls"]["temperature"] = 0.9
+    config.update({
+        "methodology_profile": "neutral-v2",
+        "effective_optimizations": ["llamacpp:flash_attention=on"],
+        "sampling_profile": sampling,
+        "memory_telemetry": True,
+        "memory_telemetry_interval_sec": 0.5,
+        "temperature_telemetry": True,
+        "temperature_telemetry_interval_sec": 0.5,
+        "temperature_sources": {"gpu_die_c": "nvidia-smi"},
+        "sustained_duration_sec": 600,
+        "sustained_window_sec": 10,
+        "sustained_context_tokens": 2048,
+        "ambient_temp_c": None,
+    })
+
+    with pytest.raises(ValueError, match="sampling_profile"):
+        make_plan(
+            tests=["sustained"], stage_order=["sustained"], effective_config=config,
+        ).validate_for_execution()
+
+
 def test_mtp_configuration_is_structured_methodology_and_identity_bearing():
     config = complete_plan().effective_config
     config.update({
