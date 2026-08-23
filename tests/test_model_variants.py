@@ -3,6 +3,7 @@ import pytest
 from scripts.workloads.model_variants import (
     default_model_variant, expanded_model_variants, validate_model_variants,
 )
+from scripts.workloads.models import LLM_MODELS
 
 
 def model(**overrides):
@@ -47,6 +48,18 @@ def test_multi_variant_model_expands_distinct_executable_records():
     assert expanded[1]["hf_file"] == ["demo-q8-1.gguf", "demo-q8-2.gguf"]
     assert "variants" not in expanded[0]
     assert default_model_variant(model())["tag"] == "demo:q4_K_M"
+
+
+def test_catalog_variants_are_valid_and_default_preserves_legacy_gemma_identity():
+    for catalog_model in LLM_MODELS:
+        validate_model_variants(catalog_model)
+
+    gemma = next(item for item in LLM_MODELS if item.get("base_model") == "gemma3:1b-it")
+    assert [item["variant"] for item in expanded_model_variants(gemma)] == [
+        "Q4_K_M", "Q6_K", "Q8_0",
+    ]
+    assert default_model_variant(gemma)["tag"] == "gemma3:1b-it-q4_K_M"
+    assert default_model_variant(gemma)["short"] == "gemma3-1b"
 
 
 @pytest.mark.parametrize("mutate, message", [

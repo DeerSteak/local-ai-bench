@@ -28,7 +28,7 @@ Every "Size" figure below is the model's actual on-disk download size, rounded *
 
 ## LLM
 
-Twelve models across four tiers (three per tier) are in the default catalog. Models that were not downloaded are skipped; a timeout or repeatable runner crash stops that model's current workload and preserves any measurements already collected.
+Twelve base models across four tiers (three per tier) are in the default catalog. Each ordinary run still selects one documented GGUF per base model. A llama.cpp-only quantization sweep may opt into multiple explicitly cataloged GGUF variants of the same base model; each receives a distinct model tag, result key, run-plan identity, event-journal identity, and crash-cache identity, and executes through the same workload lifecycle as any other selected model. Models that were not downloaded are skipped; a timeout or repeatable runner crash stops that model's current workload and preserves any measurements already collected.
 
 The suite provides **two separate LLM tests**. When both are selected, it completes the single-shot stage for all models before starting the conversation stage:
 
@@ -74,6 +74,8 @@ Separately, *within* the conversation test itself: if the decode speed at any hi
 | Qwen3.5 4B 4-Bit Quantization | `qwen3.5:4b-q4_K_M` | `cyankiwi/Qwen3.5-4B-AWQ-4bit` | ~3.1 GB | Dense |
 
 The extra-small tier deliberately spans three roles. Gemma 3 1B is the ultra-light speed floor, showing what the suite costs on the smallest practical general model. Granite 4.1 3B is the compact structured-execution and tool-calling specialist. Qwen3.5 4B is the more capable general executor, trading some speed for stronger instruction following, reasoning, coding, and tool use. This makes the tier useful for evaluating fast worker models rather than filling it with three interchangeable general chat baselines.
+
+Gemma 3 1B also supplies the initial bounded quantization sweep: Q4_K_M (~0.8 GB, default), Q6_K (~1.0 GB), and Q8_0 (~1.1 GB) are separate GGUF files in the same repository. Selecting no sweep retains Q4_K_M and therefore does not change ordinary runtime or disk requirements.
 
 ### Small tier (≤20B params)
 

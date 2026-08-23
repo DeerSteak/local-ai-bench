@@ -142,6 +142,7 @@ LLM_MODELS_XSMALL = sorted([
         "tag":            "gemma3:1b-it-q4_K_M",
         "label":          "Gemma 3 1B",
         "short":          "gemma3-1b",
+        "base_model":     "gemma3:1b-it",
         "tier":           "xsmall",
         "download_size":  "~0.8 GB",
         "params_b":       1,
@@ -149,6 +150,24 @@ LLM_MODELS_XSMALL = sorted([
         "hf_file":        "google_gemma-3-1b-it-Q4_K_M.gguf",
         "vllm_repo":      "gaunernst/gemma-3-1b-it-int4-awq",
         "vllm_download_size": "~1.1 GB",
+        "variants": [
+            {
+                "tag": "gemma3:1b-it-q4_K_M", "short": "gemma3-1b",
+                "quantization": "Q4_K_M", "hf_repo": "bartowski/google_gemma-3-1b-it-GGUF",
+                "hf_file": "google_gemma-3-1b-it-Q4_K_M.gguf",
+                "download_size": "~0.8 GB", "default": True,
+            },
+            {
+                "tag": "gemma3:1b-it-q6_K", "short": "gemma3-1b-q6",
+                "quantization": "Q6_K", "hf_repo": "bartowski/google_gemma-3-1b-it-GGUF",
+                "hf_file": "google_gemma-3-1b-it-Q6_K.gguf", "download_size": "~1.0 GB",
+            },
+            {
+                "tag": "gemma3:1b-it-q8_0", "short": "gemma3-1b-q8",
+                "quantization": "Q8_0", "hf_repo": "bartowski/google_gemma-3-1b-it-GGUF",
+                "hf_file": "google_gemma-3-1b-it-Q8_0.gguf", "download_size": "~1.1 GB",
+            },
+        ],
     },
     {
         "tag":            "granite4.1:3b-q4_K_M",
