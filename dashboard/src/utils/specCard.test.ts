@@ -33,8 +33,8 @@ describe("buildSpecCardSummary", () => {
     }));
     expect(summary).toEqual([{
       tier: "xsmall", checkpoint: "8K",
-      fastest: { model: "Gemma 3 1B", value: 80 },
-      lowestTtft: { model: "Gemma 3 1B", value: 0.4 },
+      fastest: { model: "Gemma 3 1B — Q4_K_M", value: 80 },
+      lowestTtft: { model: "Gemma 3 1B — Q4_K_M", value: 0.4 },
     }]);
   });
 });

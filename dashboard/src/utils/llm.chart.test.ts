@@ -94,7 +94,7 @@ describe("buildLLMLineConfigs", () => {
     const configs = buildLLMLineConfigs(single, buildLLMData(single, "tps", ALL), ALL);
     expect(configs).toHaveLength(1);
     expect(configs[0].dataKey).toBe("gemma3-1b");
-    expect(configs[0].name).toBe("Gemma 3 1B");
+    expect(configs[0].name).toBe("Gemma 3 1B — Q4_K_M");
     expect(dash(configs[0])).toBeUndefined();
   });
 
@@ -110,7 +110,7 @@ describe("buildLLMLineConfigs", () => {
     expect(configs[0].stroke).toBe(configs[1].stroke);
     expect(configs[0].stroke).not.toBe(configs[2].stroke);
     expect(dash(configs[0])).not.toBe(dash(configs[1]));
-    expect(configs[0].name).toBe("alpha — Gemma 3 1B");
+    expect(configs[0].name).toBe("alpha — Gemma 3 1B — Q4_K_M");
   });
 
   it("emits no config for an enabled model with nothing plotted", () => {
@@ -124,7 +124,7 @@ describe("buildLLMBarDataByModel", () => {
   it("emits one row per model with a column per checkpoint, ordered by CTX_ORDER", () => {
     const single = file("alpha", { "gemma3-1b": { "8K": sample(30), "2K": sample(40) } });
     expect(buildLLMBarDataByModel(single, ["gemma3-1b"], "tps")).toEqual([
-      { modelLabel: "Gemma 3 1B", "2K": 40, "8K": 30 },
+      { modelLabel: "Gemma 3 1B — Q4_K_M", "2K": 40, "8K": 30 },
     ]);
   });
 
@@ -157,13 +157,13 @@ describe("buildLLMBarDataByModel", () => {
   it("reads a non-default section such as llm_conversation", () => {
     const single = file("alpha", { "gemma3-1b": { "32K": sample(22) } }, "llm_conversation");
     expect(buildLLMBarDataByModel(single, ["gemma3-1b"], "tps", "llm_conversation"))
-      .toEqual([{ modelLabel: "Gemma 3 1B", "32K": 22 }]);
+      .toEqual([{ modelLabel: "Gemma 3 1B — Q4_K_M", "32K": 22 }]);
   });
 
   it("emits a labelled row even for a model the file has no data for", () => {
     const single = file("alpha", undefined);
     expect(buildLLMBarDataByModel(single, ["gemma3-1b"], "tps"))
-      .toEqual([{ modelLabel: "Gemma 3 1B" }]);
+      .toEqual([{ modelLabel: "Gemma 3 1B — Q4_K_M" }]);
   });
 });
 
@@ -230,7 +230,7 @@ describe("buildLLMLineDataByCtx / buildLLMLineConfigsByCtx", () => {
   it("names each line with its display label", () => {
     const data = buildLLMLineDataByCtx(single, ["gemma3-1b", "gemma3-27b-q4"], "tps");
     expect(buildLLMLineConfigsByCtx(["gemma3-1b", "gemma3-27b-q4"], data).map(c => c.name))
-      .toEqual(["Gemma 3 1B", "Gemma 3 27B 4-Bit Quantization"]);
+      .toEqual(["Gemma 3 1B — Q4_K_M", "Gemma 3 27B 4-Bit Quantization"]);
   });
 
   it("omits a requested model with no points to plot", () => {

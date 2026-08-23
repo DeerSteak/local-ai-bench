@@ -51,6 +51,12 @@ describe("model registry consistency", () => {
     }
   });
 
+  it("labels every cataloged Gemma 3 quantization explicitly", () => {
+    expect(lookup(LLM_MODEL_LABELS, "gemma3-1b")).toBe("Gemma 3 1B — Q4_K_M");
+    expect(lookup(LLM_MODEL_LABELS, "gemma3-1b-q6")).toBe("Gemma 3 1B — Q6_K");
+    expect(lookup(LLM_MODEL_LABELS, "gemma3-1b-q8")).toBe("Gemma 3 1B — Q8_0");
+  });
+
   it("every image model in IMAGE_MODEL_ORDER has a label and a color", () => {
     for (const model of IMAGE_MODEL_ORDER) {
       expect(lookup(IMAGE_MODEL_LABELS, model), `${model} missing a label`).toBeDefined();

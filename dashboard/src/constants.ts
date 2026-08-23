@@ -115,7 +115,7 @@ export const MEMORY_HEADROOM_LABELS = {
 // Human-readable labels for LLM model short keys (matches the "label" field
 // in models.py, the single source of truth for the model roster)
 export const LLM_MODEL_LABELS = {
-  "gemma3-1b":              "Gemma 3 1B",
+  "gemma3-1b":              "Gemma 3 1B — Q4_K_M",
   "gemma3-1b-q6":           "Gemma 3 1B — Q6_K",
   "gemma3-1b-q8":           "Gemma 3 1B — Q8_0",
   "granite4.1-3b-q4":       "Granite 4.1 3B 4-Bit Quantization",
