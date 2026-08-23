@@ -177,6 +177,15 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 - Version 6.0-pre9 extension: run-plan schema 6 makes each native MTP model's engine-specific speculative depth and predictor mode identity-bearing. Historical schemas remain readable without acquiring the new identity.
 - Scope rule: processor-package, accelerator, CPU-package, and whole-system energy are distinct claims. Mixed scopes have no aggregate run total or shared dashboard axis, and Apple `powermetrics` estimates remain within-device evidence because the tool warns against cross-device comparison.
 
+### AD-020 — Expand quantization variants into existing model execution units
+
+- Status: accepted
+- Requirement: quantization sweeps must keep evidence, recovery, acquisition, and result keys separate without creating a second workload runner or changing ordinary single-variant runs.
+- Decision: a catalog model may add one stable `base_model` and a validated `variants` list. Selection expands each chosen GGUF variant into the existing model shape with a unique `tag` and `short`, plus explicit `base_model` and `variant` identity; workloads then execute those records sequentially through their existing stage and case boundaries. The catalog default repeats the legacy top-level tag, artifact, and size so an ordinary run retains its prior meaning. CLI selectors use repeatable `BASE=VARIANT` pairs, and a sweep remains llama.cpp-only.
+- Rejected alternative: a parallel quantization sweep runner or a quantization field that leaves multiple artifacts sharing one tag, either of which would duplicate lifecycle logic or pool evidence incorrectly.
+- Compatibility and data ownership: run-plan schema 7 allowlists `base_model` and `variant`; schemas 1 through 6 retain their original identity. Older results map a known legacy tag to its catalog base/default variant only for presentation and never acquire new evidence identity. Variant selection is resolved before download, preflight, estimation, or execution, and the event journal remains the sole recovery authority.
+- Evidence and deletion gate: catalog validation, identity separation, selector, estimate, acquisition, event-stage, recommendation, compatibility, and dashboard tests must pass before a real sweep. Native vLLM formats remain out of scope until a separately committed methodology defines cross-format comparability.
+
 ## Migration and deletion ledger
 
 | Temporary or superseded path | Current owner | Replacement gate | Required deletion |
