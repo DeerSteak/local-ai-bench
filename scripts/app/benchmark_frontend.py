@@ -224,7 +224,10 @@ def build_frontend_state(engine_name: str, tests: list[str],
             } for entry in entries if entry.base_model],
             {entry.value for entry in selected},
         )
-        selected = [entry for entry in selected if not entry.base_model or entry.value in collapsed]
+        selected = [
+            entry for entry in selected
+            if not (entry.base_model and entry.variant) or entry.value in collapsed
+        ]
     state = {
         "version": FRONTEND_STATE_VERSION,
         "engine": engine_name,
@@ -797,14 +800,17 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
             } for entry in entries if entry.base_model],
             {entry.value for entry in selected},
         )
-        selected = [entry for entry in selected if not entry.base_model or entry.value in collapsed]
+        selected = [
+            entry for entry in selected
+            if not (entry.base_model and entry.variant) or entry.value in collapsed
+        ]
     if any(test in LLM_BACKED_TESTS for test in tests):
         selected_llm = [entry for entry in selected if entry.kind in ("llm", "custom")]
         variant_bases = {
             entry.base_model for entry in selected_llm if entry.base_model and entry.variant
         }
         llm_values = [
-            entry.value for entry in selected_llm if not entry.base_model
+            entry.value for entry in selected_llm if not (entry.base_model and entry.variant)
         ]
         for base_model in sorted(variant_bases):
             catalog_model = next(model for model in LLM_MODELS if model.get("base_model") == base_model)
