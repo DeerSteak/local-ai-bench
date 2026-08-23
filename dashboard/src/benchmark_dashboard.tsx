@@ -3,6 +3,7 @@ import html2canvas from "html2canvas";
 import { readNamedJSONSource, sanitizeForFilename, filesForSection, getRunReliabilityWarning, getLlamaBenchMethodologyWarning, getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning, getNoRepackMethodologyWarning, getCrossEngineWeightsWarning, getMemoryTelemetryMethodologyWarning } from "./utils/shared";
 import { isTrialSetArtifact, trialArtifactLoadMode } from "./utils/trials";
 import { isRecommendationArtifact, recommendationArtifactLoadMode } from "./utils/recommendations";
+import { isVariantComparisonArtifact, variantArtifactLoadMode } from "./utils/variants";
 import { getAllLLMModels } from "./utils/llm";
 import { getAllImageModels } from "./utils/images";
 import { getAllEmbedModels } from "./utils/embeddings";
@@ -23,6 +24,7 @@ import { DeltaModeContext } from "./components/DeltaModeContext";
 import RunSummaryCards from "./components/RunSummaryCards";
 import TrialSetPanel from "./components/TrialSetPanel";
 import RecommendationPanel from "./components/RecommendationPanel";
+import VariantComparisonPanel from "./components/VariantComparisonPanel";
 import { dashboardHostname } from "./utils/specCard";
 import { buildRunCardFilename } from "./utils/specCard";
 import { useAutoEnabledSelection } from "./hooks/useAutoEnabledSelection";
@@ -47,6 +49,7 @@ export default function Dashboard() {
   const [savingSpecCard, setSavingSpecCard] = useState(false);
   const [trialSet, setTrialSet] = useState<{ name: string, data: import("./utils/shared").JsonRecord } | null>(null);
   const [recommendation, setRecommendation] = useState<{ name: string, data: import("./utils/shared").JsonRecord } | null>(null);
+  const [variantComparison, setVariantComparison] = useState<{ name: string, data: import("./utils/shared").JsonRecord } | null>(null);
 
   const filesRef = useRef(files);
   const sectionRef = useRef(section);
@@ -149,8 +152,9 @@ export default function Dashboard() {
     const candidates = await Promise.all(limited.map(readNamedJSONSource));
     const artifactMode = trialArtifactLoadMode(candidates.map(candidate => candidate.data));
     const recommendationMode = recommendationArtifactLoadMode(candidates.map(candidate => candidate.data));
-    if (artifactMode === "mixed" || recommendationMode === "mixed"
-        || (artifactMode === "single" && recommendationMode === "single")) {
+    const variantMode = variantArtifactLoadMode(candidates.map(candidate => candidate.data));
+    const singleArtifacts = [artifactMode, recommendationMode, variantMode].filter(mode => mode === "single").length;
+    if ([artifactMode, recommendationMode, variantMode].includes("mixed") || singleArtifacts > 1) {
       setFileError("Load one derived artifact by itself; it cannot be mixed with result files or another artifact.");
       return;
     }
@@ -159,6 +163,7 @@ export default function Dashboard() {
       setFiles([]);
       setTrialSet({ name: candidates[0].name, data: candidates[0].data });
       setRecommendation(null);
+      setVariantComparison(null);
       setFileError("");
       return;
     }
@@ -167,11 +172,22 @@ export default function Dashboard() {
       setFiles([]);
       setTrialSet(null);
       setRecommendation({ name: candidates[0].name, data: candidates[0].data });
+      setVariantComparison(null);
+      setFileError("");
+      return;
+    }
+    if (variantMode === "single" && isVariantComparisonArtifact(candidates[0].data)) {
+      resetModelState();
+      setFiles([]);
+      setTrialSet(null);
+      setRecommendation(null);
+      setVariantComparison({ name: candidates[0].name, data: candidates[0].data });
       setFileError("");
       return;
     }
     setTrialSet(null);
     setRecommendation(null);
+    setVariantComparison(null);
     const parsed = candidates.map(parseFile);
     const entries = parsed.map(result => result.entry).filter((entry): entry is DisplayFile => Boolean(entry));
     setFileError(parsed.map(result => result.error).filter(Boolean).join(" "));
@@ -328,7 +344,8 @@ export default function Dashboard() {
       />
 
       {trialSet ? <TrialSetPanel name={trialSet.name} artifact={trialSet.data} />
-        : recommendation ? <RecommendationPanel name={recommendation.name} artifact={recommendation.data} /> : <>
+        : recommendation ? <RecommendationPanel name={recommendation.name} artifact={recommendation.data} />
+          : variantComparison ? <VariantComparisonPanel name={variantComparison.name} artifact={variantComparison.data} /> : <>
 
       <Controls
         section={section} setSection={setSection}
