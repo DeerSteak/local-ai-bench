@@ -201,10 +201,13 @@ def install(runtime_dir: Path, download_dir: Path, platform_name: str, *,
         fail("cmake configure failed")
         return False
     info("Building llama-server, llama-bench, and llama-batched-bench ...")
+    parallel_args = llamacpp_build_parallel_args(backend)
+    if backend == "xpu":
+        info(f"Intel SYCL build parallelism: {parallel_args[-1]} job(s)")
     command = [
         "cmake", "--build", str(build_dir), "--target", "llama-server",
         "--target", "llama-bench", "--target", "llama-batched-bench",
-        "--config", "Release", *llamacpp_build_parallel_args(backend),
+        "--config", "Release", *parallel_args,
     ]
     if subprocess.run(command, env=build_env).returncode:
         fail("Build failed")

@@ -348,6 +348,10 @@ def test_linux_intel_build_sources_oneapi_and_enables_sycl(monkeypatch, tmp_path
     build_env = {"PATH": "/opt/intel/oneapi/compiler/latest/bin"}
     monkeypatch.setattr(llamacpp_install.shutil, "which", lambda _name: "/usr/bin/tool")
     monkeypatch.setattr(llamacpp_install, "oneapi_environment", lambda: build_env)
+    monkeypatch.setattr(
+        llamacpp_install, "llamacpp_build_parallel_args",
+        lambda _backend: ["--parallel", "4"],
+    )
 
     def run(command, **kwargs):
         commands.append((command, kwargs))
@@ -370,7 +374,7 @@ def test_linux_intel_build_sources_oneapi_and_enables_sycl(monkeypatch, tmp_path
     assert configure[1]["env"] == build_env
     build = next(entry for entry in commands if entry[0][:2] == ["cmake", "--build"])
     assert build[1]["env"] == build_env
-    assert build[0][-2:] == ["--parallel", "1"]
+    assert build[0][-2:] == ["--parallel", "4"]
 
 
 def test_linux_source_install_falls_back_to_official_git_tags(monkeypatch, tmp_path):

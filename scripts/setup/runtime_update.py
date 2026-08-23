@@ -251,9 +251,18 @@ def llamacpp_cmake_flags(backend: str, *, nvcc: str | None = None,
     return []
 
 
-def llamacpp_build_parallel_args(backend: str) -> list[str]:
-    # DPC++ translation units are memory-heavy; unrestricted jobs can invoke the OOM killer.
-    return ["--parallel", "1"] if backend == "xpu" else ["-j"]
+def llamacpp_build_job_count(backend: str, *, total_memory_bytes: int | None = None) -> int | None:
+    if backend != "xpu":
+        return None
+    total = psutil.virtual_memory().total if total_memory_bytes is None else total_memory_bytes
+    total_gib = total / (1024 ** 3)
+    return 8 if total_gib > 60 else 4 if total_gib > 30 else 1
+
+
+def llamacpp_build_parallel_args(backend: str, *,
+                                 total_memory_bytes: int | None = None) -> list[str]:
+    jobs = llamacpp_build_job_count(backend, total_memory_bytes=total_memory_bytes)
+    return ["--parallel", str(jobs)] if jobs is not None else ["-j"]
 
 
 def validate_llamacpp_build(source_dir: Path, *, required_backend: str | None = None,
@@ -602,6 +611,9 @@ def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
     backup = target.with_name(f".{target.name}-backup-{token}")
     try:
         tag, build_number = llamacpp_source_release(release_fetcher())
+        parallel_args = llamacpp_build_parallel_args(backend)
+        if backend == "xpu":
+            log(f"Intel SYCL build parallelism: {parallel_args[-1]} job(s)")
         commands = [
             llamacpp_clone_command(staged, tag),
             ["cmake", "-B", str(staged / "build"), "-S", str(staged),
@@ -610,7 +622,7 @@ def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
              *llamacpp_cmake_flags(backend, nvcc=nvcc, compute_capability=capability)],
             ["cmake", "--build", str(staged / "build"),
              *sum((["--target", name] for name in LLAMACPP_TARGETS), []),
-             "--config", "Release", *llamacpp_build_parallel_args(backend)],
+             "--config", "Release", *parallel_args],
         ]
         for command in commands:
             if cancelled := _cancelled(control):

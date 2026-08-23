@@ -12,8 +12,8 @@ from scripts.setup.runtime_update import (
     fetch_latest_llamacpp_source_tag, fetch_llamacpp_release, fetch_llamacpp_releases,
     homebrew_llamacpp_prefix,
     llamacpp_clone_command,
-    latest_llamacpp_tag_from_refs, llamacpp_build_parallel_args, llamacpp_cmake_flags,
-    llamacpp_source_release, normalize_llamacpp_release_tag,
+    latest_llamacpp_tag_from_refs, llamacpp_build_job_count, llamacpp_build_parallel_args,
+    llamacpp_cmake_flags, llamacpp_source_release, normalize_llamacpp_release_tag,
     rebuild_managed_llamacpp,
     RuntimeUpdateControl, select_macos_llamacpp_asset, select_windows_llamacpp_assets,
     update_homebrew_llamacpp, update_macos_llamacpp, update_windows_llamacpp,
@@ -379,8 +379,19 @@ def test_llamacpp_cmake_flags_match_backend():
     assert llamacpp_cmake_flags("cpu") == []
 
 
-def test_llamacpp_sycl_build_caps_parallel_compilers():
-    assert llamacpp_build_parallel_args("xpu") == ["--parallel", "1"]
+@pytest.mark.parametrize(("memory_gib", "expected"), [
+    (16, 1), (30, 1), (31, 4), (60, 4), (61, 8), (128, 8),
+])
+def test_llamacpp_sycl_build_scales_jobs_with_installed_memory(memory_gib, expected):
+    memory = memory_gib * 1024 ** 3
+    assert llamacpp_build_job_count("xpu", total_memory_bytes=memory) == expected
+    assert llamacpp_build_parallel_args(
+        "xpu", total_memory_bytes=memory,
+    ) == ["--parallel", str(expected)]
+
+
+def test_non_sycl_builds_retain_unrestricted_parallelism():
+    assert llamacpp_build_job_count("cuda", total_memory_bytes=128 * 1024 ** 3) is None
     assert llamacpp_build_parallel_args("cuda") == ["-j"]
 
 
