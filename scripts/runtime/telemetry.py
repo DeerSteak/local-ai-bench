@@ -103,6 +103,7 @@ class PowerAvailability:
     scope: str
     reason: str | None = None
     location: str | None = None
+    requires_elevation: bool = False
 
 
 @dataclass(frozen=True)
@@ -685,6 +686,22 @@ def discover_power_source(platform_name: str | None = None, *, which_fn=shutil.w
     if readable:
         return PowerAvailability(True, "rapl", "cpu_package", location=str(readable))
     if paths:
+        sudo = which_fn("sudo")
+        for path in paths:
+            if not sudo:
+                break
+            try:
+                result = run_fn(
+                    [sudo, "-n", "test", "-r", str(path)], capture_output=True,
+                    text=True, timeout=2, check=False,
+                )
+            except (OSError, subprocess.SubprocessError):
+                continue
+            if result.returncode == 0:
+                return PowerAvailability(
+                    True, "rapl", "cpu_package", location=str(path),
+                    requires_elevation=True,
+                )
         return PowerAvailability(False, "rapl", "cpu_package",
                                  "RAPL energy counter permission is denied")
     if failed_sources:
@@ -760,7 +777,7 @@ class PollingPowerSource:
         pass
 
 
-class PowermetricsPowerSource:
+class _StreamingPowerSource:
     def __init__(self, availability: PowerAvailability, interval_sec: float, *,
                  popen_fn: Callable[..., Any] = subprocess.Popen,
                  monotonic=time.monotonic):
@@ -777,22 +794,16 @@ class PowermetricsPowerSource:
     def start(self) -> None:
         if not self.availability.available or not self.availability.location:
             return
-        command = [
-            shutil.which("sudo") or "/usr/bin/sudo", "-n", self.availability.location,
-            "--samplers", "cpu_power,gpu_power,ane_power", "--sample-rate",
-            str(max(100, round(self.interval_sec * 1000))), "--sample-count", "-1",
-            "--buffer-size", "1",
-        ]
         try:
             self._process = self.popen_fn(
-                command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                self._command(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                 text=True, bufsize=1,
             )
         except OSError:
             self._process = None
             return
         self._reader = threading.Thread(
-            target=self._read_output, name="powermetrics-reader", daemon=True,
+            target=self._read_output, name=f"{self.availability.source}-reader", daemon=True,
         )
         self._reader.start()
 
@@ -820,6 +831,29 @@ class PowermetricsPowerSource:
         if self._reader:
             self._reader.join(timeout=2)
 
+    def _publish(self, watts: float, timestamp: float) -> None:
+        with self._lock:
+            self._latest = watts
+            self._latest_at = timestamp
+
+    def _command(self) -> list[str]:
+        raise NotImplementedError
+
+    def _read_output(self) -> None:
+        raise NotImplementedError
+
+
+class PowermetricsPowerSource(_StreamingPowerSource):
+    def _command(self) -> list[str]:
+        location = self.availability.location
+        assert location is not None
+        return [
+            shutil.which("sudo") or "/usr/bin/sudo", "-n", location,
+            "--samplers", "cpu_power,gpu_power,ane_power", "--sample-rate",
+            str(max(100, round(self.interval_sec * 1000))), "--sample-count", "-1",
+            "--buffer-size", "1",
+        ]
+
     def _read_output(self) -> None:
         stdout = getattr(self._process, "stdout", None)
         if stdout is None:
@@ -827,9 +861,32 @@ class PowermetricsPowerSource:
         for line in stdout:
             reading = parse_powermetrics_power(line)
             if reading:
-                with self._lock:
-                    self._latest = reading.watts
-                    self._latest_at = self.monotonic()
+                self._publish(reading.watts, self.monotonic())
+
+
+class RaplPowerSource(_StreamingPowerSource):
+    def _command(self) -> list[str]:
+        location = self.availability.location
+        assert location is not None
+        return [
+            shutil.which("sudo") or "/usr/bin/sudo", "-n", "/bin/sh", "-c",
+            'while true; do cat -- "$1" || exit; sleep "$2" || exit; done',
+            "rapl-reader", location, str(self.interval_sec),
+        ]
+
+    def _read_output(self) -> None:
+        stdout = getattr(self._process, "stdout", None)
+        if stdout is None:
+            return
+        previous: tuple[float, float] | None = None
+        for line in stdout:
+            joules = parse_rapl_energy_uj(line)
+            now = self.monotonic()
+            if joules is None:
+                continue
+            if previous is not None and now > previous[0] and joules >= previous[1]:
+                self._publish((joules - previous[1]) / (now - previous[0]), now)
+            previous = (now, joules)
 
 
 def create_power_source(availability: PowerAvailability, interval_sec: float,
@@ -838,6 +895,8 @@ def create_power_source(availability: PowerAvailability, interval_sec: float,
         return PowermetricsPowerSource(availability, interval_sec, **kwargs)
     if availability.source == "amd-adl":
         return AmdAdlPowerSource(availability, **kwargs)
+    if availability.source == "rapl" and availability.requires_elevation:
+        return RaplPowerSource(availability, interval_sec, **kwargs)
     return PollingPowerSource(availability, **kwargs)
 
 

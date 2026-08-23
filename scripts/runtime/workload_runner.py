@@ -62,6 +62,7 @@ def inherited_power_availability(settings: dict, environ=None) -> PowerAvailabil
         payload.get("available") is True, expected_source, expected_scope,
         payload.get("reason") if isinstance(payload.get("reason"), str) else None,
         payload.get("location") if isinstance(payload.get("location"), str) else None,
+        payload.get("requires_elevation") is True,
     )
 
 

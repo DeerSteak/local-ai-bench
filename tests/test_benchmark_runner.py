@@ -114,6 +114,17 @@ def test_runner_refuses_inherited_power_identity_that_differs_from_plan():
     )
 
 
+def test_runner_preserves_privileged_rapl_reader_requirement():
+    inherited = PowerAvailability(
+        True, "rapl", "cpu_package", location="/counter", requires_elevation=True,
+    )
+    status = inherited_power_availability(
+        {"power_source": "rapl", "power_scope": "cpu_package"},
+        {"LOCAL_AI_BENCH_POWER_AVAILABILITY": json.dumps(inherited.__dict__)},
+    )
+    assert status == inherited
+
+
 def test_runner_inherits_only_the_planned_temperature_channels():
     status = TemperatureAvailability(
         True, {"gpu_die_c": "nvidia-smi"},

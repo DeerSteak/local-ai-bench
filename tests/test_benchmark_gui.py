@@ -17,7 +17,7 @@ from scripts.app.benchmark_frontend import (
     validate_gui_options,
 )
 from scripts.app.benchmark_gui import (
-    authorize_macos_power_telemetry,
+    authorize_linux_rapl_power_telemetry, authorize_macos_power_telemetry,
     BENCHMARK_PRESETS, CUSTOM_PRESET, BenchmarkLaunchError, BenchmarkLaunchReady,
     PsutilLike, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults, default_control_values,
@@ -625,6 +625,31 @@ def test_power_authorization_rejects_missing_or_hung_prompt(tmp_path):
         True, system=lambda: "Darwin", run=timeout, askpass_path=helper,
     )
     assert timeout_error is not None and "could not be requested" in timeout_error
+
+
+def test_linux_rapl_power_authorization_prompts_once_in_the_terminal():
+    calls = []
+    denied = type("Availability", (), {"source": "rapl", "available": False})()
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return type("Result", (), {"returncode": 0})()
+
+    assert authorize_linux_rapl_power_telemetry(
+        True, system=lambda: "Linux", discover=lambda: denied, run=run,
+        which=lambda name: "/usr/bin/sudo" if name == "sudo" else None,
+    ) is None
+    assert calls == [(["/usr/bin/sudo", "-v"], {"timeout": 120})]
+
+
+def test_linux_power_authorization_skips_readable_or_non_rapl_sources():
+    run = lambda *_args, **_kwargs: pytest.fail("authorization must not run")
+    for source, available in (("rapl", True), ("nvidia-smi", False)):
+        status = type("Availability", (), {"source": source, "available": available})()
+        assert authorize_linux_rapl_power_telemetry(
+            True, system=lambda: "Linux", discover=lambda status=status: status,
+            run=run,
+        ) is None
 
 
 def test_windows_host_offset_comes_from_powershell_only_under_wsl():

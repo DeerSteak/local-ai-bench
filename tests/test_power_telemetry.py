@@ -4,7 +4,8 @@ import pytest
 
 from scripts.runtime.telemetry import (
     AmdAdlPowerSource, CaseTelemetry, PollingPowerSource, PowerAvailability, PowerReading,
-    PowermetricsPowerSource, TelemetrySample, TelemetrySampler, discover_power_source,
+    PowermetricsPowerSource, RaplPowerSource, TelemetrySample, TelemetrySampler,
+    create_power_source, discover_power_source,
     discover_amd_adl_power,
     add_power_efficiency, derive_run_power_summary, efficiency_per_joule,
     integrate_power_joules, power_block,
@@ -314,6 +315,26 @@ def test_rapl_discovery_distinguishes_permission_denied_from_unsupported(monkeyp
     assert unsupported.scope == "unknown"
 
 
+def test_rapl_discovery_accepts_a_cached_sudo_credential(monkeypatch, tmp_path):
+    counter = tmp_path / "energy_uj"
+    counter.write_text("1", encoding="utf-8")
+    monkeypatch.setattr("scripts.runtime.telemetry.os.access", lambda *_args: False)
+    calls = []
+
+    def run(command, **_kwargs):
+        calls.append(command)
+        return Result(0)
+
+    status = discover_power_source(
+        "Linux", which_fn=lambda name: f"/usr/bin/{name}" if name == "sudo" else None,
+        run_fn=run, rapl_paths=[counter],
+    )
+    assert status == PowerAvailability(
+        True, "rapl", "cpu_package", location=str(counter), requires_elevation=True,
+    )
+    assert calls == [["/usr/bin/sudo", "-n", "test", "-r", str(counter)]]
+
+
 def test_power_query_uses_discovered_source_and_never_returns_zero_for_failure():
     status = PowerAvailability(True, "nvidia-smi", "accelerator", location="/bin/nvidia-smi")
     assert query_power_reading(
@@ -514,6 +535,43 @@ def test_rapl_polling_source_derives_watts_from_counter_delta():
     assert source.read_watts() is None
     assert source.read_watts() == 3
     assert source.read_watts() is None
+
+
+def test_rapl_source_uses_one_long_lived_privileged_reader():
+    process = FakeProcess()
+    process.stdout = iter(["1000000\n", "2500000\n"])
+    commands = []
+    times = iter([10.0, 10.5, 10.5])
+
+    def popen(command, **_kwargs):
+        commands.append(command)
+        return process
+
+    source = RaplPowerSource(
+        PowerAvailability(True, "rapl", "cpu_package", location="/counter"),
+        0.5, popen_fn=popen, monotonic=lambda: next(times),
+    )
+    source.start()
+    assert source._reader is not None
+    source._reader.join(timeout=1)
+    assert source.read_watts() == 3
+    source.stop()
+    assert process.terminated is True
+    assert commands == [[
+        "/usr/bin/sudo", "-n", "/bin/sh", "-c",
+        'while true; do cat -- "$1" || exit; sleep "$2" || exit; done',
+        "rapl-reader", "/counter", "0.5",
+    ]]
+    created = create_power_source(
+        PowerAvailability(
+            True, "rapl", "cpu_package", location="/counter", requires_elevation=True,
+        ), 0.5,
+    )
+    assert isinstance(created, RaplPowerSource)
+    direct = create_power_source(
+        PowerAvailability(True, "rapl", "cpu_package", location="/counter"), 0.5,
+    )
+    assert isinstance(direct, PollingPowerSource)
 
 
 def test_case_telemetry_exposes_case_local_power_beside_legacy_memory_result():

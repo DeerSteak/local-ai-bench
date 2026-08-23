@@ -58,6 +58,7 @@ from scripts.setup.runtime_update import (
 from scripts.stage_registry import STAGE_ORDER
 from scripts.runtime.pause_control import PAUSE_CONTROL_ENV, create_pause_control, write_pause_state
 from scripts.runtime.progress_events import PROGRESS_PREFIX
+from scripts.runtime.telemetry import discover_power_source
 from scripts.runtime.mtp import mtp_progress_names, mtp_selection_error
 from scripts.runtime.crash_cache import clear_crash_caches, crash_cache_paths
 from scripts.runtime.shared import Shared
@@ -151,6 +152,27 @@ def authorize_macos_power_telemetry(enabled: bool, *, system=platform.system,
         )
     except (OSError, subprocess.TimeoutExpired):
         return "Administrator permission could not be requested."
+    if result.returncode != 0:
+        return "Administrator permission was canceled or denied; the benchmark was not started."
+    return None
+
+
+def authorize_linux_rapl_power_telemetry(enabled: bool, *, system=platform.system,
+                                         discover=discover_power_source,
+                                         run=subprocess.run,
+                                         which=shutil.which) -> str | None:
+    if not enabled or system() != "Linux":
+        return None
+    availability = discover()
+    if availability.source != "rapl" or availability.available:
+        return None
+    sudo = which("sudo")
+    if not sudo:
+        return "RAPL power telemetry needs sudo, but sudo is not installed."
+    try:
+        result = run([sudo, "-v"], timeout=120)
+    except (OSError, subprocess.TimeoutExpired):
+        return "Administrator permission could not be requested for RAPL power telemetry."
     if result.returncode != 0:
         return "Administrator permission was canceled or denied; the benchmark was not started."
     return None
@@ -1170,7 +1192,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             return
         authorization_error = authorize_macos_power_telemetry(
             gui_options["power_telemetry"],
-        )
+        ) or authorize_linux_rapl_power_telemetry(gui_options["power_telemetry"])
         if authorization_error:
             messagebox.showerror(
                 "Power telemetry permission", authorization_error, parent=root,
