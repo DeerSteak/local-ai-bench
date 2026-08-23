@@ -533,9 +533,11 @@ Repository entries below are starting points for the audit, not compatibility cl
 
 ## Why this is tenth
 
-Quantization is fixed at one variant per catalog entry — every model in [models.py](scripts/workloads/models.py) carries a single `Q4_K_M` tag and `hf_repo`. Which quantization to run is one of the top questions a local-AI user faces, and this suite is unusually well-placed to answer it properly: it already has the accuracy banks to measure quality loss, the speed harness to measure the throughput gain, and — after items 1 and 4 — the memory and energy measurement to complete the tradeoff. Almost nothing else answers this with quality evidence attached.
+Before this milestone, quantization was fixed at one variant per catalog entry: every model in [models.py](scripts/workloads/models.py) carried a single `Q4_K_M` tag and repository. The completed workflow now gives all twelve catalog LLM families a same-repository Q4_K_M/default, preferred-Q6, and Q8_0 set while preserving the old default identity. Which quantization to run is one of the top questions a local-AI user faces, and this suite is unusually well-placed to answer it properly because it combines accuracy, throughput, memory, and opt-in energy evidence in one resumable execution.
 
 The initial scope is llama.cpp and GGUF. A single base model may select several GGUF files—including multiple quantizations stored in one Unsloth or other Hugging Face repository—and execute them sequentially in one unattended, resumable run. Native vLLM quantization formats remain outside this milestone until a separate methodology defines which formats are comparable to GGUF and how their engine-specific effects should be reported.
+
+The catalog chooses Q6_K_XL when available, otherwise Q6_K_M, otherwise Q6_K, and never substitutes Q6_K_L. Real-hardware acceptance on the M5 Pro exercised Gemma 3 1B Q4_K_M, Q6_K, and Q8_0 through LLM and the full MCQ bank with memory and processor-package power telemetry; an interrupted first attempt resumed without repeating its completed Q4_K_M LLM unit. That evidence validates the workflow and recovery boundary on that machine, not every catalog artifact or a universal quantization ranking.
 
 It ranks tenth because it multiplies run time and disk consumption substantially, and it serves the enthusiast more directly than the hardware-vendor team the PRD names.
 

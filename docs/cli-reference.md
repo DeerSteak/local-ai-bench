@@ -168,7 +168,7 @@ The GUI's **Support Bundle** action creates a separate redacted `.labsupport` ar
 | `--max-prompt-tokens` | positive integer (tokens) | none (no cap) | Caps the deepest prompt-processing size swept by whichever of `llm`, `conv`, `llamabench`, `llamabenchconc`, and `vllmbench` are selected in `--tests`. Drops entries above the cap from `llm`'s and `llamabench`'s depth lists, caps conversation's growth target and checkpoints, and clamps `llamabenchconc`'s fixed prompt depth. Errors out if the cap excludes every depth from `llm` or `llamabench`; conversation retains its opening `0K` checkpoint below its first nonzero checkpoint. The interactive launcher prompts for this once when any affected test is selected, as a numbered menu of the configured depths (512 up to 98304) plus a "no cap" option |
 | `--tg-tokens` | space-separated subset of `128 512 1024` | `128 512` | Which generation sizes `llamabench` and `llamabenchconc` sweep at each prompt depth. Only affects those two tests. The interactive launcher shows this as a toggle checklist, only when one of those two tests is selected |
 | `--llm-models` (`--models` alias) | space-separated tags and/or wildcards (e.g. `llama*`) | none (every catalog model in the selected tier) | Affects `llm`/`conv`/`mcq`/`math`/`reasoning`/`code`/`tool`/`conc_tool`/`conc_chat`/`llamabench`/`llamabenchconc` tests. Matching is case-sensitive and exact-or-wildcard (`fnmatch`-style: `*`/`?`/`[...]`), not substring. Applied after `--maxtier` (or, for concurrency, after downloaded-model scoping), narrowing catalog entries while also unioning any matching installed custom tags. `--llm-models` is canonical; `--models` remains fully backward compatible. Quote wildcards (`"llama*"`) so the shell does not expand them |
-| `--model-variant` | repeatable `BASE=VARIANT` pair (for example `gemma3:1b-it=Q6_K`) | none (the documented default remains selected) | llama.cpp/GGUF only. Repeat the flag for every checked variant of a selected base model. Unknown, duplicate, malformed, unselected-base, vLLM, empty, and not-installed selections fail before hardware profiling or execution. An explicit selection expands into distinct model and journal identities and runs sequentially through every selected compatible workload |
+| `--model-variant` | repeatable `BASE=VARIANT` pair (for example `gemma3:1b-it=Q6_K`) | none (the documented default remains selected) | llama.cpp/GGUF only. Repeat the flag for every checked variant of a selected base model, using the exact quantization label (`Q4_K_M`, `Q6_K`, `Q6_K_XL`, or `Q8_0`) from the [catalog matrix](catalogs.md#llamacpp-quantization-variants). Unknown, duplicate, malformed, unselected-base, vLLM, empty, and not-installed selections fail before hardware profiling or execution. An explicit selection expands into distinct model and journal identities and runs sequentially through every selected compatible workload |
 | `--embedding-models` | space-separated catalog tags and/or wildcards | none (every catalog embedding model) | Affects `emb` only. Matching is case-sensitive and exact-or-wildcard on the model's `tag` |
 | `--image-models` | space-separated catalog short IDs and/or wildcards (e.g. `sd*`) | none (every image model allowed by `--maxtier`) | Affects `img` only. Matching is case-sensitive and exact-or-wildcard on the stable `short` values in `models.py`; it narrows the image list after `--maxtier` |
 | `--list-models` | (flag) | off | Read-only inventory of installed catalog LLMs, embeddings, custom LLM folders, and catalog image checkpoints, then exit. It does not require or start an inference server. `--engine` selects the inventory (`all` lists each engine); image inventory always comes from Local AI Bench's managed `models/comfyui/` directory |
@@ -210,6 +210,12 @@ bash run_bench.sh --tests llm --llm-models "llama*"
 
 # One specific model plus a wildcard group
 bash run_bench.sh --tests llm --llm-models qwen3.5:4b-q4_K_M "nemotron-3*"
+
+# Compare all three Gemma 3 1B GGUF variants in one resumable llama.cpp run
+bash run_bench.sh --engine llamacpp --tests llm mcq --llm-models gemma3:1b-it-q4_K_M \
+  --model-variant gemma3:1b-it=Q4_K_M \
+  --model-variant gemma3:1b-it=Q6_K \
+  --model-variant gemma3:1b-it=Q8_0
 
 # One embedding model only
 bash run_bench.sh --tests emb --embedding-models nomic-embed-text
