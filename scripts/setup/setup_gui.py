@@ -17,9 +17,12 @@ from scripts.workloads.models import (
     LLM_MODELS_SMALL,
     LLM_MODELS_XSMALL,
 )
-from scripts.workloads.model_variants import expanded_variant_catalog
+from scripts.workloads.model_variants import (
+    collapse_variant_selection, expanded_variant_catalog, variant_selection_state,
+    variant_selection_target,
+)
 from scripts.runtime.comfyui_installation import normalize_comfyui_dir
-from scripts.setup.engine_selection import LLAMACPP
+from scripts.setup.engine_selection import LLAMACPP, VLLM
 from scripts.setup.model_inventory import (
     engine_fit_report, engine_fit_warnings, fits_any_engine, format_engine_sizes,
 )
@@ -139,9 +142,15 @@ def build_setup_plan(*, model_selection: dict[str, bool], cleanup_names: list[st
                      save_token: bool, comfyui_mode: str, comfyui_path: str,
                      engine_entries: list[dict], engine_selection: dict[str, bool]) -> dict:
     hf_token = selected_gui_token(existing_hf_token, override_token, entered_token)
+    engines = [entry["name"] for entry in engine_entries
+               if entry["enabled"] and engine_selection.get(entry["name"], False)]
+    llm_models = [model for _, group in LLM_GROUPS for model in group]
+    selected_llm = {model["tag"] for model in llm_models
+                    if model_selection.get(model["tag"], False)}
+    if VLLM in engines:
+        selected_llm = collapse_variant_selection(llm_models, selected_llm)
     return {
-        "llm_tags": [model["tag"] for _, group in LLM_GROUPS for model in group
-                     if model_selection.get(model["tag"], False)],
+        "llm_tags": [model["tag"] for model in llm_models if model["tag"] in selected_llm],
         "embedding_tags": [model["tag"] for model in EMBED_MODELS
                            if model_selection.get(model["tag"], False)],
         "image_shorts": [model["short"] for model in IMAGE_MODELS
@@ -154,8 +163,7 @@ def build_setup_plan(*, model_selection: dict[str, bool], cleanup_names: list[st
         "use_existing_hf_token": existing_hf_token and not hf_token,
         "comfyui_mode": comfyui_mode,
         "comfyui_path": comfyui_path.strip(),
-        "engines": [entry["name"] for entry in engine_entries
-                    if entry["enabled"] and engine_selection.get(entry["name"], False)],
+        "engines": engines,
     }
 
 
@@ -248,6 +256,13 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     defaults = default_model_selection(memory_ceiling_gb, initial_engines)
     model_vars = {key: tk.BooleanVar(value=value) for key, value in defaults.items()}
     labelled_models: dict[str, tuple] = {}
+    variant_groups: dict[str, list[dict]] = {}
+    for _, models in LLM_GROUPS:
+        for model in models:
+            if model.get("base_model") and model.get("variant"):
+                variant_groups.setdefault(model["base_model"], []).append(model)
+    variant_parent_widgets: dict[str, tuple] = {}
+    variant_child_rows: dict[str, tuple] = {}
     applied_engines = list(initial_engines)
     token_var = tk.StringVar()
     save_token_var = tk.BooleanVar(value=True)
@@ -338,6 +353,25 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     models_page.rowconfigure(2, weight=1)
     model_list.columnconfigure(0, weight=1)
 
+    def selected_model_tags() -> set[str]:
+        return {key for key, variable in model_vars.items() if variable.get()}
+
+    def sync_variant_parents() -> None:
+        selected = selected_model_tags()
+        for base_model, (widget, _row) in variant_parent_widgets.items():
+            state = variant_selection_state(
+                [model["tag"] for model in variant_groups[base_model]], selected,
+            )
+            widget.state(["selected" if state == "all" else "!selected"])
+            widget.state(["alternate" if state == "some" else "!alternate"])
+
+    def toggle_variant_parent(base_model: str) -> None:
+        tags = [model["tag"] for model in variant_groups[base_model]]
+        target = variant_selection_target(tags, selected_model_tags())
+        for tag in tags:
+            model_vars[tag].set(tag in target)
+        sync_variant_parents()
+
     def scroll_models(event):
         widget = root.winfo_containing(root.winfo_pointerx(), root.winfo_pointery())
         current = widget
@@ -358,6 +392,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     root.bind_all("<Button-5>", scroll_models)
 
     row = 0
+    rendered_variant_parents = set()
     for label, models in (*LLM_GROUPS, ("Embeddings", EMBED_MODELS), ("Image generation", IMAGE_MODELS)):
         ttk.Label(model_list, text=label, font=("TkDefaultFont", 11, "bold")).grid(
             row=row, column=0, sticky="w", pady=(9, 2),
@@ -365,10 +400,26 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
         row += 1
         for model in models:
             key = model.get("tag") or model["short"]
+            base_model = model.get("base_model")
+            if base_model and model.get("variant") and base_model not in rendered_variant_parents:
+                parent = ttk.Checkbutton(
+                    model_list, text=model.get("base_label", base_model),
+                    command=lambda base=base_model: toggle_variant_parent(base),
+                )
+                parent.grid(row=row, column=0, sticky="w", padx=(16, 12), pady=(5, 1))
+                variant_parent_widgets[base_model] = (parent, row)
+                rendered_variant_parents.add(base_model)
+                row += 1
             option_row = ttk.Frame(model_list)
-            option_row.grid(row=row, column=0, sticky="ew", padx=(16, 12), pady=2)
+            indent = 40 if base_model else 16
+            option_row.grid(row=row, column=0, sticky="ew", padx=(indent, 12), pady=2)
             option_row.columnconfigure(1, weight=1)
-            checkbutton = ttk.Checkbutton(option_row, variable=model_vars[key])
+            checkbutton = (
+                ttk.Checkbutton(
+                    option_row, variable=model_vars[key], command=sync_variant_parents,
+                )
+                if base_model else ttk.Checkbutton(option_row, variable=model_vars[key])
+            )
             checkbutton.grid(row=0, column=0, sticky="nw")
             label = ttk.Label(
                 option_row, text=model_row_label(model, initial_engines, memory_ceiling_gb),
@@ -378,6 +429,8 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             label.bind("<Button-1>", lambda _event, control=checkbutton: control.invoke())
             if "download_size" in model:
                 labelled_models[key] = (label, model)
+            if base_model:
+                variant_child_rows[key] = (option_row, row)
             license_url = model.get("license_url")
             if license_url:
                 ttk.Button(
@@ -385,6 +438,40 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
                     command=lambda url=license_url: webbrowser.open(url),
                 ).grid(row=row, column=1, sticky="e", pady=2)
             row += 1
+    sync_variant_parents()
+
+    def apply_variant_engine_mode(engines: list[str]) -> None:
+        llamacpp_only = engines == [LLAMACPP]
+        if not llamacpp_only:
+            collapsed = collapse_variant_selection(
+                [model for variants in variant_groups.values() for model in variants],
+                selected_model_tags(),
+            )
+            for variants in variant_groups.values():
+                for model in variants:
+                    model_vars[model["tag"]].set(model["tag"] in collapsed)
+        for widget, parent_row in variant_parent_widgets.values():
+            if llamacpp_only:
+                widget.grid(row=parent_row, column=0, sticky="w", padx=(16, 12), pady=(5, 1))
+            else:
+                widget.grid_remove()
+        for variants in variant_groups.values():
+            for model in variants:
+                option_row, child_row = variant_child_rows[model["tag"]]
+                label_widget, _ = labelled_models[model["tag"]]
+                if llamacpp_only:
+                    option_row.grid(row=child_row, column=0, sticky="ew", padx=(40, 12), pady=2)
+                    child_model = {**model, "label": model["variant"]}
+                    label_widget.configure(text=model_row_label(child_model, engines, memory_ceiling_gb))
+                elif model.get("default"):
+                    option_row.grid(row=child_row, column=0, sticky="ew", padx=(16, 12), pady=2)
+                    base_entry = {**model, "label": model.get("base_label", model["label"])}
+                    label_widget.configure(text=model_row_label(base_entry, engines, memory_ceiling_gb))
+                else:
+                    option_row.grid_remove()
+        sync_variant_parents()
+
+    apply_variant_engine_mode(initial_engines)
     if cleanup_names:
         ttk.Label(
             model_list, font=("TkDefaultFont", 11, "bold"),
@@ -565,6 +652,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
         for key, value in default_model_selection(memory_ceiling_gb, engines).items():
             if key in model_vars:
                 model_vars[key].set(value)
+        apply_variant_engine_mode(engines)
 
     def show_page(index: int) -> None:
         nonlocal page_index

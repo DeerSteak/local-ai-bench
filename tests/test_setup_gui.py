@@ -267,6 +267,23 @@ def test_build_setup_plan_filters_models_engines_and_cleanup():
     assert plan["engines"] == ["llamacpp"]
 
 
+def test_build_setup_plan_collapses_quantizations_when_vllm_is_selected():
+    from scripts.workloads.model_variants import expanded_model_variants
+    from scripts.workloads.models import LLM_MODELS
+
+    variants = expanded_model_variants(LLM_MODELS[0])
+    plan = build_setup_plan(
+        model_selection={model["tag"]: True for model in variants},
+        cleanup_names=[], cleanup_selected=False, vllm_cleanup_selection={},
+        existing_hf_token=False, override_token=False, entered_token="", save_token=False,
+        comfyui_mode="download", comfyui_path="", engine_entries=[
+            {"name": "llamacpp", "enabled": True}, {"name": "vllm", "enabled": True},
+        ], engine_selection={"llamacpp": True, "vllm": True},
+    )
+
+    assert plan["llm_tags"] == [LLM_MODELS[0]["tag"]]
+
+
 def test_setup_review_lines_include_only_applicable_details():
     plan = {
         "llm_tags": ["llm"], "embedding_tags": [], "image_shorts": ["image"],
