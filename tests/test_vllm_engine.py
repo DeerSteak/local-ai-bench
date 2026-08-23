@@ -165,6 +165,13 @@ def test_native_mtp_configuration_is_catalog_and_engine_specific(engine):
         engine._native_mtp_config("gemma3:1b-it-q4_K_M")
 
 
+def test_native_mtp_configuration_uses_the_artifacts_cataloged_method(engine):
+    engine.set_mtp_enabled(True)
+    assert engine._native_mtp_config("qwen3.8:27b-ud-q4_K_M") == {
+        "method": "qwen3_5_mtp", "num_speculative_tokens": 2,
+    }
+
+
 def test_native_mtp_is_disabled_by_default(engine):
     assert engine._native_mtp_config(TEST_TAG) is None
 

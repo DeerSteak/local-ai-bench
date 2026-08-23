@@ -67,7 +67,10 @@ def test_medium_models_use_qualified_q4_and_vllm_artifacts():
         "vllm_download_size": "~17.2 GB", "vllm_tool_parser": "gemma4",
     }
     assert models["qwen3.8-27b-q4"]["hf_file"] == "Qwen3.8-27B-UD-Q4_K_M.gguf"
-    assert models["qwen3.8-27b-q4"]["vllm_repo"] == "cyankiwi/Qwen3.8-27B-AWQ-INT4"
+    assert models["qwen3.8-27b-q4"]["vllm_repo"] == \
+        "pearsonkyle/Qwen3.8-27B-GPTQ-W4A16"
+    assert models["qwen3.8-27b-q4"]["vllm_download_size"] == "~19.5 GB"
+    assert models["qwen3.8-27b-q4"]["vllm_tool_parser"] == "qwen3_xml"
     assert models["nemotron3.5-lightning-30b-a3b"]["hf_file"] == \
         "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-UD-Q4_K_M.gguf"
     assert models["nemotron3.5-lightning-30b-a3b"]["vllm_repo"] == \

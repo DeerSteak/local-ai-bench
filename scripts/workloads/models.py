@@ -252,8 +252,9 @@ LLM_MODELS_MEDIUM = sorted([
         "params_b":       27,
         "hf_repo":        "unsloth/Qwen3.8-27B-GGUF",
         "hf_file":        "Qwen3.8-27B-UD-Q4_K_M.gguf",
-        "vllm_repo":      "cyankiwi/Qwen3.8-27B-AWQ-INT4",
-        "vllm_download_size": "~21.0 GB",
+        "vllm_repo":      "pearsonkyle/Qwen3.8-27B-GPTQ-W4A16",
+        "vllm_download_size": "~19.5 GB",
+        "vllm_tool_parser": "qwen3_xml",
         "native_mtp":     {
             "llamacpp": {
                 "num_speculative_tokens": 3,
@@ -261,7 +262,10 @@ LLM_MODELS_MEDIUM = sorted([
                 "draft_file": "MTP/mtp-Qwen3.8-27B-Q4_0.gguf",
                 "draft_download_size": "~1.4 GB",
             },
-            "vllm": {"num_speculative_tokens": 3},
+            "vllm": {
+                "method": "qwen3_5_mtp",
+                "num_speculative_tokens": 2,
+            },
         },
     },
     {

@@ -37,7 +37,7 @@ def test_catalog_marks_every_confirmed_native_mtp_artifact():
             if config is not None} == {
         "qwen3.5:4b-q4_K_M": 3,
         "qwen3.5:9b-q4_K_M": 3,
-        "qwen3.8:27b-ud-q4_K_M": 3,
+        "qwen3.8:27b-ud-q4_K_M": 2,
         "nemotron3.5-lightning:30b-a3b-ud-q4_K_M": 1,
     }
 
@@ -54,6 +54,17 @@ def test_native_mtp_config_returns_a_defensive_engine_specific_payload():
         "num_speculative_tokens": 2,
     }
     assert native_mtp_config({"native_mtp": source}, "llamacpp") is None
+
+
+def test_native_mtp_config_keeps_a_valid_vllm_method():
+    source = {"vllm": {
+        "method": "qwen3_5_mtp", "num_speculative_tokens": 2,
+    }}
+    assert native_mtp_config({"native_mtp": source}, "vllm") == {
+        "method": "qwen3_5_mtp", "num_speculative_tokens": 2,
+    }
+    source["vllm"]["method"] = ""
+    assert native_mtp_config({"native_mtp": source}, "vllm") is None
 
 
 def test_native_mtp_config_returns_validated_separate_draft_metadata():
@@ -93,7 +104,7 @@ def test_active_mtp_configurations_record_engine_specific_tokens_and_predictor_m
     models = [
         {"tag": "embedded", "native_mtp": {
             "llamacpp": {"num_speculative_tokens": 3},
-            "vllm": {"num_speculative_tokens": 1},
+            "vllm": {"method": "qwen3_5_mtp", "num_speculative_tokens": 1},
         }},
         {"tag": "separate", "native_mtp": {"llamacpp": {
             "num_speculative_tokens": 2,
@@ -106,7 +117,10 @@ def test_active_mtp_configurations_record_engine_specific_tokens_and_predictor_m
         "separate": {"num_speculative_tokens": 2, "predictor": "separate"},
     }
     assert active_mtp_configurations(models, "vllm", True) == {
-        "embedded": {"num_speculative_tokens": 1, "predictor": "embedded"},
+        "embedded": {
+            "num_speculative_tokens": 1, "predictor": "embedded",
+            "method": "qwen3_5_mtp",
+        },
     }
     assert active_mtp_configurations(models, "llamacpp", False) == {}
 

@@ -90,7 +90,7 @@ The small tier scales the same worker-model experiment upward. Granite 4.1 8B me
 | Model | llama.cpp Tag | vLLM Tag | llama.cpp Size | Architecture |
 |---|---|---|---|---|
 | Gemma 4 26B-A4B 4-Bit Quantization | `gemma4:26b-a4b-it-ud-q4_K_M` | `cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit` | ~16.9 GB | MoE — 4B active of 26B total |
-| Qwen 3.8 27B 4-Bit Quantization | `qwen3.8:27b-ud-q4_K_M` | `cyankiwi/Qwen3.8-27B-AWQ-INT4` | ~16.5 GB | Dense |
+| Qwen 3.8 27B 4-Bit Quantization | `qwen3.8:27b-ud-q4_K_M` | `pearsonkyle/Qwen3.8-27B-GPTQ-W4A16` | ~16.5 GB | Dense |
 | Nemotron 3.5 Lightning 30B-A3B | `nemotron3.5-lightning:30b-a3b-ud-q4_K_M` | `Local-Axiom-AI/Nemotron-3.5-Lightning-awq` | ~25.3 GB | Hybrid Mamba MoE — 3B active of 30B total |
 
 The medium tier contrasts three current architectures with similar total parameter counts but different execution costs and vendor roles. Qwen 3.8 27B is the dense general-purpose baseline. Gemma 4 26B-A4B supplies sparse Gemma-family coverage with 4B active parameters, while Nemotron 3.5 Lightning supplies NVIDIA's hybrid long-context architecture with 3B active parameters. These replace Gemma 3 27B, Qwen3.6 35B-A3B, and Nemotron Cascade 2 without increasing the active catalog.
@@ -113,7 +113,7 @@ llama.cpp parses tool calls from the model's own chat template, so every catalog
 
 Preflight records this tool capability before execution as a workload-scoped check. It does not turn missing tool support into a whole-model failure; non-tool measurements remain eligible, and the tool bank owns the durable per-model skip reason.
 
-`models.py` carries `vllm_tool_parser` per entry, set only where vLLM documents a parser for that family: `granite4` (Granite 4.1), `gemma4` (Gemma 4), `llama3_json` (Llama 3.3), and `qwen3_coder` (Qwen3-Coder-Next). vLLM documents none for Nemotron, and the correct choice for Qwen3.5/3.8 is unconfirmed — those are left unset until a real run settles them. The value is not a guess to be filled in casually: a *valid but wrong* parser fails silently, producing unparsed calls that score as wrong answers, which is exactly the outcome the skip exists to prevent.
+`models.py` carries `vllm_tool_parser` per entry, set only where vLLM documents or the selected artifact validates a parser for that family: `granite4` (Granite 4.1), `gemma4` (Gemma 4), `qwen3_xml` (Qwen 3.8), `llama3_json` (Llama 3.3), and `qwen3_coder` (Qwen3-Coder-Next). vLLM documents none for Nemotron, and Qwen3.5 remains unconfirmed, so those entries stay unset until a real run settles them. The value is not a guess to be filled in casually: a *valid but wrong* parser fails silently, producing unparsed calls that score as wrong answers, which is exactly the outcome the skip exists to prevent.
 
 ### Per-engine weights
 
@@ -128,7 +128,7 @@ The tier tables above give each model's identifier on both engines. The llama.cp
 | `qwen3.5:9b-q4_K_M` | `cyankiwi/Qwen3.5-9B-AWQ-4bit` | AWQ INT4 | ~9.1 GB |
 | `gemma4:12b-it-q4_K_M` | `mattbucci/gemma-4-12B-AWQ` | AWQ INT4 | ~7.8 GB |
 | `gemma4:26b-a4b-it-ud-q4_K_M` | `cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit` | compressed-tensors W4A16 | ~17.2 GB |
-| `qwen3.8:27b-ud-q4_K_M` | `cyankiwi/Qwen3.8-27B-AWQ-INT4` | compressed-tensors W4A16 | ~21.0 GB |
+| `qwen3.8:27b-ud-q4_K_M` | `pearsonkyle/Qwen3.8-27B-GPTQ-W4A16` | compressed-tensors GPTQ W4A16 | ~19.5 GB |
 | `nemotron3.5-lightning:30b-a3b-ud-q4_K_M` | `Local-Axiom-AI/Nemotron-3.5-Lightning-awq` | AWQ INT4 | ~18.1 GB |
 | `llama3.3:70b-instruct-q4_K_M` | `ibnzterrell/Meta-Llama-3.3-70B-Instruct-AWQ-INT4` | AWQ INT4 | ~39.8 GB |
 | `qwen3-coder-next:80b-a3b-q4_K_M` | `bullpoint/Qwen3-Coder-Next-AWQ-4bit` | AWQ INT4 | ~48.3 GB |

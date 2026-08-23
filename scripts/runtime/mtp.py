@@ -22,6 +22,11 @@ def native_mtp_config(model: dict, engine_name: str) -> dict | None:
     if not isinstance(tokens, int) or isinstance(tokens, bool) or tokens <= 0:
         return None
     resolved: dict = {"num_speculative_tokens": tokens}
+    method = config.get("method")
+    if engine_name == "vllm" and method is not None:
+        if not isinstance(method, str) or not method.strip():
+            return None
+        resolved["method"] = method
     draft_repo = config.get("draft_repo")
     draft_file = config.get("draft_file")
     if engine_name == "llamacpp" and (draft_repo is not None or draft_file is not None):
@@ -53,6 +58,8 @@ def active_mtp_configurations(models: Sequence[dict], engine_name: str,
             "num_speculative_tokens": config["num_speculative_tokens"],
             "predictor": "separate" if "draft_file" in config else "embedded",
         }
+        if "method" in config:
+            recorded["method"] = config["method"]
         if tag in configurations and configurations[tag] != recorded:
             raise ValueError(f"conflicting MTP configuration for model: {tag}")
         configurations[tag] = recorded
