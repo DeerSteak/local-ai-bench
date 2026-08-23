@@ -554,18 +554,18 @@ It ranks tenth because it multiplies run time and disk consumption substantially
 
 ## Acceptance criteria
 
-- [ ] A catalog entry may declare multiple quantization variants; existing single-variant entries are unchanged in meaning.
-- [ ] Each variant is a distinct evidence identity; a test asserts two variants of one base model never pool into one evidence set.
+- [x] A catalog entry may declare multiple quantization variants; existing single-variant entries are unchanged in meaning.
+- [x] Each variant is a distinct evidence identity; a test asserts two variants of one base model never pool into one evidence set.
 - [ ] One invocation runs every selected GGUF variant sequentially without further input and resumes without repeating completed variants.
-- [ ] The GUI provides per-model quantization checkboxes with the default preselected, visible artifact sizes, and select-all/clear controls; only checked variants enter the run plan.
-- [ ] The CLI can express the same model-qualified variant selection noninteractively, and invalid, duplicate, or empty selections fail before download or execution.
-- [ ] Multiple selected GGUF filenames may resolve from one Hugging Face repository without duplicating repository metadata or downloads.
-- [ ] A sweep is opt-in, and its added disk, download, and run time are reported before it starts.
-- [ ] Variant comparison reports quality, throughput, memory, and energy deltas against a stated reference variant.
-- [ ] Quality differences classified unchanged or inconclusive by item 3 are not presented as rankings.
-- [ ] Variants are ranked by the item 6 engine rather than a parallel implementation.
-- [ ] Older results files whose model identity has no explicit base-model/variant fields load and render unchanged through a documented legacy mapping.
-- [ ] The initial implementation is explicitly llama.cpp/GGUF-only; vLLM-native quantization comparison is not implied by these results.
+- [x] The GUI provides per-model quantization checkboxes with the default preselected, visible artifact sizes, and select-all/clear controls; only checked variants enter the run plan.
+- [x] The CLI can express the same model-qualified variant selection noninteractively, and invalid, duplicate, or empty selections fail before download or execution.
+- [x] Multiple selected GGUF filenames may resolve from one Hugging Face repository without duplicating repository metadata or downloads.
+- [x] A sweep is opt-in, and its added disk, download, and run time are reported before it starts.
+- [x] Variant comparison reports quality, throughput, memory, and energy deltas against a stated reference variant.
+- [x] Quality differences classified unchanged or inconclusive by item 3 are not presented as rankings.
+- [x] Variants are ranked by the item 6 engine rather than a parallel implementation.
+- [x] Older results files whose model identity has no explicit base-model/variant fields load and render unchanged through a documented legacy mapping.
+- [x] The initial implementation is explicitly llama.cpp/GGUF-only; vLLM-native quantization comparison is not implied by these results.
 
 ---
 
