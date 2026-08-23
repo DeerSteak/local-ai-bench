@@ -1,6 +1,8 @@
 import pytest
+import json
 
 from scripts.results.variant_comparison import build_variant_comparison
+from scripts.results.variant_comparison_cli import load_quality_verdicts, main
 
 
 def result(*, include_q8=True, missing_memory=False):
@@ -94,3 +96,27 @@ def test_missing_variant_and_invalid_verdict_are_rejected():
             performance_section="llm", case="2K", accuracy_section="mcq",
             quality_verdicts={"Q8_0": "better"},
         )
+
+
+def test_variant_comparison_cli_writes_artifact(tmp_path):
+    source = tmp_path / "result.json"
+    verdicts = tmp_path / "verdicts.json"
+    output = tmp_path / "comparison.json"
+    source.write_text(json.dumps(result()), encoding="utf-8")
+    verdicts.write_text(json.dumps({"Q8_0": "unchanged"}), encoding="utf-8")
+
+    assert main([
+        str(source), "--base-model", "demo", "--reference", "Q4_K_M",
+        "--case", "2K", "--accuracy-section", "mcq",
+        "--quality-verdicts", str(verdicts), "--out", str(output),
+    ]) == 0
+    assert json.loads(output.read_text(encoding="utf-8"))["variants"][1][
+        "quality_verdict"
+    ] == "unchanged"
+
+
+def test_quality_verdict_file_requires_string_mapping(tmp_path):
+    path = tmp_path / "verdicts.json"
+    path.write_text('{"Q8_0": 1}', encoding="utf-8")
+    with pytest.raises(ValueError, match="variant-to-verdict object"):
+        load_quality_verdicts(path)
