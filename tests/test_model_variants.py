@@ -1,7 +1,8 @@
 import pytest
 
 from scripts.workloads.model_variants import (
-    default_model_variant, expanded_model_variants, validate_model_variants,
+    default_model_variant, expanded_model_variants, normalize_variant_selectors,
+    select_model_variants, validate_model_variants,
 )
 from scripts.workloads.models import LLM_MODELS
 
@@ -60,6 +61,39 @@ def test_catalog_variants_are_valid_and_default_preserves_legacy_gemma_identity(
     ]
     assert default_model_variant(gemma)["tag"] == "gemma3:1b-it-q4_K_M"
     assert default_model_variant(gemma)["short"] == "gemma3-1b"
+
+
+def test_variant_selectors_preserve_catalog_order_and_unselected_models():
+    catalog = [model(), {"tag": "other:q4", "short": "other"}]
+    selections = normalize_variant_selectors(
+        ["demo=Q8_0", "demo=Q4_K_M"], catalog,
+    )
+
+    selected = select_model_variants(catalog, selections)
+
+    assert [item["tag"] for item in selected] == ["demo:q8_0", "demo:q4_K_M", "other:q4"]
+    assert selected[0]["base_model"] == "demo"
+    assert selected[0]["variant"] == "Q8_0"
+
+
+@pytest.mark.parametrize("selectors, message", [
+    ([], "must not be empty"),
+    (["demo"], "BASE=VARIANT"),
+    (["demo="], "non-empty"),
+    (["missing=Q4_K_M"], "unknown model/variant pair"),
+    (["demo=Q5_K"], "unknown model/variant pair"),
+    (["demo=Q4_K_M", "demo=Q4_K_M"], "duplicate model/variant pair"),
+])
+def test_invalid_variant_selectors_are_rejected(selectors, message):
+    with pytest.raises(ValueError, match=message):
+        normalize_variant_selectors(selectors, [model()])
+
+
+def test_variant_selection_rejects_base_outside_selected_model_scope():
+    with pytest.raises(ValueError, match="base model is not selected"):
+        select_model_variants(
+            [{"tag": "other:q4", "short": "other"}], {"demo": ("Q4_K_M",)},
+        )
 
 
 @pytest.mark.parametrize("mutate, message", [

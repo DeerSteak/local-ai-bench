@@ -69,3 +69,57 @@ def expanded_model_variants(model: dict) -> list[dict]:
 def default_model_variant(model: dict) -> dict:
     variants = expanded_model_variants(model)
     return next((variant for variant in variants if variant.get("default")), variants[0])
+
+
+def normalize_variant_selectors(selectors: list[str] | None, catalog: list[dict]) -> dict[str, tuple[str, ...]]:
+    if selectors is None:
+        return {}
+    if not selectors:
+        raise ValueError("variant selection must not be empty")
+    available = {
+        model["base_model"]: model for model in catalog if model.get("variants") is not None
+    }
+    selected: dict[str, list[str]] = {}
+    seen = set()
+    for selector in selectors:
+        if not isinstance(selector, str) or selector.count("=") != 1:
+            raise ValueError("variant selectors must use BASE=VARIANT")
+        base_model, variant = (part.strip() for part in selector.split("=", 1))
+        if not base_model or not variant:
+            raise ValueError("variant selectors must use non-empty BASE=VARIANT")
+        model = available.get(base_model)
+        known = {
+            item["quantization"] for item in model.get("variants", [])
+        } if model else set()
+        if variant not in known:
+            raise ValueError(f"unknown model/variant pair: {base_model}={variant}")
+        pair = (base_model, variant)
+        if pair in seen:
+            raise ValueError(f"duplicate model/variant pair: {base_model}={variant}")
+        seen.add(pair)
+        selected.setdefault(base_model, []).append(variant)
+    return {base_model: tuple(variants) for base_model, variants in selected.items()}
+
+
+def select_model_variants(models: list[dict], selections: dict[str, tuple[str, ...]]) -> list[dict]:
+    if not selections:
+        return deepcopy(models)
+    selected_bases = {
+        base_model for model in models
+        if isinstance(base_model := model.get("base_model"), str)
+    }
+    missing = sorted(set(selections) - selected_bases)
+    if missing:
+        raise ValueError(f"variant base model is not selected: {', '.join(missing)}")
+    resolved = []
+    for model in models:
+        base_model = model.get("base_model")
+        requested = selections.get(base_model) if isinstance(base_model, str) else None
+        if requested is None:
+            resolved.append(deepcopy(model))
+            continue
+        variants = {
+            item["variant"]: item for item in expanded_model_variants(model)
+        }
+        resolved.extend(variants[name] for name in requested)
+    return resolved
