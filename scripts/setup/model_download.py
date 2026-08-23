@@ -303,11 +303,15 @@ def provision_catalog_models(models: list[dict], engines: list[str], *,
     for engine in engines:
         if len(engines) > 1:
             info(f"Models for {engine} ...")
-        unsupported = models_missing_engine_support(models, engine)
+        engine_models = [
+            model for model in models
+            if engine != "vllm" or not model.get("variant") or model.get("default", False)
+        ]
+        unsupported = models_missing_engine_support(engine_models, engine)
         for tag in unsupported:
             warn(f"{tag} — no {engine} weights defined; skipping for this engine")
             issues.append(f"No {engine} weights for {tag}")
-        for model in models:
+        for model in engine_models:
             tag, label = model["tag"], model["label"]
             if tag in unsupported:
                 continue

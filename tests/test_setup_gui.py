@@ -7,6 +7,7 @@ from scripts.app.tk_utils import schedule_tk_layout_refresh
 
 from scripts.setup.setup_gui import (
     HF_LOGIN_URL,
+    LLM_GROUPS,
     build_setup_plan,
     engine_checkbox_label,
     sudo_notice,
@@ -30,6 +31,20 @@ def test_default_selection_keeps_embeddings_and_respects_memory_limit():
     selection = default_model_selection(1.0)
     assert any(selection.values())
     assert any(not selected for selected in selection.values())
+
+
+def test_quantization_variants_are_visible_with_only_default_preselected():
+    selection = default_model_selection(128.0, ["llamacpp"])
+    gemma_variants = [
+        model for _, models in LLM_GROUPS for model in models
+        if model.get("base_model") == "gemma3:1b-it"
+    ]
+
+    assert [(model["variant"], selection[model["tag"]]) for model in gemma_variants] == [
+        ("Q4_K_M", True), ("Q6_K", False), ("Q8_0", False),
+    ]
+    assert all(model["download_size"] in model_row_label(model, ["llamacpp"], 128.0)
+               for model in gemma_variants)
 
 
 def test_gui_plan_requires_valid_existing_comfyui_path(tmp_path):

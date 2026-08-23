@@ -66,6 +66,7 @@ from scripts.workloads.models import (
     EMBED_MODELS, IMAGE_MODELS, LLM_MODELS_LARGE, LLM_MODELS_MEDIUM,
     LLM_MODELS_SMALL, LLM_MODELS_XSMALL, image_checkpoint_groups,
 )
+from scripts.workloads.model_variants import expanded_variant_catalog
 from scripts.setup.setup_selection import (
     additional_disk_space_needed, qualification_model_selection, select_models,
 )
@@ -787,7 +788,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
         _embed_tags = set(_gui_plan["embedding_tags"])
         selected_llm = [
             model for tier in (LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE)
-            for model in tier if model["tag"] in _llm_tags
+            for model in expanded_variant_catalog(tier) if model["tag"] in _llm_tags
         ]
         selected_images = [model for model in IMAGE_MODELS if model["short"] in _image_shorts]
         selected_embed = [model for model in EMBED_MODELS if model["tag"] in _embed_tags]

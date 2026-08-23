@@ -55,8 +55,9 @@ def expanded_model_variants(model: dict) -> list[dict]:
     if "variants" not in model:
         return [deepcopy(model)]
     common = {key: deepcopy(value) for key, value in model.items() if key != "variants"}
-    return [
-        {
+    expanded = []
+    for variant in model["variants"]:
+        record = {
             **common,
             **deepcopy(variant),
             "base_model": model["base_model"],
@@ -66,8 +67,12 @@ def expanded_model_variants(model: dict) -> list[dict]:
                 f"({variant['download_size']})"
             ),
         }
-        for variant in model["variants"]
-    ]
+        if not variant.get("default"):
+            for key in [name for name in record if name.startswith("vllm_")]:
+                record.pop(key)
+            record.pop("native_mtp", None)
+        expanded.append(record)
+    return expanded
 
 
 def default_model_variant(model: dict) -> dict:

@@ -14,6 +14,7 @@ from scripts.workloads.models import (
     EMBED_MODELS, IMAGE_MODELS, LLM_MODELS_LARGE, LLM_MODELS_MEDIUM,
     LLM_MODELS_SMALL, LLM_MODELS_XSMALL, qualification_llm_model,
 )
+from scripts.workloads.model_variants import expanded_variant_catalog
 
 
 def toggle_all_models(entries: list[dict]) -> None:
@@ -79,10 +80,10 @@ def select_models(memory_ceiling_gb=None, engines=(LLAMACPP,), *,
         "directory_names": [entry["directory_name"]],
     } for entry in find_non_catalog_vllm_repos(vllm_cache_home)]
     groups = [
-        ("LLM — Extra-small tier (<6B params)", LLM_MODELS_XSMALL, "llm",   "xs"),
-        ("LLM — Small tier (≤20B params)",   LLM_MODELS_SMALL,  "llm",   "s"),
-        ("LLM — Medium tier (26–35B params)", LLM_MODELS_MEDIUM, "llm",   "m"),
-        ("LLM — Large tier (70B+ params)",   LLM_MODELS_LARGE,  "llm",   "l"),
+        ("LLM — Extra-small tier (<6B params)", expanded_variant_catalog(LLM_MODELS_XSMALL), "llm", "xs"),
+        ("LLM — Small tier (≤20B params)", expanded_variant_catalog(LLM_MODELS_SMALL), "llm", "s"),
+        ("LLM — Medium tier (26–35B params)", expanded_variant_catalog(LLM_MODELS_MEDIUM), "llm", "m"),
+        ("LLM — Large tier (70B+ params)", expanded_variant_catalog(LLM_MODELS_LARGE), "llm", "l"),
         ("Embeddings models",                 EMBED_MODELS,      "embed", "emb"),
         ("Image generation models",           IMAGE_MODELS,      "image", "img"),
         ("Optional cleanup — downloaded llama.cpp models not in the catalog",
@@ -108,7 +109,7 @@ def select_models(memory_ceiling_gb=None, engines=(LLAMACPP,), *,
             elif kind == "llm":
                 report = hardware_fit_report(m)
                 fits = fits_any_engine(report)
-                checked = fits is not False
+                checked = fits is not False and (not m.get("variant") or m.get("default", False))
             elif kind == "image":
                 fits = hardware.image_model_fits(m["checkpoint"], m["short"], memory_ceiling_gb)
                 checked = fits is not False

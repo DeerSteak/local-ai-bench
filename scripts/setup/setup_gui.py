@@ -17,6 +17,7 @@ from scripts.workloads.models import (
     LLM_MODELS_SMALL,
     LLM_MODELS_XSMALL,
 )
+from scripts.workloads.model_variants import expanded_variant_catalog
 from scripts.runtime.comfyui_installation import normalize_comfyui_dir
 from scripts.setup.engine_selection import LLAMACPP
 from scripts.setup.model_inventory import (
@@ -26,10 +27,10 @@ from scripts.app.tk_utils import mousewheel_scroll_units, refresh_tk_layout
 
 
 LLM_GROUPS = (
-    ("Extra-small LLMs", LLM_MODELS_XSMALL),
-    ("Small LLMs", LLM_MODELS_SMALL),
-    ("Medium LLMs", LLM_MODELS_MEDIUM),
-    ("Large LLMs", LLM_MODELS_LARGE),
+    ("Extra-small LLMs", expanded_variant_catalog(LLM_MODELS_XSMALL)),
+    ("Small LLMs", expanded_variant_catalog(LLM_MODELS_SMALL)),
+    ("Medium LLMs", expanded_variant_catalog(LLM_MODELS_MEDIUM)),
+    ("Large LLMs", expanded_variant_catalog(LLM_MODELS_LARGE)),
 )
 HF_LOGIN_URL = "https://huggingface.co/login"
 
@@ -51,7 +52,7 @@ def default_model_selection(memory_ceiling_gb: float | None,
     selected: dict[str, bool] = {}
     for _, models in LLM_GROUPS:
         for model in models:
-            selected[model["tag"]] = fits_any_engine(
+            selected[model["tag"]] = (not model.get("variant") or model.get("default", False)) and fits_any_engine(
                 engine_fit_report(model, engines, memory_ceiling_gb),
             ) is not False
     for model in EMBED_MODELS:
