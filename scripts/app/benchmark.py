@@ -517,6 +517,15 @@ def apply_variant_selections(engine_scopes: list[dict], selectors: list[str] | N
         raise ValueError("--model-variant requires --engine llamacpp")
     for scope in engine_scopes:
         scope["llm_models"] = select_model_variants(scope["llm_models"], selections)
+        if selections and "installed_tags" in scope:
+            missing = sorted(
+                model["tag"] for model in scope["llm_models"]
+                if model["tag"] not in scope["installed_tags"]
+            )
+            if missing:
+                raise ValueError(
+                    "selected model variants are not installed: " + ", ".join(missing)
+                )
         if any(test in tests for test in CONCURRENCY_TESTS):
             scope["concurrency_models"] = select_model_variants(
                 scope["concurrency_models"], selections,
@@ -559,6 +568,7 @@ def resolve_engine_scopes(engine_names: list[str], engine_factory, tier_models: 
         scopes.append({
             "name": engine_name,
             "engine": engine,
+            "installed_tags": frozenset(installed_tags),
             "llm_models": llm_models,
             "concurrency_models": concurrency_models,
             "embedding_models": engine_embeddings,

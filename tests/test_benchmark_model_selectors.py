@@ -86,6 +86,24 @@ def test_variant_selection_rejects_vllm_before_execution():
         )
 
 
+def test_variant_selection_rejects_explicit_variants_that_are_not_installed():
+    gemma = LLM_MODELS[0]
+    scope = {
+        "name": "llamacpp",
+        "installed_tags": frozenset({"gemma3:1b-it-q4_K_M"}),
+        "llm_models": [gemma],
+        "concurrency_models": [],
+    }
+
+    with pytest.raises(ValueError, match=(
+        "selected model variants are not installed: gemma3:1b-it-q8_0"
+    )):
+        apply_variant_selections(
+            [scope], ["gemma3:1b-it=Q4_K_M", "gemma3:1b-it=Q8_0"],
+            ["llamacpp"], ["llm"],
+        )
+
+
 def test_every_selector_defaults_to_none():
     args = parser().parse_args([])
     assert args.llm_models is None
