@@ -370,6 +370,7 @@ def test_linux_intel_build_sources_oneapi_and_enables_sycl(monkeypatch, tmp_path
     assert configure[1]["env"] == build_env
     build = next(entry for entry in commands if entry[0][:2] == ["cmake", "--build"])
     assert build[1]["env"] == build_env
+    assert build[0][-2:] == ["--parallel", "1"]
 
 
 def test_linux_source_install_falls_back_to_official_git_tags(monkeypatch, tmp_path):

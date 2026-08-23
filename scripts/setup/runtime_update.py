@@ -251,6 +251,11 @@ def llamacpp_cmake_flags(backend: str, *, nvcc: str | None = None,
     return []
 
 
+def llamacpp_build_parallel_args(backend: str) -> list[str]:
+    # DPC++ translation units are memory-heavy; unrestricted jobs can invoke the OOM killer.
+    return ["--parallel", "1"] if backend == "xpu" else ["-j"]
+
+
 def validate_llamacpp_build(source_dir: Path, *, required_backend: str | None = None,
                             env=None, run=subprocess.run) -> RuntimeUpdateResult:
     tools = {}
@@ -605,7 +610,7 @@ def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
              *llamacpp_cmake_flags(backend, nvcc=nvcc, compute_capability=capability)],
             ["cmake", "--build", str(staged / "build"),
              *sum((["--target", name] for name in LLAMACPP_TARGETS), []),
-             "--config", "Release", "-j"],
+             "--config", "Release", *llamacpp_build_parallel_args(backend)],
         ]
         for command in commands:
             if cancelled := _cancelled(control):

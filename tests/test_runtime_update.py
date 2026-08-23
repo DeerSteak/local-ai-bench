@@ -12,8 +12,8 @@ from scripts.setup.runtime_update import (
     fetch_latest_llamacpp_source_tag, fetch_llamacpp_release, fetch_llamacpp_releases,
     homebrew_llamacpp_prefix,
     llamacpp_clone_command,
-    latest_llamacpp_tag_from_refs, llamacpp_cmake_flags, llamacpp_source_release,
-    normalize_llamacpp_release_tag,
+    latest_llamacpp_tag_from_refs, llamacpp_build_parallel_args, llamacpp_cmake_flags,
+    llamacpp_source_release, normalize_llamacpp_release_tag,
     rebuild_managed_llamacpp,
     RuntimeUpdateControl, select_macos_llamacpp_asset, select_windows_llamacpp_assets,
     update_homebrew_llamacpp, update_macos_llamacpp, update_windows_llamacpp,
@@ -377,6 +377,11 @@ def test_llamacpp_cmake_flags_match_backend():
         "-DGGML_SYCL=ON", "-DCMAKE_C_COMPILER=icx", "-DCMAKE_CXX_COMPILER=icpx",
     ]
     assert llamacpp_cmake_flags("cpu") == []
+
+
+def test_llamacpp_sycl_build_caps_parallel_compilers():
+    assert llamacpp_build_parallel_args("xpu") == ["--parallel", "1"]
+    assert llamacpp_build_parallel_args("cuda") == ["-j"]
 
 
 def test_homebrew_llamacpp_prefix_rejects_missing_formula():
