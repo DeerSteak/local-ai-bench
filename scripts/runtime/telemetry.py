@@ -1270,6 +1270,16 @@ def parse_gpu_usage(platform_name: str, output: str) -> float | None:
     return max(percentages) if percentages else None
 
 
+def parse_xpu_smi_gpu_usage(output: str) -> float | None:
+    values = []
+    for line in output.splitlines():
+        if not re.search(r"[0-9.]+\s*MiB\s*/\s*[0-9.]+\s*MiB", line, re.IGNORECASE):
+            continue
+        values.extend(float(value) for value in re.findall(r"([0-9.]+)\s*%", line))
+    percentages = [value for value in values if 0 <= value <= 100]
+    return max(percentages) if percentages else None
+
+
 def query_gpu_usage(platform_name: str | None = None, run_fn=subprocess.run,
                     which_fn=shutil.which) -> float | None:
     platform_name = platform_name or platform.system()
@@ -1281,17 +1291,18 @@ def query_gpu_usage(platform_name: str | None = None, run_fn=subprocess.run,
     elif executable := hardware.rocm_executable("rocm-smi", which_fn=which_fn):
         command = [executable, "--showuse", "--json"]
     elif executable := which_fn("xpu-smi"):
-        command = [
-            executable, "--query-gpu=utilization.gpu",
-            "--format=csv,noheader,nounits",
-        ]
+        command = [executable]
     else:
         return None
     try:
         result = run_fn(command, capture_output=True, text=True, timeout=2, check=False)
     except (OSError, subprocess.SubprocessError):
         return None
-    return parse_gpu_usage(platform_name, result.stdout) if result.returncode == 0 else None
+    if result.returncode:
+        return None
+    if executable.endswith("xpu-smi"):
+        return parse_xpu_smi_gpu_usage(result.stdout)
+    return parse_gpu_usage(platform_name, result.stdout)
 
 
 def parse_gpu_process_memory(output: str, process_ids: set[int]) -> float | None:
@@ -1334,6 +1345,17 @@ def query_vram_usage() -> tuple[float, float] | None:
     return query_sampler_vram_usage()
 
 
+def parse_xpu_smi_memory(output: str) -> tuple[float, float] | None:
+    pairs = re.findall(
+        r"([0-9.]+)\s*MiB\s*/\s*([0-9.]+)\s*MiB", output, re.IGNORECASE,
+    )
+    if not pairs:
+        return None
+    used = sum(float(pair[0]) for pair in pairs) / 1024
+    total = sum(float(pair[1]) for pair in pairs) / 1024
+    return (used, total) if total > 0 else None
+
+
 def query_sampler_vram_usage(run_fn=subprocess.run, which_fn=shutil.which) -> tuple[float, float] | None:
     if executable := which_fn("nvidia-smi"):
         command = [executable, "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"]
@@ -1342,10 +1364,7 @@ def query_sampler_vram_usage(run_fn=subprocess.run, which_fn=shutil.which) -> tu
         command = [executable, "--showmeminfo", "vram", "--json"]
         source = "rocm"
     elif executable := which_fn("xpu-smi"):
-        command = [
-            executable, "--query-gpu=memory.used,memory.total",
-            "--format=csv,noheader,nounits",
-        ]
+        command = [executable]
         source = "xpu"
     else:
         return None
@@ -1353,7 +1372,9 @@ def query_sampler_vram_usage(run_fn=subprocess.run, which_fn=shutil.which) -> tu
         result = run_fn(command, capture_output=True, text=True, timeout=2, check=False)
         if result.returncode:
             return None
-        if source in {"nvidia", "xpu"}:
+        if source == "xpu":
+            return parse_xpu_smi_memory(result.stdout)
+        if source == "nvidia":
             pairs = [line.split(",") for line in result.stdout.splitlines() if "," in line]
             used = sum(float(pair[0].strip()) for pair in pairs) / 1024
             total = sum(float(pair[1].strip()) for pair in pairs) / 1024
@@ -1509,7 +1530,7 @@ def default_memory_sources(which_fn=shutil.which, run_fn=subprocess.run) -> dict
     elif hardware.rocm_executable("rocm-smi", which_fn=which_fn) \
             and rocm_memory_is_discrete(run_fn, which_fn):
         accelerator = "rocm-smi"
-    elif which_fn("xpu-smi"):
+    elif which_fn("xpu-smi") and query_sampler_vram_usage(run_fn, which_fn) is not None:
         accelerator = "xpu-smi"
     return {
         "host_ram_used_gb": "psutil",

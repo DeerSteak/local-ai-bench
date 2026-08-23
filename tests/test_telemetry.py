@@ -8,7 +8,8 @@ from scripts.runtime.telemetry import (
     CaseTelemetry, TelemetrySample, TelemetrySampler, calculate_headroom,
     next_sample_deadline,
     default_memory_sources, derive_run_memory_summary, memory_block, memory_ceiling_gb,
-    query_gpu_usage, query_sampler_vram_usage,
+    parse_xpu_smi_gpu_usage, parse_xpu_smi_memory, query_gpu_usage,
+    query_sampler_vram_usage,
     summarize_case, summarize_samples, summarize_windows,
 )
 
@@ -207,8 +208,12 @@ Agent 1
 
 
 def test_xpu_smi_exposes_intel_accelerator_memory_counters():
+    result = type("Result", (), {
+        "returncode": 0, "stdout": "| 256 MiB / 16384 MiB | 0% Default |",
+    })()
     sources = default_memory_sources(
         which_fn=lambda name: "/usr/bin/xpu-smi" if name == "xpu-smi" else None,
+        run_fn=lambda *_args, **_kwargs: result,
     )
     assert sources["accelerator_memory_used_gb"] == "xpu-smi"
     assert sources["accelerator_memory_total_gb"] == "xpu-smi"
@@ -278,11 +283,15 @@ def test_sampler_vram_query_normalizes_rocm_bytes():
     ) == (1, 8)
 
 
-def test_intel_xpu_queries_use_machine_readable_metrics():
+def test_intel_xpu_queries_use_supported_summary_output():
     calls = []
+    summary = """
+| N/A 25C 66W / 380W | 4096 MiB / 24576 MiB | 73% Default |
+| N/A 31C 70W / 380W | 2048 MiB / 24576 MiB | 41% Default |
+"""
     results = iter([
-        type("Result", (), {"returncode": 0, "stdout": "73\n41\n"})(),
-        type("Result", (), {"returncode": 0, "stdout": "4096, 24576\n2048, 24576\n"})(),
+        type("Result", (), {"returncode": 0, "stdout": summary})(),
+        type("Result", (), {"returncode": 0, "stdout": summary})(),
     ])
 
     def run(command, **kwargs):
@@ -292,15 +301,20 @@ def test_intel_xpu_queries_use_machine_readable_metrics():
     which = lambda name: "/usr/bin/xpu-smi" if name == "xpu-smi" else None
     assert query_gpu_usage("Linux", run_fn=run, which_fn=which) == 73
     assert query_sampler_vram_usage(run_fn=run, which_fn=which) == (6, 48)
-    assert calls[0][0] == [
-        "/usr/bin/xpu-smi", "--query-gpu=utilization.gpu",
-        "--format=csv,noheader,nounits",
-    ]
-    assert calls[1][0] == [
-        "/usr/bin/xpu-smi", "--query-gpu=memory.used,memory.total",
-        "--format=csv,noheader,nounits",
-    ]
+    assert calls[0][0] == ["/usr/bin/xpu-smi"]
+    assert calls[1][0] == ["/usr/bin/xpu-smi"]
     assert all(call[1]["timeout"] == 2 for call in calls)
+
+
+def test_intel_xpu_summary_parsers_aggregate_devices_and_reject_missing_values():
+    summary = """
+| N/A 25C 66W / 380W | 1024 MiB / 8192 MiB | 20% Default |
+| N/A 30C 70W / 380W | 2048 MiB / 16384 MiB | 80% Default |
+"""
+    assert parse_xpu_smi_gpu_usage(summary) == 80
+    assert parse_xpu_smi_memory(summary) == (3, 24)
+    assert parse_xpu_smi_gpu_usage("| N/A / N/A | N/A |") is None
+    assert parse_xpu_smi_memory("| N/A / N/A | N/A |") is None
 
 
 def test_intel_xpu_queries_reject_failures_and_malformed_metrics():
@@ -311,6 +325,16 @@ def test_intel_xpu_queries_reject_failures_and_malformed_metrics():
     assert query_sampler_vram_usage(
         run_fn=lambda *_a, **_k: malformed, which_fn=which,
     ) is None
+
+
+def test_intel_xpu_memory_source_requires_a_readable_summary():
+    malformed = type("Result", (), {"returncode": 0, "stdout": "not memory"})()
+    sources = default_memory_sources(
+        which_fn=lambda name: "/usr/bin/xpu-smi" if name == "xpu-smi" else None,
+        run_fn=lambda *_args, **_kwargs: malformed,
+    )
+    assert sources["accelerator_memory_used_gb"] == "unsupported"
+    assert sources["accelerator_memory_total_gb"] == "unsupported"
 
 
 @pytest.mark.parametrize(("peak", "ceiling", "absolute", "fraction", "state"), [
