@@ -556,7 +556,7 @@ It ranks tenth because it multiplies run time and disk consumption substantially
 
 - [x] A catalog entry may declare multiple quantization variants; existing single-variant entries are unchanged in meaning.
 - [x] Each variant is a distinct evidence identity; a test asserts two variants of one base model never pool into one evidence set.
-- [ ] One invocation runs every selected GGUF variant sequentially without further input and resumes without repeating completed variants.
+- [x] One invocation runs every selected GGUF variant sequentially without further input and resumes without repeating completed variants.
 - [x] The GUI provides per-model quantization checkboxes with the default preselected, visible artifact sizes, and select-all/clear controls; only checked variants enter the run plan.
 - [x] The CLI can express the same model-qualified variant selection noninteractively, and invalid, duplicate, or empty selections fail before download or execution.
 - [x] Multiple selected GGUF filenames may resolve from one Hugging Face repository without duplicating repository metadata or downloads.
