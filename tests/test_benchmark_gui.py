@@ -354,6 +354,7 @@ def test_restored_tg_tokens_distinguishes_empty_selection_from_legacy_default():
 def test_prepare_benchmark_launch_returns_validation_errors_without_launch_data(tmp_path):
     preparation = prepare_benchmark_launch(
         engine="llamacpp", tests=[], entries=[], max_prompt_tokens=None, tg_tokens=[],
+        model_owners={},
         gui_options=dict(GUI_OPTION_DEFAULTS), selected_preset="Custom",
         detected_tools={}, found_comfyui=None, detected_comfyui=tmp_path,
     )
@@ -366,6 +367,7 @@ def test_prepare_benchmark_launch_builds_review_state_and_command(tmp_path):
     options = dict(GUI_OPTION_DEFAULTS, runs=4, out="result.json")
     preparation = prepare_benchmark_launch(
         engine="llamacpp", tests=["llm"], entries=entries,
+        model_owners={"model": {"llamacpp"}},
         max_prompt_tokens=8192, tg_tokens=[1024], gui_options=options,
         selected_preset="Quick run", detected_tools={"llama-server": "/bin/server"},
         found_comfyui=None, detected_comfyui=tmp_path,
@@ -385,6 +387,7 @@ def test_prepare_benchmark_launch_ignores_ambient_without_sustained(tmp_path):
     entries = [MenuEntry("model", "Model", "llm", "LLM", True)]
     preparation = prepare_benchmark_launch(
         engine="llamacpp", tests=["llm"], entries=entries,
+        model_owners={"model": {"llamacpp"}},
         max_prompt_tokens=None, tg_tokens=[],
         gui_options=dict(GUI_OPTION_DEFAULTS, ambient_temp_c="None"),
         selected_preset="Custom", detected_tools={"llama-server": "/bin/server"},
@@ -399,6 +402,7 @@ def test_prepare_benchmark_launch_preserves_valid_ambient_without_sustained(tmp_
     entries = [MenuEntry("model", "Model", "llm", "LLM", True)]
     preparation = prepare_benchmark_launch(
         engine="llamacpp", tests=["llm"], entries=entries,
+        model_owners={"model": {"llamacpp"}},
         max_prompt_tokens=None, tg_tokens=[],
         gui_options=dict(GUI_OPTION_DEFAULTS, ambient_temp_c=18.5),
         selected_preset="Custom", detected_tools={"llama-server": "/bin/server"},
@@ -413,6 +417,7 @@ def test_prepare_benchmark_launch_validates_ambient_for_sustained(tmp_path):
     entries = [MenuEntry("model", "Model", "llm", "LLM", True)]
     preparation = prepare_benchmark_launch(
         engine="llamacpp", tests=["sustained"], entries=entries,
+        model_owners={"model": {"llamacpp"}},
         max_prompt_tokens=None, tg_tokens=[],
         gui_options=dict(GUI_OPTION_DEFAULTS, ambient_temp_c="invalid"),
         selected_preset="Custom", detected_tools={"llama-server": "/bin/server"},
@@ -426,6 +431,7 @@ def test_prepare_benchmark_launch_requires_tg_selection_for_llamabench(tmp_path)
     entries = [MenuEntry("model", "Model", "llm", "LLM", True)]
     preparation = prepare_benchmark_launch(
         engine="llamacpp", tests=["llamabench"], entries=entries,
+        model_owners={"model": {"llamacpp"}},
         max_prompt_tokens=None, tg_tokens=[], gui_options=dict(GUI_OPTION_DEFAULTS),
         selected_preset="Custom", detected_tools={"llama-bench": "/bin/bench"},
         found_comfyui=None, detected_comfyui=tmp_path,
@@ -438,6 +444,7 @@ def test_prepare_benchmark_launch_requires_a_selected_model(tmp_path):
     entries = [MenuEntry("model", "Model", "llm", "LLM", False)]
     preparation = prepare_benchmark_launch(
         engine="llamacpp", tests=["llm"], entries=entries,
+        model_owners={"model": {"llamacpp"}},
         max_prompt_tokens=None, tg_tokens=[], gui_options=dict(GUI_OPTION_DEFAULTS),
         selected_preset="Custom", detected_tools={"llama-server": "/bin/server"},
         found_comfyui=None, detected_comfyui=tmp_path,
@@ -452,6 +459,7 @@ def test_prepare_benchmark_launch_rejects_non_mtp_workloads_before_progress(tmp_
     )]
     preparation = prepare_benchmark_launch(
         engine="llamacpp", tests=["llm", "img"], entries=entries,
+        model_owners={"qwen3.5:4b-q4_K_M": {"llamacpp"}},
         max_prompt_tokens=None, tg_tokens=[],
         gui_options=dict(GUI_OPTION_DEFAULTS, mtp="on"),
         selected_preset="Custom", detected_tools={"llama-server": "/bin/server"},
@@ -459,6 +467,20 @@ def test_prepare_benchmark_launch_rejects_non_mtp_workloads_before_progress(tmp_
     )
     assert isinstance(preparation, BenchmarkLaunchError)
     assert any("cannot run non-MTP workloads: img" in error for error in preparation.errors)
+
+
+def test_prepare_benchmark_launch_rejects_mtp_for_engine_missing_selected_model(tmp_path):
+    tag = "qwen3.5:4b-q4_K_M"
+    entries = [MenuEntry(tag, "Qwen", "llm", "LLM", True)]
+    preparation = prepare_benchmark_launch(
+        engine="llamacpp,vllm", tests=["llm"], entries=entries,
+        model_owners={tag: {"llamacpp"}}, max_prompt_tokens=None, tg_tokens=[],
+        gui_options=dict(GUI_OPTION_DEFAULTS, mtp="on"), selected_preset="Custom",
+        detected_tools={"llama-server": "/bin/server"},
+        found_comfyui=None, detected_comfyui=tmp_path,
+    )
+    assert isinstance(preparation, BenchmarkLaunchError)
+    assert any("missing: vllm" in error for error in preparation.errors)
 
 
 def test_selected_catalog_models_limits_mtp_progress_to_checked_entries():

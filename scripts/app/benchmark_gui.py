@@ -349,6 +349,7 @@ def start_runtime_profile_load(engines: dict, hardware_profile: dict,
 
 
 def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[MenuEntry],
+                             model_owners: dict[str, set[str]],
                              max_prompt_tokens: int | None, tg_tokens: list[int],
                              gui_options: dict[str, Any], selected_preset: str,
                              detected_tools: dict[str, str | None],
@@ -367,9 +368,12 @@ def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[Men
     selection_error = model_selection_error(entries, tests)
     if selection_error:
         errors.append(selection_error)
-    selected_catalog = selected_catalog_models(entries)
+    selected_engines = parse_engine_selection(engine)
+    selected_by_engine = selected_catalog_models_by_engine(
+        entries, selected_engines, model_owners,
+    )
     mtp_error = mtp_selection_error(
-        parse_engine_selection(engine), launch_options["mtp"], selected_catalog, tests,
+        selected_by_engine, launch_options["mtp"], tests,
     )
     if mtp_error:
         errors.append(mtp_error)
@@ -405,6 +409,18 @@ def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[Men
 def selected_catalog_models(entries: list[MenuEntry]) -> list[dict]:
     selected = {entry.value for entry in entries if entry.checked}
     return [model for model in LLM_MODELS if model["tag"] in selected]
+
+
+def selected_catalog_models_by_engine(entries: list[MenuEntry], engine_names: Sequence[str],
+                                      model_owners: dict[str, set[str]]) -> dict[str, list[dict]]:
+    selected = selected_catalog_models(entries)
+    return {
+        engine_name: [
+            model for model in selected
+            if engine_name in model_owners.get(model["tag"], set())
+        ]
+        for engine_name in engine_names
+    }
 
 
 def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
@@ -1182,6 +1198,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         gui_options = collect_options()
         preparation = prepare_benchmark_launch(
             engine=engine_var.get(), tests=tests, entries=entries,
+            model_owners=model_owners,
             max_prompt_tokens=max_prompt, tg_tokens=tg_tokens,
             gui_options=gui_options, selected_preset=preset_var.get(),
             detected_tools=detected_tools, found_comfyui=found_comfyui,
@@ -1209,8 +1226,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             preparation.command, "benchmark", [],
             "Benchmark is running. Results are checkpointed throughout the run.",
             tests, entries, mtp_progress_names(
-                parse_engine_selection(engine_var.get()), gui_options["mtp"],
-                selected_catalog_models(entries),
+                selected_catalog_models_by_engine(
+                    entries, parse_engine_selection(engine_var.get()), model_owners,
+                ),
+                gui_options["mtp"],
             ),
             "Benchmark could not start",
         )

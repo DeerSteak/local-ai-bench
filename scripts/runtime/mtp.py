@@ -1,6 +1,6 @@
 """Native multi-token prediction capability and benchmark pass planning."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 
 MTP_MODES = ("off", "on", "both")
@@ -73,8 +73,8 @@ def mtp_tests(tests: Sequence[str], enabled: bool) -> list[str]:
     return list(tests) if not enabled else [test for test in tests if test in MTP_SERVER_TESTS]
 
 
-def mtp_selection_error(engine_names: Sequence[str], mode: str,
-                        models: Sequence[dict], tests: Sequence[str]) -> str | None:
+def mtp_selection_error(engine_models: Mapping[str, Sequence[dict]], mode: str,
+                        tests: Sequence[str]) -> str | None:
     if mode == "off":
         return None
     incompatible = [test for test in tests if test not in MTP_SERVER_TESTS]
@@ -84,11 +84,13 @@ def mtp_selection_error(engine_names: Sequence[str], mode: str,
             + "; use --mtp both to run them once in the baseline pass"
         )
     capable_engines = {
-        engine_name for engine_name in engine_names
+        engine_name for engine_name, models in engine_models.items()
         if native_mtp_models(models, engine_name)
     }
     if mode == "on":
-        missing = [engine_name for engine_name in engine_names if engine_name not in capable_engines]
+        missing = [
+            engine_name for engine_name in engine_models if engine_name not in capable_engines
+        ]
         if missing:
             return (
                 "--mtp on requires a selected model with cataloged native MTP support "
@@ -145,12 +147,11 @@ def expand_mtp_passes(scopes: Sequence[dict], mode: str) -> list[dict]:
     return passes
 
 
-def mtp_progress_names(engine_names: Sequence[str], mode: str,
-                       catalog_models: Sequence[dict]) -> list[str]:
+def mtp_progress_names(engine_models: Mapping[str, Sequence[dict]], mode: str) -> list[str]:
     names = []
-    for engine_name in engine_names:
+    for engine_name, models in engine_models.items():
         for enabled in mtp_mode_states(mode):
-            if enabled and not native_mtp_models(catalog_models, engine_name):
+            if enabled and not native_mtp_models(models, engine_name):
                 continue
             names.append(
                 mtp_pass_label(engine_name, enabled) if mode != "off" else engine_name

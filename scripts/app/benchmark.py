@@ -972,10 +972,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         for index, scope in enumerate(engine_scopes)
     ]
     mtp_error = mtp_selection_error(
-        run_engine_names, args.mtp,
-        [model for scope in engine_scopes
-         for model in scope["llm_models"] + scope["concurrency_models"]],
-        args.tests,
+        {
+            scope["name"]: scope["llm_models"] + scope["concurrency_models"]
+            for scope in engine_scopes
+        },
+        args.mtp, args.tests,
     )
     if mtp_error:
         parser.error(mtp_error)
