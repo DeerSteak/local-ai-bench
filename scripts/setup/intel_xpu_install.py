@@ -45,7 +45,7 @@ def intel_xpu_install_plan(os_release: str, *, user: str | None) -> IntelXpuInst
         (
             "apt-get", "install", "-y", "libze-intel-gpu1", "libze1",
             "intel-metrics-discovery", "intel-opencl-icd", "clinfo", "intel-gsc",
-            "libze-dev", "intel-ocloc",
+            "libze-dev", "intel-ocloc", "xpu-smi",
         ),
         (
             "bash", "-c",

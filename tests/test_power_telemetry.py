@@ -2,14 +2,17 @@ from pathlib import Path
 
 import pytest
 
+from scripts.runtime import config
 from scripts.runtime.telemetry import (
     AmdAdlPowerSource, CaseTelemetry, PollingPowerSource, PowerAvailability, PowerReading,
-    PowermetricsPowerSource, TelemetrySample, TelemetrySampler, discover_power_source,
+    PowermetricsPowerSource, RaplPowerSource, TelemetrySample, TelemetrySampler,
+    create_power_source, discover_power_source,
     discover_amd_adl_power,
     add_power_efficiency, derive_run_power_summary, efficiency_per_joule,
     integrate_power_joules, power_block,
     parse_amd_adl_power, parse_nvidia_power, parse_powermetrics_power, parse_rapl_energy_uj,
-    parse_rocm_power, power_availability_dict, query_power_reading,
+    parse_rocm_power, power_availability_dict, probe_privileged_rapl_source,
+    query_power_reading,
 )
 
 
@@ -314,6 +317,33 @@ def test_rapl_discovery_distinguishes_permission_denied_from_unsupported(monkeyp
     assert unsupported.scope == "unknown"
 
 
+def test_rapl_discovery_accepts_the_real_privileged_reader(monkeypatch, tmp_path):
+    counter = tmp_path / "energy_uj"
+    counter.write_text("1", encoding="utf-8")
+    monkeypatch.setattr("scripts.runtime.telemetry.os.access", lambda *_args: False)
+    probes = []
+
+    def probe(location, interval):
+        probes.append((location, interval))
+        return True
+
+    status = discover_power_source(
+        "Linux", which_fn=lambda name: f"/usr/bin/{name}" if name == "sudo" else None,
+        rapl_paths=[counter], rapl_probe_fn=probe,
+    )
+    assert status == PowerAvailability(
+        True, "rapl", "cpu_package", location=str(counter), requires_elevation=True,
+    )
+    assert probes == [(str(counter), config.TELEMETRY_INTERVAL_SEC)]
+    rejected = discover_power_source(
+        "Linux", which_fn=lambda name: f"/usr/bin/{name}" if name == "sudo" else None,
+        rapl_paths=[counter], rapl_probe_fn=lambda _location, _interval: False,
+    )
+    assert rejected == PowerAvailability(
+        False, "rapl", "cpu_package", "RAPL energy counter permission is denied",
+    )
+
+
 def test_power_query_uses_discovered_source_and_never_returns_zero_for_failure():
     status = PowerAvailability(True, "nvidia-smi", "accelerator", location="/bin/nvidia-smi")
     assert query_power_reading(
@@ -455,6 +485,10 @@ class FakeProcess:
             "Combined Power (CPU + GPU + ANE): 2500 mW\n",
         ])
         self.terminated = False
+        self.returncode: int | None = None
+
+    def poll(self):
+        return self.returncode
 
     def terminate(self):
         self.terminated = True
@@ -514,6 +548,65 @@ def test_rapl_polling_source_derives_watts_from_counter_delta():
     assert source.read_watts() is None
     assert source.read_watts() == 3
     assert source.read_watts() is None
+
+
+def test_rapl_source_uses_one_long_lived_privileged_reader():
+    process = FakeProcess()
+    process.stdout = iter(["1000000\n", "2500000\n"])
+    commands = []
+    times = iter([10.0, 10.5, 10.5])
+
+    def popen(command, **_kwargs):
+        commands.append(command)
+        return process
+
+    source = RaplPowerSource(
+        PowerAvailability(True, "rapl", "cpu_package", location="/counter"),
+        0.5, popen_fn=popen, monotonic=lambda: next(times),
+    )
+    source.start()
+    assert source._reader is not None
+    source._reader.join(timeout=1)
+    assert source.read_watts() == 3
+    source.stop()
+    assert process.terminated is True
+    assert commands == [[
+        "/usr/bin/sudo", "-n", "/bin/sh", "-c",
+        'while true; do cat -- "$1" || exit; sleep "$2" || exit; done',
+        "rapl-reader", "/counter", "0.5",
+    ]]
+    created = create_power_source(
+        PowerAvailability(
+            True, "rapl", "cpu_package", location="/counter", requires_elevation=True,
+        ), 0.5,
+    )
+    assert isinstance(created, RaplPowerSource)
+    direct = create_power_source(
+        PowerAvailability(True, "rapl", "cpu_package", location="/counter"), 0.5,
+    )
+    assert isinstance(direct, PollingPowerSource)
+
+
+def test_rapl_privileged_probe_requires_a_valid_reading_from_the_sampler_command():
+    process = FakeProcess()
+    process.stdout = iter(["1000000\n", "2500000\n"])
+    times = [10.0, 10.5]
+    clock = lambda: times.pop(0) if times else 10.5
+    assert probe_privileged_rapl_source(
+        "/counter", 0.5, monotonic=clock, sleep=lambda _delay: None,
+        popen_fn=lambda *_args, **_kwargs: process,
+    ) is True
+    assert process.terminated is True
+
+
+def test_rapl_privileged_probe_rejects_a_sampler_that_cannot_start():
+    process = FakeProcess()
+    process.stdout = iter(())
+    process.returncode = 1
+    assert probe_privileged_rapl_source(
+        "/counter", 0.5, monotonic=lambda: 10.0, sleep=lambda _delay: None,
+        popen_fn=lambda *_args, **_kwargs: process,
+    ) is False
 
 
 def test_case_telemetry_exposes_case_local_power_beside_legacy_memory_result():

@@ -195,6 +195,15 @@ def aggregate_generation_measurements(samples: list[GenerationMeasurement],
 class InferenceEngine(ABC):
     name: str  # e.g. "llamacpp"
 
+    def set_sampling_profile(self, profile: dict) -> None:
+        from scripts.runtime.sampling import sampling_profile_payload
+        sampling_profile_payload(self.name, profile)
+        self._sampling_profile = profile
+
+    def sampling_payload(self) -> dict:
+        from scripts.runtime.sampling import sampling_profile_payload
+        return sampling_profile_payload(self.name, getattr(self, "_sampling_profile", None))
+
     # ── server / process lifecycle ──
 
     def is_installed(self) -> bool:

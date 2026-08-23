@@ -43,7 +43,8 @@ class LlamaBenchConcurrencyBenchmark:
 
     @staticmethod
     def build_command(binary: str, model_path: Path, ctx_size: int, pp: int, tg: list[int],
-                      npl: list[int], batch_size: int, ubatch_size: int, ngl: int) -> list[str]:
+                      npl: list[int], batch_size: int, ubatch_size: int,
+                      ngl: int | str) -> list[str]:
         """Builds the llama-batched-bench argv — see docs/workloads.md#llama-bench-concurrency."""
         cache_type = (
             "f16" if ngl != 0 and config.LLAMACPP_GPU_SPLIT_MODE == "tensor"
@@ -69,7 +70,8 @@ class LlamaBenchConcurrencyBenchmark:
 
     @classmethod
     def run_one(cls, binary: str, model_path: Path, ctx_size: int, pp: int, tg: list[int],
-                npl: list[int], batch_size: int, ubatch_size: int, ngl: int, timeout: int | float,
+                npl: list[int], batch_size: int, ubatch_size: int, ngl: int | str,
+                timeout: int | float,
                 on_progress=None, on_entry=None, env=None) -> list[dict]:
         """Parses each stdout JSONL row as it arrives (this build is silent on stderr, so
         that's the only progress signal). `timeout` is an idle timeout, not a wall-clock cap."""
@@ -190,7 +192,7 @@ class LlamaBenchConcurrencyBenchmark:
                        "yourself: https://github.com/ggml-org/llama.cpp")
             return results
 
-        ngl = 0 if cpu_only else config.LLAMABENCH_FULL_OFFLOAD_NGL
+        ngl = 0 if cpu_only else config.LLAMABENCH_CONC_GPU_LAYERS
 
         for model in models:
             tag, label, short = model["tag"], model["label"], model["short"]

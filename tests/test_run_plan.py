@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from scripts.results.run_plan import IDENTITY_SCHEME, PLAN_SCHEMA_VERSION, RunPlan, load_run_plan
+from scripts.runtime.sampling import baseline_sampling_profile
 
 
 def make_plan(**overrides):
@@ -97,20 +98,109 @@ def test_measurement_affecting_changes_produce_a_new_plan_identity(change):
 def test_methodology_profile_is_identity_bearing_and_validated():
     config = complete_plan().effective_config
     config.update({
-        "methodology_profile": "neutral-v1",
+        "methodology_profile": "neutral-v2",
         "effective_optimizations": ["llamacpp:flash_attention=on"],
+        "sampling_profile": baseline_sampling_profile("llamacpp"),
     })
     plan = make_plan(effective_config=config)
     methodology = plan.execution_identity["methodology"]
     assert methodology == {
-        "profile": "neutral-v1",
+        "profile": "neutral-v2",
         "effective_optimizations": ["llamacpp:flash_attention=on"],
+        "sampling": baseline_sampling_profile("llamacpp"),
     }
     changed = dict(config, effective_optimizations=["llamacpp:flash_attention=off"])
     assert make_plan(effective_config=changed).plan_id != plan.plan_id
     invalid = dict(config, methodology_profile="vendor-fast")
     with pytest.raises(ValueError, match="methodology_profile"):
         make_plan(effective_config=invalid).validate_for_execution()
+
+    missing = dict(config)
+    del missing["sampling_profile"]
+    with pytest.raises(ValueError, match="sampling_profile"):
+        make_plan(effective_config=missing).validate_for_execution()
+
+
+def test_sustained_plan_requires_the_deterministic_sampling_baseline():
+    config = complete_plan().effective_config
+    sampling = baseline_sampling_profile("llamacpp")
+    sampling["semantic_controls"]["temperature"] = 0.9
+    config.update({
+        "methodology_profile": "neutral-v2",
+        "effective_optimizations": ["llamacpp:flash_attention=on"],
+        "sampling_profile": sampling,
+        "memory_telemetry": True,
+        "memory_telemetry_interval_sec": 0.5,
+        "temperature_telemetry": True,
+        "temperature_telemetry_interval_sec": 0.5,
+        "temperature_sources": {"gpu_die_c": "nvidia-smi"},
+        "sustained_duration_sec": 600,
+        "sustained_window_sec": 10,
+        "sustained_context_tokens": 2048,
+        "ambient_temp_c": None,
+    })
+
+    with pytest.raises(ValueError, match="sampling_profile"):
+        make_plan(
+            tests=["sustained"], stage_order=["sustained"], effective_config=config,
+        ).validate_for_execution()
+
+
+def test_mtp_configuration_is_structured_methodology_and_identity_bearing():
+    config = complete_plan().effective_config
+    config.update({
+        "mtp_enabled": True,
+        "mtp_configurations": {
+            "model:4b": {"num_speculative_tokens": 3, "predictor": "embedded"},
+        },
+        "methodology_profile": "neutral-v2",
+        "effective_optimizations": ["llamacpp:native_mtp=on"],
+        "sampling_profile": baseline_sampling_profile("llamacpp"),
+    })
+    plan = make_plan(effective_config=config)
+    plan.validate_for_execution()
+    assert plan.execution_identity["methodology"]["native_mtp"] == {
+        "model:4b": {"num_speculative_tokens": 3, "predictor": "embedded"},
+    }
+    changed = dict(config, mtp_configurations={
+        "model:4b": {"num_speculative_tokens": 1, "predictor": "embedded"},
+    })
+    assert make_plan(effective_config=changed).plan_id != plan.plan_id
+
+
+@pytest.mark.parametrize("configurations", [
+    None,
+    {"model:4b": {"num_speculative_tokens": True, "predictor": "embedded"}},
+    {"model:4b": {"num_speculative_tokens": 0, "predictor": "embedded"}},
+    {"model:4b": {"num_speculative_tokens": 1, "predictor": "external"}},
+    {"model:4b": {"num_speculative_tokens": 1}},
+])
+def test_current_plan_rejects_missing_or_malformed_mtp_configuration(configurations):
+    settings = complete_plan().effective_config
+    settings["mtp_configurations"] = configurations
+    with pytest.raises(ValueError, match="mtp_configurations"):
+        make_plan(effective_config=settings).validate_for_execution()
+
+
+def test_current_plan_rejects_mtp_mode_configuration_mismatch():
+    settings = complete_plan().effective_config
+    settings["mtp_enabled"] = False
+    settings["mtp_configurations"] = {
+        "model:4b": {"num_speculative_tokens": 1, "predictor": "embedded"},
+    }
+    with pytest.raises(ValueError, match="inconsistent"):
+        make_plan(effective_config=settings).validate_for_execution()
+
+
+def test_schema_4_neutral_v1_plan_remains_readable_without_sampling_identity():
+    config = complete_plan().effective_config
+    config.update({
+        "methodology_profile": "neutral-v1",
+        "effective_optimizations": ["llamacpp:flash_attention=on"],
+    })
+    plan = make_plan(effective_config=config, schema_version=4)
+    plan.validate_for_execution()
+    assert "sampling" not in plan.execution_identity["methodology"]
 
 
 def test_offline_mode_is_identity_bearing_without_changing_legacy_plans():
@@ -376,6 +466,7 @@ def complete_plan():
         "concurrency_tool_levels": [1, 2], "concurrency_chat_levels": [1, 2, 4],
         "concurrency_tool_context": 4096, "concurrency_chat_context": 16384,
         "concurrency_chat_soft_exit_floor": 8,
+        "mtp_enabled": False, "mtp_configurations": {},
     })
     return make_plan(effective_config=config)
 

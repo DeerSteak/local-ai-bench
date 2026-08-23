@@ -13,6 +13,7 @@ GPU_SPLIT_MODE_LABELS = {
     "layer": "Layer split (recommended)",
     "tensor": "Tensor parallel (experimental)",
 }
+MTP_MODE_LABELS = {"off": "Off", "on": "On", "both": "Both"}
 
 def gpu_split_mode_labels(modes) -> tuple[str, ...]:
     return tuple(GPU_SPLIT_MODE_LABELS[mode] for mode in modes)
@@ -27,6 +28,15 @@ def gpu_split_mode_value(label: str) -> str:
     raise ValueError(f"Unknown GPU mode: {label}")
 
 
+def mtp_mode_value(label: str) -> str:
+    if label in MTP_MODE_LABELS:
+        return label
+    for mode, candidate in MTP_MODE_LABELS.items():
+        if candidate == label:
+            return mode
+    raise ValueError(f"Unknown MTP mode: {label}")
+
+
 def effective_gui_options(state: dict | None) -> dict:
     options = state.get("gui_options") if state else None
     effective = dict(options) if options is not None else dict(GUI_OPTION_DEFAULTS)
@@ -34,6 +44,10 @@ def effective_gui_options(state: dict | None) -> dict:
         effective["gpu_split_mode"] = gpu_split_mode_value(effective["gpu_split_mode"])
     except (KeyError, TypeError, ValueError):
         effective["gpu_split_mode"] = "layer"
+    try:
+        effective["mtp"] = mtp_mode_value(effective["mtp"])
+    except (KeyError, TypeError, ValueError):
+        effective["mtp"] = "off"
     return effective
 
 
@@ -295,6 +309,7 @@ def build_plan_preview(*, engine: str, tests: list[str], entries, options: dict,
         f"Prompt cap: {max_prompt_tokens or 'No cap'}",
         f"llama-bench generation sizes: {', '.join(map(str, tg_tokens)) if tg_tokens else 'Defaults'}",
         f"CPU only: {'Yes' if options['cpu_only'] else 'No'}",
+        f"Native MTP: {MTP_MODE_LABELS[options['mtp']]}",
         f"Offline: {'Yes' if options['offline'] else 'No'}",
         f"Memory telemetry: {'On' if options['memory_telemetry'] else 'Off'}",
         f"Power telemetry: {'On' if options['power_telemetry'] else 'Off'}",
@@ -319,7 +334,7 @@ def plan_preview_sections(preview: str) -> list[tuple[str, list[str]]]:
         ("Measurement settings", {
             "Warmups", "Measured runs", "Run timeout", "Accuracy timeout",
             "Accuracy token budget", "Prompt cap", "llama-bench generation sizes",
-            "CPU only", "Offline", "Force slow models",
+            "CPU only", "Native MTP", "Offline", "Force slow models",
         }),
         ("Scope and duration", {"Broad cases", "Model loads", "Duration range", "Processes"}),
         ("Output and environment", {"Results", "ComfyUI", "Disk use", "Network use"}),

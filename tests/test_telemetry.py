@@ -8,7 +8,7 @@ from scripts.runtime.telemetry import (
     CaseTelemetry, TelemetrySample, TelemetrySampler, calculate_headroom,
     next_sample_deadline,
     default_memory_sources, derive_run_memory_summary, memory_block, memory_ceiling_gb,
-    query_sampler_vram_usage,
+    query_gpu_usage, query_sampler_vram_usage,
     summarize_case, summarize_samples, summarize_windows,
 )
 
@@ -206,6 +206,14 @@ Agent 1
     assert sources["accelerator_memory_total_gb"] == "rocm-smi"
 
 
+def test_xpu_smi_exposes_intel_accelerator_memory_counters():
+    sources = default_memory_sources(
+        which_fn=lambda name: "/usr/bin/xpu-smi" if name == "xpu-smi" else None,
+    )
+    assert sources["accelerator_memory_used_gb"] == "xpu-smi"
+    assert sources["accelerator_memory_total_gb"] == "xpu-smi"
+
+
 def test_sampler_does_not_query_vram_when_accelerator_memory_is_unsupported(monkeypatch):
     monkeypatch.setattr("scripts.runtime.telemetry.system_memory_usage", lambda: (2, 8))
     monkeypatch.setattr("scripts.runtime.telemetry.process_resource_usage", lambda _pid: (0, 1))
@@ -222,6 +230,28 @@ def test_sampler_does_not_query_vram_when_accelerator_memory_is_unsupported(monk
     result = sampler._sample(0, "measured")
     assert result.accelerator_memory_used_gb is None
     assert result.accelerator_memory_total_gb is None
+
+
+def test_sampler_records_intel_xpu_memory(monkeypatch):
+    monkeypatch.setattr("scripts.runtime.telemetry.system_memory_usage", lambda: (2, 8))
+    monkeypatch.setattr("scripts.runtime.telemetry.process_resource_usage", lambda _pid: (0, 1))
+    monkeypatch.setattr(
+        "scripts.runtime.telemetry.query_sampler_vram_usage", lambda: (6, 24),
+    )
+    sampler = TelemetrySampler(42, memory_sources={
+        "host_ram_used_gb": "psutil",
+        "process_rss_gb": "psutil",
+        "accelerator_memory_used_gb": "xpu-smi",
+        "accelerator_memory_total_gb": "xpu-smi",
+    })
+    result = sampler._sample(0, "measured")
+    assert result.accelerator_memory_used_gb == 6
+    assert result.accelerator_memory_total_gb == 24
+
+
+def test_intel_xpu_memory_ceiling_reserves_device_memory(monkeypatch):
+    monkeypatch.setattr("scripts.runtime.telemetry.query_vram_usage", lambda: (6, 24))
+    assert memory_ceiling_gb({"accelerator_memory_total_gb": "xpu-smi"}) == 23
 
 
 def test_sampler_vram_query_aggregates_nvidia_devices_and_rejects_bad_output():
@@ -246,6 +276,41 @@ def test_sampler_vram_query_normalizes_rocm_bytes():
         run_fn=lambda *_args, **_kwargs: result,
         which_fn=lambda name: "/usr/bin/rocm-smi" if name == "rocm-smi" else None,
     ) == (1, 8)
+
+
+def test_intel_xpu_queries_use_machine_readable_metrics():
+    calls = []
+    results = iter([
+        type("Result", (), {"returncode": 0, "stdout": "73\n41\n"})(),
+        type("Result", (), {"returncode": 0, "stdout": "4096, 24576\n2048, 24576\n"})(),
+    ])
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return next(results)
+
+    which = lambda name: "/usr/bin/xpu-smi" if name == "xpu-smi" else None
+    assert query_gpu_usage("Linux", run_fn=run, which_fn=which) == 73
+    assert query_sampler_vram_usage(run_fn=run, which_fn=which) == (6, 48)
+    assert calls[0][0] == [
+        "/usr/bin/xpu-smi", "--query-gpu=utilization.gpu",
+        "--format=csv,noheader,nounits",
+    ]
+    assert calls[1][0] == [
+        "/usr/bin/xpu-smi", "--query-gpu=memory.used,memory.total",
+        "--format=csv,noheader,nounits",
+    ]
+    assert all(call[1]["timeout"] == 2 for call in calls)
+
+
+def test_intel_xpu_queries_reject_failures_and_malformed_metrics():
+    failed = type("Result", (), {"returncode": 1, "stdout": ""})()
+    malformed = type("Result", (), {"returncode": 0, "stdout": "not memory"})()
+    which = lambda name: "/usr/bin/xpu-smi" if name == "xpu-smi" else None
+    assert query_gpu_usage("Linux", run_fn=lambda *_a, **_k: failed, which_fn=which) is None
+    assert query_sampler_vram_usage(
+        run_fn=lambda *_a, **_k: malformed, which_fn=which,
+    ) is None
 
 
 @pytest.mark.parametrize(("peak", "ceiling", "absolute", "fraction", "state"), [

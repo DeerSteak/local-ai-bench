@@ -168,6 +168,28 @@ def llamacpp_clone_command(destination: Path, tag: str) -> list[str]:
     return ["git", "clone", "--branch", tag, "--depth", "1", LLAMACPP_REPO, str(destination)]
 
 
+def latest_llamacpp_tag_from_refs(output: str) -> str:
+    tags = []
+    for line in output.splitlines():
+        ref = line.rsplit("/", 1)[-1].strip()
+        if ref.startswith("b") and ref[1:].isdigit():
+            tags.append(ref)
+    if not tags:
+        raise ValueError("GitHub returned no llama.cpp source tags")
+    return max(tags, key=lambda tag: int(tag[1:]))
+
+
+def fetch_latest_llamacpp_source_tag(*, run=subprocess.run) -> str:
+    result = run(
+        ["git", "ls-remote", "--tags", "--refs", LLAMACPP_REPO, "b*"],
+        capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "git ls-remote failed").strip()
+        raise RuntimeError(detail)
+    return latest_llamacpp_tag_from_refs(result.stdout or "")
+
+
 def _terminate_process_tree(process) -> None:
     try:
         parent = psutil.Process(process.pid)
@@ -227,6 +249,20 @@ def llamacpp_cmake_flags(backend: str, *, nvcc: str | None = None,
             "-DGGML_SYCL=ON", "-DCMAKE_C_COMPILER=icx", "-DCMAKE_CXX_COMPILER=icpx",
         ]
     return []
+
+
+def llamacpp_build_job_count(backend: str, *, total_memory_bytes: int | None = None) -> int | None:
+    if backend != "xpu":
+        return None
+    total = psutil.virtual_memory().total if total_memory_bytes is None else total_memory_bytes
+    total_gib = total / (1024 ** 3)
+    return 8 if total_gib > 30 else 4 if total_gib > 20 else 2
+
+
+def llamacpp_build_parallel_args(backend: str, *,
+                                 total_memory_bytes: int | None = None) -> list[str]:
+    jobs = llamacpp_build_job_count(backend, total_memory_bytes=total_memory_bytes)
+    return ["--parallel", str(jobs)] if jobs is not None else ["-j"]
 
 
 def validate_llamacpp_build(source_dir: Path, *, required_backend: str | None = None,
@@ -333,7 +369,7 @@ def fetch_llamacpp_releases(*, opener=urllib.request.urlopen) -> list[dict]:
         raise ValueError("GitHub returned invalid llama.cpp release history")
     return [
         release for release in payload
-        if isinstance(release, dict) and not release.get("draft") and not release.get("prerelease")
+        if isinstance(release, dict) and not release.get("draft")
         and isinstance(release.get("tag_name"), str)
         and release["tag_name"].startswith("b") and release["tag_name"][1:].isdigit()
     ]
@@ -575,6 +611,9 @@ def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
     backup = target.with_name(f".{target.name}-backup-{token}")
     try:
         tag, build_number = llamacpp_source_release(release_fetcher())
+        parallel_args = llamacpp_build_parallel_args(backend)
+        if backend == "xpu":
+            log(f"Intel SYCL build parallelism: {parallel_args[-1]} job(s)")
         commands = [
             llamacpp_clone_command(staged, tag),
             ["cmake", "-B", str(staged / "build"), "-S", str(staged),
@@ -583,7 +622,7 @@ def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
              *llamacpp_cmake_flags(backend, nvcc=nvcc, compute_capability=capability)],
             ["cmake", "--build", str(staged / "build"),
              *sum((["--target", name] for name in LLAMACPP_TARGETS), []),
-             "--config", "Release", "-j"],
+             "--config", "Release", *parallel_args],
         ]
         for command in commands:
             if cancelled := _cancelled(control):

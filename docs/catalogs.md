@@ -1,10 +1,12 @@
 # Product catalogs
 
-Local AI Bench keeps a versioned product catalog in `scripts/results/catalogs.py`. Stable hardware and model IDs let future recommendation evidence refer to a specific product or artifact without depending on a display label. Catalog version `1` starts with the three primary small-system targets: Apple Mac mini with M4 Pro, NVIDIA DGX Spark, and the AMD Ryzen AI Max+ 395 processor platform.
+Local AI Bench keeps a versioned product catalog in `scripts/results/catalogs.py`. Stable hardware and model IDs let future recommendation evidence refer to a specific product or artifact without depending on a display label. Catalog version `1` introduced the three primary small-system targets: Apple Mac mini with M4 Pro, NVIDIA DGX Spark, and the AMD Ryzen AI Max+ 395 processor platform. Catalog version `2` refreshes the medium LLM tier while retaining the same hardware entries.
 
 Hardware specifications come from the linked manufacturer product pages. An entry describes only the configuration facts stated there; for example, the Ryzen processor entry deliberately does not claim a system memory capacity because that depends on the system vendor's configuration. Every initial hardware entry is `unqualified` until Local AI Bench has representative test evidence for it. Current prices are not stored because they vary by seller, region, and date.
 
 The model catalog is generated from `scripts/workloads/models.py`, the existing source of benchmark artifacts. Each record includes a stable artifact identity, known quantization, runtime and workload compatibility, and explicit placeholders for context, memory, and license evidence. Context and memory are detected or estimated at runtime rather than asserted as fixed catalog facts.
+
+The Version 6 medium tier replaces Gemma 3 27B, Qwen 3.6 35B-A3B, and Nemotron Cascade 2 with Gemma 4 26B-A4B, Qwen 3.8 27B, and Nemotron 3.5 Lightning 30B-A3B. The accepted llama.cpp artifacts completed the catalog compatibility screen on GeForce RTX 5090 under WSL2; hardware-specific capacity or performance limits do not change the catalog identity. Muse Glimmer remains available through custom import rather than expanding the default lineup. Retired IDs remain in the dashboard's legacy registry so historical result files continue to render.
 
 An unverified license is a hard eligibility block for supported recommendations. Adding a model to the benchmark catalog does not establish that its weights, source model, quantization, or generated output may be used commercially; license identifiers and authoritative source links must be reviewed and recorded before a model can drive a supported recommendation.
 

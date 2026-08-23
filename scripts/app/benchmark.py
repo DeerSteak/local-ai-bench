@@ -16,12 +16,14 @@ from pathlib import Path
 
 from scripts.runtime import config
 from scripts.runtime.execution_profile import build_execution_profile
-from scripts.release.qualification import experimental_engine_ack_error
-from scripts.app.benchmark_options import TEST_CHOICES, TG_TOKEN_CHOICES, TIER_CHOICES, option_value_errors
+from scripts.app.benchmark_options import (
+    MTP_CHOICES, TEST_CHOICES, TG_TOKEN_CHOICES, TIER_CHOICES, option_value_errors,
+)
 from scripts.runtime.progress_events import emit_result_saved, set_progress_engine
 from scripts.runtime.comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
 from scripts.workloads.conversation_selection import conv_skip_entry
 from scripts.runtime.shared import Shared
+from scripts.runtime.mtp import active_mtp_configurations
 from scripts.runtime.engines import get_engine, engine_names as registered_engine_names
 from scripts.runtime.engines.vllm import VllmEngine
 from scripts.results.event_store import EventStore
@@ -71,6 +73,7 @@ from scripts.results.run_plan import RunPlan, load_run_plan
 from scripts.runtime.model_preflight import (
     filter_models, maximum_requested_context, run_runtime_preflight, run_static_preflight,
 )
+from scripts.runtime.mtp import expand_mtp_passes, mtp_selection_error
 from scripts.results.resume_policy import build_engine_resume_identity
 from scripts.results.result_history import ETA_MATCH_KEYS, estimate_matching_plan_seconds
 from scripts.runtime.supervised_stage import relay_runner_log, run_supervised_llm, run_supervised_stage
@@ -160,15 +163,17 @@ def runtime_shaping_config(args) -> dict:
         "concurrency_tool_context": config.CONCURRENCY_TOOL_CONTEXT,
         "concurrency_chat_context": config.CONCURRENCY_CHAT_CONTEXT,
         "concurrency_chat_soft_exit_floor": config.CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT,
+        "mtp_enabled": False, "mtp_configurations": {},
         "sustained_duration_sec": getattr(args, "sustained_duration", config.SUSTAINED_DURATION_SEC),
         "sustained_window_sec": config.SUSTAINED_WINDOW_SEC,
         "sustained_context_tokens": config.SUSTAINED_CONTEXT_TOKENS,
     }
 
 
-def eta_match_config(args) -> dict:
+def eta_match_config(args, *, mtp_enabled: bool = False) -> dict:
     """Runtime-shaping settings required for a historical ETA match."""
     values = runtime_shaping_config(args)
+    values["mtp_enabled"] = mtp_enabled
     matched = {key: values[key] for key in ETA_MATCH_KEYS}
     if "sustained" in getattr(args, "tests", []):
         matched.update({key: values[key] for key in (
@@ -375,12 +380,24 @@ def engine_pass_tests(tests: list[str], engine_name: str, *, include_images: boo
     ]
 
 
+def engine_scope_tests(tests: list[str], scope: dict, *, include_images: bool) -> list[str]:
+    """Workloads with at least one compatible model in this engine pass."""
+    selected = engine_pass_tests(tests, scope["name"], include_images=include_images)
+    if "llm_models" in scope and not scope["llm_models"]:
+        selected = [test for test in selected if test not in LLM_TESTS]
+    if "concurrency_models" in scope and not scope["concurrency_models"]:
+        selected = [test for test in selected if test not in CONCURRENCY_TESTS]
+    if "embedding_models" in scope and not scope["embedding_models"]:
+        selected = [test for test in selected if test != "emb"]
+    return selected
+
+
 def build_engine_execution_profiles(engine_scopes: list[dict], tests: list[str], *,
                                     cpu_only: bool, hardware_profile: dict,
                                     profile_builder=build_execution_profile) -> dict[str, dict]:
     profiles = {}
     for index, scope in enumerate(engine_scopes):
-        pass_tests = engine_pass_tests(tests, scope["name"], include_images=index == 0)
+        pass_tests = engine_scope_tests(tests, scope, include_images=index == 0)
         if pass_tests:
             profiles[scope["name"]] = profile_builder(
                 scope["engine"], pass_tests, cpu_only=cpu_only,
@@ -484,17 +501,18 @@ def validate_engine_scopes(tests: list[str], engine_name: str, llm_patterns: lis
 
 
 def resolve_engine_scopes(engine_names: list[str], engine_factory, tier_models: list[dict],
-                          tier_label: str, llm_patterns: list[str] | None, tests: list[str]
+                          tier_label: str, llm_patterns: list[str] | None, tests: list[str],
+                          *, embedding_models: list[dict] | None = None,
+                          embedding_patterns: list[str] | None = None,
                           ) -> tuple[list[dict], list[str]]:
     """Resolve and validate every engine before benchmark orchestration."""
+    embedding_models = [] if embedding_models is None else embedding_models
     concurrency_enabled = any(test in tests for test in CONCURRENCY_TESTS)
     normal_llm_enabled = any(test in tests for test in LLM_TESTS)
-    known_tags = [model["tag"] for model in LLM_MODELS + EMBED_MODELS]
-    custom_lookup_needed = bool(
+    embedding_enabled = "emb" in tests
+    inventory_needed = concurrency_enabled or bool(
         llm_patterns and normal_llm_enabled
-        and any(pattern not in known_tags for pattern in llm_patterns)
-    )
-    inventory_needed = custom_lookup_needed or concurrency_enabled
+    ) or bool(embedding_patterns and embedding_enabled)
     scopes = []
     errors = []
     for engine_name in engine_names:
@@ -504,18 +522,67 @@ def resolve_engine_scopes(engine_names: list[str], engine_factory, tier_models: 
             [model["tag"] for model in engine.list_installed_models()]
             if inventory_needed else []
         )
+        engine_tier_models = (
+            downloaded_models(tier_models, installed_tags)
+            if llm_patterns and normal_llm_enabled else tier_models
+        )
         llm_models, concurrency_models = resolve_model_scopes(
-            tier_models, installed_tags, llm_patterns, concurrency_enabled,
+            engine_tier_models, installed_tags, llm_patterns, concurrency_enabled,
+        )
+        engine_embeddings = (
+            downloaded_models(embedding_models, installed_tags)
+            if embedding_patterns and embedding_enabled else embedding_models
         )
         scopes.append({
             "name": engine_name,
             "engine": engine,
             "llm_models": llm_models,
             "concurrency_models": concurrency_models,
+            "embedding_models": engine_embeddings,
         })
-        errors.extend(validate_engine_scopes(
-            engine_tests, engine_name, llm_patterns, llm_models, concurrency_models, tier_label,
-        ))
+        if len(engine_names) == 1:
+            errors.extend(validate_engine_scopes(
+                engine_tests, engine_name, llm_patterns,
+                llm_models, concurrency_models, tier_label,
+            ))
+            if embedding_patterns and "emb" in engine_tests and not engine_embeddings:
+                errors.append(
+                    f"--embedding-models {' '.join(embedding_patterns)} matched no installed "
+                    f"embedding models for {engine_name}"
+                )
+    if len(engine_names) > 1:
+        relevant_llm = [
+            model for scope in scopes
+            if any(test in engine_pass_tests(
+                tests, scope["name"], include_images=True,
+            ) for test in LLM_TESTS)
+            for model in scope["llm_models"]
+        ]
+        relevant_concurrency = [
+            model for scope in scopes
+            if any(test in engine_pass_tests(
+                tests, scope["name"], include_images=True,
+            ) for test in CONCURRENCY_TESTS)
+            for model in scope["concurrency_models"]
+        ]
+        relevant_embeddings = [
+            model for scope in scopes for model in scope["embedding_models"]
+        ]
+        if llm_patterns and normal_llm_enabled and not relevant_llm:
+            errors.append(
+                f"--llm-models {' '.join(llm_patterns)} matched no LLM models in the "
+                f"selected tier ({tier_label}) or installed for the selected engines"
+            )
+        if llm_patterns and concurrency_enabled and not relevant_concurrency:
+            errors.append(
+                f"--llm-models {' '.join(llm_patterns)} matched no downloaded concurrency "
+                "models for the selected engines"
+            )
+        if embedding_patterns and embedding_enabled and not relevant_embeddings:
+            errors.append(
+                f"--embedding-models {' '.join(embedding_patterns)} matched no installed "
+                "embedding models for the selected engines"
+            )
     return scopes, errors
 
 
@@ -716,6 +783,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "and uses f16 KV cache because llama.cpp does not support quantized KV there.",
     )
     parser.add_argument(
+        "--mtp", choices=MTP_CHOICES, default="off",
+        help="Native multi-token prediction for supported engine/model artifacts: off, on, "
+             "or both as separate comparable result passes (default: off). MTP applies only "
+             "to server-backed text workloads.",
+    )
+    parser.add_argument(
         "--llamacpp-no-repack", action="store_true",
         help="Disable llama.cpp weight repacking with --no-repack/-nr. This can reduce model "
              "startup time and peak loading memory but may reduce CPU inference throughput "
@@ -799,10 +872,6 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "until a second engine (e.g. MLX) is added — kept here so scripts/"
              "docs referencing --engine don't need to change when one is.",
     )
-    parser.add_argument(
-        "--ack-experimental-engine", action="store_true",
-        help="Acknowledge that selected experimental engines lack complete qualification.",
-    )
     args = parser.parse_args()
     if args.power_telemetry and not args.memory_telemetry:
         parser.error("--power-telemetry requires --memory-telemetry")
@@ -885,6 +954,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     )
     engine_scopes, engine_errors = resolve_engine_scopes(
         run_engine_names, get_engine, tier_models, tier_label, args.llm_models, args.tests,
+        embedding_models=embedding_models, embedding_patterns=args.embedding_models,
     )
     validation_errors.extend(engine_errors)
     if validation_errors:
@@ -892,29 +962,53 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             Shared.err(error)
         sys.exit(2)
 
+    base_execution_scopes = [
+        {
+            **scope,
+            "tests": engine_scope_tests(
+                args.tests, scope, include_images=index == 0,
+            ),
+        }
+        for index, scope in enumerate(engine_scopes)
+    ]
+    mtp_error = mtp_selection_error(
+        {
+            scope["name"]: scope["llm_models"] + scope["concurrency_models"]
+            for scope in engine_scopes
+        },
+        args.mtp, args.tests,
+    )
+    if mtp_error:
+        parser.error(mtp_error)
+    execution_passes = expand_mtp_passes(base_execution_scopes, args.mtp)
+    if args.mtp == "on" and not execution_passes:
+        parser.error(
+            "--mtp on requires a selected model with cataloged native MTP support "
+            "and at least one server-backed text workload"
+        )
+
     hardware_profile = Shared.build_profile()
     if args.dry_run:
         previews = []
-        for run_idx, engine_scope in enumerate(engine_scopes):
-            include_images = len(engine_scopes) == 1 or run_idx == 0
-            tests = engine_pass_tests(args.tests, engine_scope["name"], include_images=include_images)
+        for engine_scope in execution_passes:
+            tests = engine_scope["tests"]
             if not tests:
                 continue
             plan_models = selected_plan_models(
                 tests, engine_scope["llm_models"], engine_scope["concurrency_models"],
-                embedding_models, image_models,
+                engine_scope["embedding_models"], image_models,
             )
             estimate = estimate_matching_plan_seconds(
                 config.RESULTS_DIR, engine_scope["name"], tests, plan_models,
-                eta_match_config(args), hardware_profile,
+                eta_match_config(args, mtp_enabled=engine_scope["mtp_enabled"]), hardware_profile,
             )
             display_models = {
                 "llm": engine_scope["llm_models"],
                 "concurrency": engine_scope["concurrency_models"],
-                "embeddings": embedding_models, "images": image_models,
+                "embeddings": engine_scope["embedding_models"], "images": image_models,
             }
             previews.append(format_resolved_plan(
-                engine_scope["name"], tests, display_models, estimate,
+                engine_scope["progress_name"], tests, display_models, estimate,
                 runs=args.runs, warmups=args.warmup,
                 max_prompt_tokens=args.max_prompt_tokens, sample_size=args.sample,
                 sustained_duration=args.sustained_duration,
@@ -926,21 +1020,6 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         engine_scopes, args.tests, cpu_only=args.cpu_only,
         hardware_profile=hardware_profile,
     )
-    acknowledged_runtimes = [
-        scope["name"] for index, scope in enumerate(engine_scopes)
-        if engine_version_applies(engine_pass_tests(
-            args.tests, scope["name"], include_images=index == 0,
-        ))
-    ]
-    support_profiles = {
-        name: profile["engine_support"] for name, profile in execution_profiles.items()
-    }
-    acknowledgement_error = experimental_engine_ack_error(
-        acknowledged_runtimes, support_profiles, args.ack_experimental_engine,
-    )
-    if acknowledgement_error:
-        parser.error(acknowledgement_error)
-
     _safe = re.sub(r'[\\/:*?"<>|\s]+', '_', hardware_profile['hostname']).strip('_')
     _start_stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     config.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -948,26 +1027,39 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
     multi_engine = len(run_engine_names) > 1
 
-    for run_idx, engine_scope in enumerate(engine_scopes):
+    for run_idx, engine_scope in enumerate(execution_passes):
         engine_name = engine_scope["name"]
         engine = engine_scope["engine"]
         llm_models = engine_scope["llm_models"]
         conc_models = engine_scope["concurrency_models"]
+        embedding_models = engine_scope["embedding_models"]
         # Held on Shared so shutdown_managed() (called from the signal handler and
         # the finally block) can consult the live engine without threading it in.
         Shared._active_engine = engine
 
-        set_progress_engine(engine_name)
+        mtp_enabled = engine_scope["mtp_enabled"]
+        progress_name = engine_scope["progress_name"]
+        configure_mtp = getattr(engine, "set_mtp_enabled", None)
+        if configure_mtp is not None:
+            configure_mtp(mtp_enabled)
+        set_progress_engine(progress_name)
+        suffix_parts = []
         if multi_engine:
-            Shared.section(f"Engine: {engine_name} ({run_idx + 1}/{len(run_engine_names)})")
+            suffix_parts.append(engine_name)
+        if args.mtp != "off":
+            suffix_parts.append(f"mtp-{'on' if mtp_enabled else 'off'}")
+        if suffix_parts:
             _base = Path(base_out_path)
-            out_path = str(_base.with_name(f"{_base.stem}_{engine_name}{_base.suffix}"))
+            suffix = "_".join(suffix_parts)
+            out_path = str(_base.with_name(f"{_base.stem}_{suffix}{_base.suffix}"))
         else:
             out_path = base_out_path
+        if len(execution_passes) > 1:
+            Shared.section(
+                f"Pass: {progress_name} ({run_idx + 1}/{len(execution_passes)})"
+            )
 
-        # Image generation doesn't depend on --engine (separate ComfyUI call) — run it once, first pass only.
-        include_images = not multi_engine or run_idx == 0
-        if not include_images and "img" in args.tests:
+        if "img" not in engine_scope["tests"] and "img" in args.tests:
             Shared.log("Image generation doesn't depend on --engine — already "
                        f"captured in the {run_engine_names[0]} pass, skipping for {engine_name}")
 
@@ -977,7 +1069,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                      else "run only under their native engines")
             Shared.log(f"{', '.join(native_elsewhere)} {scope} — skipping for {engine_name}")
 
-        tests = engine_pass_tests(args.tests, engine_name, include_images=include_images)
+        tests = engine_scope["tests"]
         if not tests:
             Shared.log(f"No selected workloads apply to {engine_name} — skipping this engine pass")
             continue
@@ -1006,12 +1098,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             Shared.output(f"  Hardware:  {profile['hardware_backend']}")
         Shared.output(f"  RAM:       {profile['ram_gb']} GB")
         Shared.output(f"  Engine:    {engine_name}")
+        Shared.output(f"  MTP:       {'on' if mtp_enabled else 'off'}")
         if runtime_version:
             Shared.output(f"  Runtime:   {runtime_version}")
-        Shared.output(
-            f"  Support:   {profile['engine_support']['support_level']} — "
-            f"{profile['engine_support']['caveat']}"
-        )
         Shared.output(f"  Runs:      {config.N_RUNS} measured + {args.warmup} warmup")
         Shared.output(
             f"  Timeout:   {config.RUN_TIMEOUT}s per run, "
@@ -1063,6 +1152,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 sys.exit(interruption_exit_code(sig))
 
         stage_order = ordered_stage_keys(tuple(tests))
+        mtp_configurations = active_mtp_configurations(
+            [*llm_models, *conc_models], engine_name, mtp_enabled,
+        )
         vllm_kv_cache_dtype = "auto"
         vllm_launcher_args = []
         if isinstance(engine, VllmEngine):
@@ -1072,7 +1164,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             engine_name=engine_name, tests=tests, cpu_only=args.cpu_only,
             vllm_kv_cache_dtype=vllm_kv_cache_dtype,
             vllm_launcher_args=vllm_launcher_args,
+            mtp_enabled=mtp_enabled,
+            mtp_configurations=mtp_configurations,
         )
+        if "sampling_profile" in methodology:
+            engine.set_sampling_profile(methodology["sampling_profile"])
         power_availability = discover_power_source() if args.power_telemetry else None
         temperature_availability = discover_temperature_source() \
             if temperature_telemetry_requested(tests) else None
@@ -1103,6 +1199,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "gpu_split_mode": args.gpu_split_mode,
             "llamacpp_no_repack": args.llamacpp_no_repack,
             "offline": args.offline,
+            "mtp_enabled": mtp_enabled,
+            "mtp_configurations": methodology.get("mtp_configurations", {}),
+            "progress_engine_name": progress_name,
             "memory_telemetry": args.memory_telemetry,
             "memory_telemetry_interval_sec": (
                 config.TELEMETRY_INTERVAL_SEC if args.memory_telemetry else None
@@ -1123,6 +1222,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "ambient_temp_c": args.ambient_temp_c,
             "methodology_profile": methodology["profile"],
             "effective_optimizations": methodology["effective_optimizations"],
+            **({"sampling_profile": methodology["sampling_profile"]}
+               if "sampling_profile" in methodology else {}),
         }
         plan_models = selected_plan_models(
             tests, llm_models, conc_models, embedding_models, image_models,

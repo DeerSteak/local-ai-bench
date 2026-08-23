@@ -13,9 +13,9 @@ from scripts.setup.archive_safety import safe_extract_zip
 from scripts.setup.intel_xpu_install import oneapi_environment
 from scripts.setup.resumable_download import download_file
 from scripts.setup.runtime_update import (
-    fetch_llamacpp_release, fetch_llamacpp_release_tag, llamacpp_clone_command,
-    llamacpp_source_release, select_windows_llamacpp_release,
-    update_macos_llamacpp, update_windows_llamacpp,
+    fetch_latest_llamacpp_source_tag, fetch_llamacpp_release, fetch_llamacpp_release_tag,
+    llamacpp_build_parallel_args, llamacpp_clone_command, llamacpp_source_release,
+    select_windows_llamacpp_release, update_macos_llamacpp, update_windows_llamacpp,
 )
 
 
@@ -138,7 +138,9 @@ def install(runtime_dir: Path, download_dir: Path, platform_name: str, *,
         return False
     flags = []
     build_env = None
+    backend = "cpu"
     if nvidia:
+        backend = "cuda"
         nvcc = find_nvcc()
         if nvcc:
             info(f"Building with CUDA support ({nvcc}) ...")
@@ -151,9 +153,11 @@ def install(runtime_dir: Path, download_dir: Path, platform_name: str, *,
         else:
             warn("NVIDIA GPU detected but the CUDA toolkit is missing; building CPU-only")
     elif rocm:
+        backend = "rocm"
         info("Building with ROCm/HIP support ...")
         flags.append("-DGGML_HIP=ON")
     elif intel_xpu:
+        backend = "xpu"
         build_env = oneapi_environment()
         if build_env is None:
             fail("Intel oneAPI environment is unavailable; SYCL llama.cpp cannot be built")
@@ -174,8 +178,17 @@ def install(runtime_dir: Path, download_dir: Path, platform_name: str, *,
             release = release_fetcher() if release_fetcher else fetch_llamacpp_release()
             tag, build_number = llamacpp_source_release(release)
         except Exception as exc:
-            fail(f"Could not resolve the latest llama.cpp source release: {exc}")
-            return False
+            if release_fetcher:
+                fail(f"Could not resolve the requested llama.cpp source release: {exc}")
+                return False
+            warn(f"Could not resolve llama.cpp through GitHub releases: {exc}")
+            info("Falling back to the latest official llama.cpp Git tag ...")
+            try:
+                tag = fetch_latest_llamacpp_source_tag()
+                build_number = tag[1:]
+            except Exception as tag_exc:
+                fail(f"Could not resolve the latest llama.cpp source tag: {tag_exc}")
+                return False
         if subprocess.run(llamacpp_clone_command(runtime_dir, tag)).returncode != 0:
             fail("git clone failed")
             return False
@@ -188,10 +201,13 @@ def install(runtime_dir: Path, download_dir: Path, platform_name: str, *,
         fail("cmake configure failed")
         return False
     info("Building llama-server, llama-bench, and llama-batched-bench ...")
+    parallel_args = llamacpp_build_parallel_args(backend)
+    if backend == "xpu":
+        info(f"Intel SYCL build parallelism: {parallel_args[-1]} job(s)")
     command = [
         "cmake", "--build", str(build_dir), "--target", "llama-server",
         "--target", "llama-bench", "--target", "llama-batched-bench",
-        "--config", "Release", "-j",
+        "--config", "Release", *parallel_args,
     ]
     if subprocess.run(command, env=build_env).returncode:
         fail("Build failed")

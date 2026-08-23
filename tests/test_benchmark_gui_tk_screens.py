@@ -6,7 +6,7 @@ from scripts.app.benchmark_frontend import MenuEntry, TEST_DEFINITIONS, TG_TOKEN
 from scripts.app.benchmark_gui_screens.configuration import build_configuration_screen
 from scripts.app.benchmark_gui_screens.engines import build_engine_screen
 from scripts.app.benchmark_gui_screens.history import build_history_screen
-from scripts.app.benchmark_gui_screens.progress import ProgressScreen
+from scripts.app.benchmark_gui_screens.progress import ProgressScreen, progress_entries_for_engine
 from scripts.app.benchmark_gui_screens.run_log import build_run_log_screen
 from scripts.app.benchmark_gui_screens.run_log_actions import RunLogActions
 from scripts.app.benchmark_gui_support import (
@@ -146,7 +146,10 @@ def test_progress_screen_constructs_and_updates_real_tk_variables(tk_shell):
         progress_event_engine, progress_model_identity,
     )
     entry = MenuEntry("model-a", "Model A", "llm", "Small", True)
-    screen.show(["llm"], [entry], ["llamacpp"], show_vram=True)
+    screen.show(
+        ["llm"], [entry], ["llamacpp"], {"model-a": {"llamacpp"}},
+        show_vram=True,
+    )
     screen.update({
         "kind": "model", "stage": "llm", "model": "model-a",
         "status": "complete", "usable": True,
@@ -161,6 +164,64 @@ def test_progress_screen_constructs_and_updates_real_tk_variables(tk_shell):
     assert screen.remaining_var.get() == "Remaining time: about 1m"
     screen.window.destroy()
 
+
+def test_progress_rows_partition_selected_models_by_engine(tk_shell):
+    root, _notebook, tk, ttk = tk_shell
+    entries = [
+        MenuEntry("llama-only", "llama.cpp model", "custom", "Custom", True),
+        MenuEntry("vllm-only", "vLLM model", "custom", "Custom", True),
+        MenuEntry("both", "Both engines", "llm", "Small", True),
+    ]
+    owners = {
+        "llama-only": {"llamacpp"}, "vllm-only": {"vllm"},
+        "both": {"llamacpp", "vllm"},
+    }
+    assert [entry.value for entry in progress_entries_for_engine(
+        entries, "llamacpp", owners,
+    )] == ["llama-only", "both"]
+    screen = ProgressScreen(
+        root, tk, ttk, update_progress_metrics, progress_summary_rows,
+        progress_event_engine, progress_model_identity,
+    )
+    screen.show(["llm"], entries, ["llamacpp", "vllm"], owners, show_vram=False)
+    root.update_idletasks()
+    assert set(screen.model_vars) == {
+        ("llamacpp", "llm", "llama-only"), ("llamacpp", "llm", "both"),
+        ("vllm", "llm", "vllm-only"), ("vllm", "llm", "both"),
+    }
+    assert screen.metrics["total_models"] == 4
+    screen.window.destroy()
+
+    screen.show(
+        ["llm"], entries[:1], ["llamacpp", "vllm"], owners, show_vram=False,
+    )
+    root.update_idletasks()
+    assert set(screen.stage_vars) == {("llamacpp", "llm")}
+    assert set(screen.model_vars) == {("llamacpp", "llm", "llama-only")}
+    screen.window.destroy()
+
+
+def test_progress_rows_separate_mtp_pass_and_filter_incompatible_models(tk_shell):
+    root, _notebook, tk, ttk = tk_shell
+    entries = [
+        MenuEntry("qwen3.5:4b-q4_K_M", "Qwen", "llm", "Small", True),
+        MenuEntry("gemma3:1b-it-q4_K_M", "Gemma", "llm", "Small", True),
+    ]
+    owners = {entry.value: {"vllm"} for entry in entries}
+    screen = ProgressScreen(
+        root, tk, ttk, update_progress_metrics, progress_summary_rows,
+        progress_event_engine, progress_model_identity,
+    )
+    screen.show(
+        ["llm", "emb", "vllmbench", "img"], entries,
+        ["vllm · MTP off", "vllm · MTP on"], owners, show_vram=False,
+    )
+    root.update_idletasks()
+    assert ("vllm · MTP on", "llm", "qwen3.5:4b-q4_K_M") in screen.model_vars
+    assert ("vllm · MTP on", "llm", "gemma3:1b-it-q4_K_M") not in screen.model_vars
+    assert ("vllm · MTP on", "emb") not in screen.stage_vars
+    assert ("vllm · MTP on", "vllmbench") not in screen.stage_vars
+    screen.window.destroy()
 
 def descendants(widget):
     children = list(widget.winfo_children())

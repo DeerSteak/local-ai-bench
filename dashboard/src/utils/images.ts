@@ -1,6 +1,6 @@
 import {
   RES_ORDER, FALLBACK_COLORS, FILE_COLORS, MODEL_DASH_PATTERNS,
-  IMAGE_MODEL_ORDER, IMAGE_BAR_COLORS, RES_COLORS,
+  IMAGE_DISPLAY_ORDER, IMAGE_BAR_COLORS, RES_COLORS,
 } from "../constants";
 import { getImageModelColor, imageModelLabel, entriesOf, valuesOf, lookup } from "./shared";
 import { memoryFields } from "./memory";
@@ -30,8 +30,8 @@ export function getImageBarStatusLabel(file: ResultsFile, model: string, res: st
 export function getAllImageModels(files: ResultsFile[]): string[] {
   const s = new Set<string>();
   for (const f of files) for (const m of Object.keys(f.data.images || {})) s.add(m);
-  const known   = IMAGE_MODEL_ORDER.filter(m => s.has(m));
-  const unknown = [...s].filter(m => !IMAGE_MODEL_ORDER.includes(m));
+  const known   = IMAGE_DISPLAY_ORDER.filter(m => s.has(m));
+  const unknown = [...s].filter(m => !IMAGE_DISPLAY_ORDER.includes(m));
   return [...known, ...unknown];
 }
 

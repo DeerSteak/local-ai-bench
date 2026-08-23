@@ -429,9 +429,9 @@ A model is only excluded from the conversation test if it timed out or was skipp
 
 | Model | Ollama tag | Size |
 |---|---|---|
-| Gemma 4 26B (MoE, 4B active) | `gemma4:26b` | ~18 GB |
-| DeepSeek-R1 32B | `deepseek-r1:32b` | ~20 GB |
-| Qwen3.6 35B-A3B (MoE) | `qwen3.6:35b-a3b` | ~22 GB |
+| Gemma 4 26B-A4B (MoE) | `gemma4:26b-a4b-it-ud-q4_K_M` | ~17 GB |
+| Qwen 3.8 27B | `qwen3.8:27b-ud-q4_K_M` | ~17 GB |
+| Nemotron 3.5 Lightning 30B-A3B | `nemotron3.5-lightning:30b-a3b-ud-q4_K_M` | ~25 GB |
 
 #### Large tier (70B+ params)
 

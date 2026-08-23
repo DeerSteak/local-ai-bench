@@ -1,6 +1,8 @@
 """Single source of truth for all model definitions. No external
 dependencies, so this is safe to import before packages are installed."""
 
+from pathlib import Path
+
 # "download_size" is rounded UP to the next 0.1 GB — see docs/workloads.md.
 EMBED_MODELS = [
     {
@@ -51,20 +53,54 @@ IMAGE_MODELS = [
         "tier":       "small",     # ~7.0 GB
     },
     {
-        "label":      "SD3.5 Large",
-        "checkpoint": "sd3.5_large.safetensors",
-        "workflow":   "sd3",
-        "steps":      28,
-        "cfg":        4.5,
-        "sampler":    "euler",
-        "scheduler":  "beta",
-        "short":      "sd35-large",
-        "tier":       "medium",    # ~16.5 GB
-        "license_url": "https://huggingface.co/stabilityai/stable-diffusion-3.5-large",
+        "label":      "Z-Image Turbo",
+        "checkpoint": "z_image_turbo_bf16.safetensors",
+        "checkpoint_folder": "diffusion_models",
+        "checkpoint_loader": "UNETLoader",
+        "checkpoint_repo": "Comfy-Org/z_image_turbo",
+        "checkpoint_remote": "split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+        "support_assets": [
+            {
+                "name": "qwen_3_4b.safetensors",
+                "folder": "text_encoders",
+                "repo": "Comfy-Org/z_image_turbo",
+                "remote": "split_files/text_encoders/qwen_3_4b.safetensors",
+            },
+            {
+                "name": "z_image_ae.safetensors",
+                "folder": "vae",
+                "repo": "Comfy-Org/z_image_turbo",
+                "remote": "split_files/vae/ae.safetensors",
+            },
+        ],
+        "workflow":   "z_image",
+        "steps":      8,
+        "cfg":        1.0,
+        "sampler":    "res_multistep",
+        "scheduler":  "simple",
+        "short":      "z-image-turbo",
+        "tier":       "medium",    # ~20.7 GB complete pipeline
     },
     {
         "label":      "Flux.1-dev",
         "checkpoint": "flux1-dev.safetensors",
+        "support_assets": [
+            {
+                "name": "t5xxl_fp16.safetensors", "folder": "clip",
+                "repo": "comfyanonymous/flux_text_encoders",
+                "remote": "t5xxl_fp16.safetensors",
+            },
+            {
+                "name": "clip_l.safetensors", "folder": "clip",
+                "repo": "comfyanonymous/flux_text_encoders",
+                "remote": "clip_l.safetensors",
+            },
+            {
+                "name": "ae.safetensors", "folder": "vae",
+                "repo": "black-forest-labs/FLUX.1-schnell",
+                "remote": "ae.safetensors", "gated": True,
+            },
+        ],
         "workflow":   "flux",
         "steps":      20,
         "cfg":        1.0,
@@ -77,6 +113,18 @@ IMAGE_MODELS = [
     {
         "label":      "Flux.2-dev",
         "checkpoint": "flux2-dev.safetensors",
+        "support_assets": [
+            {
+                "name": "mistral_3_small_flux2_fp8.safetensors",
+                "folder": "text_encoders", "repo": "Comfy-Org/flux2-dev",
+                "remote": "split_files/text_encoders/mistral_3_small_flux2_fp8.safetensors",
+            },
+            {
+                "name": "flux2-vae.safetensors", "folder": "vae",
+                "repo": "Comfy-Org/flux2-dev",
+                "remote": "split_files/vae/flux2-vae.safetensors",
+            },
+        ],
         "workflow":   "flux2",
         "steps":      28,
         "cfg":        4.0,
@@ -126,6 +174,10 @@ LLM_MODELS_XSMALL = sorted([
         "hf_file":        "Qwen_Qwen3.5-4B-Q4_K_M.gguf",
         "vllm_repo":      "cyankiwi/Qwen3.5-4B-AWQ-4bit",
         "vllm_download_size": "~4.1 GB",
+        "native_mtp":     {
+            "llamacpp": {"num_speculative_tokens": 3},
+            "vllm": {"num_speculative_tokens": 3},
+        },
     },
 ], key=lambda m: m["params_b"])
 
@@ -156,6 +208,10 @@ LLM_MODELS_SMALL = sorted([
         "hf_file":        "Qwen_Qwen3.5-9B-Q4_K_M.gguf",
         "vllm_repo":      "cyankiwi/Qwen3.5-9B-AWQ-4bit",
         "vllm_download_size": "~9.1 GB",
+        "native_mtp":     {
+            "llamacpp": {"num_speculative_tokens": 3},
+            "vllm": {"num_speculative_tokens": 3},
+        },
     },
     {
         "tag":            "gemma4:12b-it-q4_K_M",
@@ -175,40 +231,58 @@ LLM_MODELS_SMALL = sorted([
 # Medium-tier models (26-35B params) — one dense alongside two MoE entries; see docs/workloads.md#dense-vs-mixture-of-experts-moe.
 LLM_MODELS_MEDIUM = sorted([
     {
-        "tag":            "gemma3:27b-it-q4_K_M",
-        "label":          "Gemma 3 27B 4-Bit Quantization",
-        "short":          "gemma3-27b-q4",
+        "tag":            "gemma4:26b-a4b-it-ud-q4_K_M",
+        "label":          "Gemma 4 26B-A4B 4-Bit Quantization",
+        "short":          "gemma4-26b-a4b-q4",
         "tier":           "medium",
-        "download_size":  "~16.6 GB",
+        "download_size":  "~16.9 GB",
+        "params_b":       26,
+        "hf_repo":        "unsloth/gemma-4-26B-A4B-it-GGUF",
+        "hf_file":        "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf",
+        "vllm_repo":      "cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit",
+        "vllm_download_size": "~17.2 GB",
+        "vllm_tool_parser": "gemma4",
+    },
+    {
+        "tag":            "qwen3.8:27b-ud-q4_K_M",
+        "label":          "Qwen 3.8 27B 4-Bit Quantization",
+        "short":          "qwen3.8-27b-q4",
+        "tier":           "medium",
+        "download_size":  "~16.5 GB",
         "params_b":       27,
-        "hf_repo":        "ggml-org/gemma-3-27b-it-GGUF",
-        "hf_file":        "gemma-3-27b-it-Q4_K_M.gguf",
-        "vllm_repo":      "ISTA-DASLab/gemma-3-27b-it-GPTQ-4b-128g",
-        "vllm_download_size": "~16.9 GB",
+        "hf_repo":        "unsloth/Qwen3.8-27B-GGUF",
+        "hf_file":        "Qwen3.8-27B-UD-Q4_K_M.gguf",
+        "vllm_repo":      "pearsonkyle/Qwen3.8-27B-GPTQ-W4A16",
+        "vllm_download_size": "~19.5 GB",
+        "vllm_tool_parser": "qwen3_xml",
+        "native_mtp":     {
+            "llamacpp": {
+                "num_speculative_tokens": 3,
+                "draft_repo": "unsloth/Qwen3.8-27B-GGUF",
+                "draft_file": "MTP/mtp-Qwen3.8-27B-Q4_0.gguf",
+                "draft_download_size": "~1.4 GB",
+            },
+            "vllm": {
+                "method": "qwen3_5_mtp",
+                "num_speculative_tokens": 2,
+            },
+        },
     },
     {
-        "tag":            "nemotron-cascade2:30b-a3b-q4_K_M",
-        "label":          "Nemotron Cascade 2 30B-A3B",
-        "short":          "nemotron-cascade2-30b-a3b",
+        "tag":            "nemotron3.5-lightning:30b-a3b-ud-q4_K_M",
+        "label":          "Nemotron 3.5 Lightning 30B-A3B",
+        "short":          "nemotron3.5-lightning-30b-a3b",
         "tier":           "medium",
-        "download_size":  "~24.7 GB",
-        "params_b":       32,   # 3B active — hybrid Mamba MoE, post-trained from Nemotron 3 Nano's base
-        "hf_repo":        "bartowski/nvidia_Nemotron-Cascade-2-30B-A3B-GGUF",
-        "hf_file":        "nvidia_Nemotron-Cascade-2-30B-A3B-Q4_K_M.gguf",
-        "vllm_repo":      "cyankiwi/Nemotron-Cascade-2-30B-A3B-AWQ-4bit",
-        "vllm_download_size": "~20.8 GB",
-    },
-    {
-        "tag":            "qwen3.6:35b-a3b",
-        "label":          "Qwen3.6 35B-A3B",
-        "short":          "qwen3.6-35b-a3b",
-        "tier":           "medium",
-        "download_size":  "~24.0 GB",
-        "params_b":       35,   # 3B active
-        "hf_repo":        "unsloth/Qwen3.6-35B-A3B-GGUF",
-        "hf_file":        "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
-        "vllm_repo":      "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit",
-        "vllm_download_size": "~25.1 GB",
+        "download_size":  "~25.3 GB",
+        "params_b":       30,   # 3B active — hybrid Mamba MoE
+        "hf_repo":        "unsloth/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
+        "hf_file":        "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-UD-Q4_K_M.gguf",
+        "vllm_repo":      "Local-Axiom-AI/Nemotron-3.5-Lightning-awq",
+        "vllm_download_size": "~18.1 GB",
+        "native_mtp":     {
+            "llamacpp": {"num_speculative_tokens": 1},
+            "vllm": {"num_speculative_tokens": 1},
+        },
     },
 ], key=lambda m: m["params_b"])
 
@@ -261,10 +335,39 @@ LLM_MODELS_LARGE = sorted([
         ],
         "vllm_repo":      "cyankiwi/NVIDIA-Nemotron-3-Super-120B-A12B-AWQ-4bit",
         "vllm_download_size": "~80.7 GB",
+        "native_mtp":     {"vllm": {"num_speculative_tokens": 1}},
     },
 ], key=lambda m: m["params_b"])
 
 LLM_MODELS = LLM_MODELS_XSMALL + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM + LLM_MODELS_LARGE
+
+
+def image_checkpoint_folder(model: dict) -> str:
+    return model.get("checkpoint_folder", "checkpoints")
+
+
+def image_checkpoint_path(model: dict, models_dir: Path) -> Path:
+    return Path(models_dir) / image_checkpoint_folder(model) / model["checkpoint"]
+
+
+def image_required_asset_paths(model: dict, models_dir: Path) -> list[Path]:
+    paths = [image_checkpoint_path(model, models_dir)]
+    paths.extend(
+        Path(models_dir) / asset["folder"] / asset["name"]
+        for asset in model.get("support_assets", ())
+    )
+    return paths
+
+
+def image_checkpoint_loader(model: dict) -> str:
+    return model.get("checkpoint_loader", "CheckpointLoaderSimple")
+
+
+def image_checkpoint_groups(models: list[dict]) -> dict[str, set[str]]:
+    groups = {}
+    for model in models:
+        groups.setdefault(image_checkpoint_loader(model), set()).add(model["checkpoint"])
+    return groups
 
 
 def qualification_llm_model(engine: str) -> dict:

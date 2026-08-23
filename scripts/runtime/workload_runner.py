@@ -62,6 +62,7 @@ def inherited_power_availability(settings: dict, environ=None) -> PowerAvailabil
         payload.get("available") is True, expected_source, expected_scope,
         payload.get("reason") if isinstance(payload.get("reason"), str) else None,
         payload.get("location") if isinstance(payload.get("location"), str) else None,
+        payload.get("requires_elevation") is True,
     )
 
 
@@ -98,13 +99,19 @@ def create_case_telemetry(settings: dict, environ=None) -> CaseTelemetry | None:
     return CaseTelemetry(**kwargs).start()
 
 
-def configure_runner_engine(engine, hardware_backend: str, cpu_only: bool) -> str:
+def configure_runner_engine(engine, hardware_backend: str, cpu_only: bool,
+                            settings: dict | None = None) -> str:
     """Reapply runtime policy in this child process; parent engine state is not inherited."""
     resolve_backend = getattr(engine, "runtime_backend", None)
     runtime_backend = (
         resolve_backend(hardware_backend, cpu_only=cpu_only)
         if resolve_backend is not None else ("cpu" if cpu_only else hardware_backend)
     )
+    if settings and settings.get("sampling_profile"):
+        engine.set_sampling_profile(settings["sampling_profile"])
+    configure_mtp = getattr(engine, "set_mtp_enabled", None)
+    if configure_mtp is not None:
+        configure_mtp(bool(settings and settings.get("mtp_enabled")))
     configure = getattr(engine, "configure_kv_cache", None)
     if configure is None:
         return "auto"
@@ -160,7 +167,7 @@ def execute_llm_job(path, job_id, *, engine_factory=get_engine,
         for identity in plan.models["llm"]
     ]
     engine = engine_factory(plan.engine_name)
-    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only, settings)
     Shared._active_engine = engine
 
     def notify(_section):
@@ -207,7 +214,7 @@ def execute_conversation_job(path, job_id, *, engine_factory=get_engine,
         for identity in plan.models["llm"]
     ]
     engine = engine_factory(plan.engine_name)
-    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only, settings)
     Shared._active_engine = engine
 
     def notify(_section):
@@ -272,7 +279,7 @@ def execute_llamabench_job(path, job_id, *, engine_factory=get_engine,
         for identity in plan.models["llm"]
     ]
     engine = engine_factory(plan.engine_name)
-    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only, settings)
 
     def notify(_section):
         store = EventStore(path)
@@ -314,7 +321,7 @@ def execute_vllmbench_job(path, job_id, *, engine_factory=get_engine,
         for identity in plan.models["llm"]
     ]
     engine = engine_factory(plan.engine_name)
-    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only, settings)
 
     def notify(_section):
         store = EventStore(path)
@@ -353,7 +360,7 @@ def execute_llamabench_concurrency_job(
         for identity in plan.models["llm"]
     ]
     engine = engine_factory(plan.engine_name)
-    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only, settings)
 
     def notify(_section):
         store = EventStore(path)
@@ -395,7 +402,7 @@ def execute_sustained_job(path, job_id, *, engine_factory=get_engine,
         for identity in plan.models["llm"]
     ]
     engine = engine_factory(plan.engine_name)
-    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only, settings)
     Shared._active_engine = engine
 
     def notify(_section):
@@ -455,7 +462,7 @@ def execute_concurrency_job(path, job_id, stage_name, *, engine_factory=get_engi
         for identity in plan.models["concurrency"]
     ]
     engine = engine_factory(plan.engine_name)
-    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only, settings)
     Shared._active_engine = engine
 
     def notify(_section):
@@ -512,7 +519,7 @@ def execute_accuracy_job(path, job_id, stage_name, *, engine_factory=get_engine)
         for identity in plan.models["llm"]
     ]
     engine = engine_factory(plan.engine_name)
-    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only, settings)
     Shared._active_engine = engine
     def notify(_results, _answers):
         store = EventStore(path)
@@ -563,7 +570,7 @@ def execute_embedding_job(path, job_id, *, engine_factory=get_engine,
         for identity in plan.models["embeddings"]
     ]
     engine = engine_factory(plan.engine_name)
-    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only, settings)
     Shared._active_engine = engine
 
     def notify(_section):
@@ -662,7 +669,9 @@ def main(argv=None) -> int:
     plan = load_runner_plan(args.event_store, args.job_id)
     # A runner is its own process, so it does not inherit the parent's progress
     # engine; without this every event falls back to the first engine's rows.
-    set_progress_engine(plan.engine_name)
+    set_progress_engine(
+        plan.effective_config.get("progress_engine_name", plan.engine_name)
+    )
     config.RETRY_CRASHED_MODELS = plan.retry_crashed_models
     if plan.effective_config.get("offline", False):
         apply_offline_mode()

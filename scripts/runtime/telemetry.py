@@ -19,9 +19,6 @@ import psutil
 
 from scripts.runtime import config
 from scripts.runtime import hardware
-from scripts.runtime.shared import Shared
-
-
 MEMORY_CHANNELS = (
     "host_ram_used_gb", "process_rss_gb",
     "accelerator_memory_used_gb", "accelerator_memory_total_gb",
@@ -106,6 +103,7 @@ class PowerAvailability:
     scope: str
     reason: str | None = None
     location: str | None = None
+    requires_elevation: bool = False
 
 
 @dataclass(frozen=True)
@@ -626,6 +624,7 @@ def add_power_efficiency(power: dict[str, Any] | None, unit: str,
 def discover_power_source(platform_name: str | None = None, *, which_fn=shutil.which,
                           run_fn=subprocess.run,
                           rapl_paths: Sequence[Path] | None = None,
+                          rapl_probe_fn: Callable[[str, float], bool] | None = None,
                           is_file_fn: Callable[[str], bool] | None = None,
                           adl_discovery_fn=discover_amd_adl_power) -> PowerAvailability:
     platform_name = platform_name or platform.system()
@@ -688,6 +687,16 @@ def discover_power_source(platform_name: str | None = None, *, which_fn=shutil.w
     if readable:
         return PowerAvailability(True, "rapl", "cpu_package", location=str(readable))
     if paths:
+        sudo = which_fn("sudo")
+        probe = rapl_probe_fn or probe_privileged_rapl_source
+        for path in paths:
+            if not sudo:
+                break
+            if probe(str(path), config.TELEMETRY_INTERVAL_SEC):
+                return PowerAvailability(
+                    True, "rapl", "cpu_package", location=str(path),
+                    requires_elevation=True,
+                )
         return PowerAvailability(False, "rapl", "cpu_package",
                                  "RAPL energy counter permission is denied")
     if failed_sources:
@@ -763,7 +772,7 @@ class PollingPowerSource:
         pass
 
 
-class PowermetricsPowerSource:
+class _StreamingPowerSource:
     def __init__(self, availability: PowerAvailability, interval_sec: float, *,
                  popen_fn: Callable[..., Any] = subprocess.Popen,
                  monotonic=time.monotonic):
@@ -780,22 +789,16 @@ class PowermetricsPowerSource:
     def start(self) -> None:
         if not self.availability.available or not self.availability.location:
             return
-        command = [
-            shutil.which("sudo") or "/usr/bin/sudo", "-n", self.availability.location,
-            "--samplers", "cpu_power,gpu_power,ane_power", "--sample-rate",
-            str(max(100, round(self.interval_sec * 1000))), "--sample-count", "-1",
-            "--buffer-size", "1",
-        ]
         try:
             self._process = self.popen_fn(
-                command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                self._command(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                 text=True, bufsize=1,
             )
         except OSError:
             self._process = None
             return
         self._reader = threading.Thread(
-            target=self._read_output, name="powermetrics-reader", daemon=True,
+            target=self._read_output, name=f"{self.availability.source}-reader", daemon=True,
         )
         self._reader.start()
 
@@ -823,6 +826,29 @@ class PowermetricsPowerSource:
         if self._reader:
             self._reader.join(timeout=2)
 
+    def _publish(self, watts: float, timestamp: float) -> None:
+        with self._lock:
+            self._latest = watts
+            self._latest_at = timestamp
+
+    def _command(self) -> list[str]:
+        raise NotImplementedError
+
+    def _read_output(self) -> None:
+        raise NotImplementedError
+
+
+class PowermetricsPowerSource(_StreamingPowerSource):
+    def _command(self) -> list[str]:
+        location = self.availability.location
+        assert location is not None
+        return [
+            shutil.which("sudo") or "/usr/bin/sudo", "-n", location,
+            "--samplers", "cpu_power,gpu_power,ane_power", "--sample-rate",
+            str(max(100, round(self.interval_sec * 1000))), "--sample-count", "-1",
+            "--buffer-size", "1",
+        ]
+
     def _read_output(self) -> None:
         stdout = getattr(self._process, "stdout", None)
         if stdout is None:
@@ -830,9 +856,59 @@ class PowermetricsPowerSource:
         for line in stdout:
             reading = parse_powermetrics_power(line)
             if reading:
-                with self._lock:
-                    self._latest = reading.watts
-                    self._latest_at = self.monotonic()
+                self._publish(reading.watts, self.monotonic())
+
+
+class RaplPowerSource(_StreamingPowerSource):
+    def _command(self) -> list[str]:
+        location = self.availability.location
+        assert location is not None
+        return [
+            shutil.which("sudo") or "/usr/bin/sudo", "-n", "/bin/sh", "-c",
+            'while true; do cat -- "$1" || exit; sleep "$2" || exit; done',
+            "rapl-reader", location, str(self.interval_sec),
+        ]
+
+    def _read_output(self) -> None:
+        stdout = getattr(self._process, "stdout", None)
+        if stdout is None:
+            return
+        previous: tuple[float, float] | None = None
+        for line in stdout:
+            joules = parse_rapl_energy_uj(line)
+            now = self.monotonic()
+            if joules is None:
+                continue
+            if previous is not None and now > previous[0] and joules >= previous[1]:
+                self._publish((joules - previous[1]) / (now - previous[0]), now)
+            previous = (now, joules)
+
+
+def probe_privileged_rapl_source(location: str, interval_sec: float, *,
+                                 timeout_sec: float = 2.0,
+                                 monotonic=time.monotonic,
+                                 sleep=time.sleep,
+                                 popen_fn: Callable[..., Any] = subprocess.Popen) -> bool:
+    source = RaplPowerSource(
+        PowerAvailability(
+            True, "rapl", "cpu_package", location=location, requires_elevation=True,
+        ),
+        interval_sec, popen_fn=popen_fn, monotonic=monotonic,
+    )
+    source.start()
+    deadline = monotonic() + timeout_sec
+    try:
+        while monotonic() < deadline:
+            if source.read_watts() is not None:
+                return True
+            process = source._process
+            poll = getattr(process, "poll", None)
+            if process is None or (callable(poll) and poll() is not None):
+                return False
+            sleep(min(0.05, interval_sec))
+        return False
+    finally:
+        source.stop()
 
 
 def create_power_source(availability: PowerAvailability, interval_sec: float,
@@ -841,6 +917,8 @@ def create_power_source(availability: PowerAvailability, interval_sec: float,
         return PowermetricsPowerSource(availability, interval_sec, **kwargs)
     if availability.source == "amd-adl":
         return AmdAdlPowerSource(availability, **kwargs)
+    if availability.source == "rapl" and availability.requires_elevation:
+        return RaplPowerSource(availability, interval_sec, **kwargs)
     return PollingPowerSource(availability, **kwargs)
 
 
@@ -1201,6 +1279,11 @@ def query_gpu_usage(platform_name: str | None = None, run_fn=subprocess.run,
         command = [executable, "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"]
     elif executable := hardware.rocm_executable("rocm-smi", which_fn=which_fn):
         command = [executable, "--showuse", "--json"]
+    elif executable := which_fn("xpu-smi"):
+        command = [
+            executable, "--query-gpu=utilization.gpu",
+            "--format=csv,noheader,nounits",
+        ]
     else:
         return None
     try:
@@ -1247,10 +1330,7 @@ def query_gpu_process_memory(pid: int, run_fn=subprocess.run, which_fn=shutil.wh
 
 
 def query_vram_usage() -> tuple[float, float] | None:
-    snapshot = Shared.sample_memory_gb()
-    used = snapshot["gpu_vram_used_gb"]
-    total = snapshot["gpu_vram_total_gb"]
-    return (used, total) if used is not None and total is not None else None
+    return query_sampler_vram_usage()
 
 
 def query_sampler_vram_usage(run_fn=subprocess.run, which_fn=shutil.which) -> tuple[float, float] | None:
@@ -1260,13 +1340,19 @@ def query_sampler_vram_usage(run_fn=subprocess.run, which_fn=shutil.which) -> tu
     elif executable := hardware.rocm_executable("rocm-smi", which_fn=which_fn):
         command = [executable, "--showmeminfo", "vram", "--json"]
         source = "rocm"
+    elif executable := which_fn("xpu-smi"):
+        command = [
+            executable, "--query-gpu=memory.used,memory.total",
+            "--format=csv,noheader,nounits",
+        ]
+        source = "xpu"
     else:
         return None
     try:
         result = run_fn(command, capture_output=True, text=True, timeout=2, check=False)
         if result.returncode:
             return None
-        if source == "nvidia":
+        if source in {"nvidia", "xpu"}:
             pairs = [line.split(",") for line in result.stdout.splitlines() if "," in line]
             used = sum(float(pair[0].strip()) for pair in pairs) / 1024
             total = sum(float(pair[1].strip()) for pair in pairs) / 1024
@@ -1422,6 +1508,8 @@ def default_memory_sources(which_fn=shutil.which, run_fn=subprocess.run) -> dict
     elif hardware.rocm_executable("rocm-smi", which_fn=which_fn) \
             and rocm_memory_is_discrete(run_fn, which_fn):
         accelerator = "rocm-smi"
+    elif which_fn("xpu-smi"):
+        accelerator = "xpu-smi"
     return {
         "host_ram_used_gb": "psutil",
         "process_rss_gb": "psutil",
@@ -1450,7 +1538,7 @@ def memory_ceiling_gb(sources: Mapping[str, str], run_fn=subprocess.run,
         if result.returncode or not totals:
             return None
         return sum(max(0.0, total - hardware.VRAM_RESERVE_GB) for total in totals)
-    if accelerator == "rocm-smi":
+    if accelerator in {"rocm-smi", "xpu-smi"}:
         snapshot = query_vram_usage()
         return (snapshot[1] - hardware.VRAM_RESERVE_GB) if snapshot else None
     try:
@@ -1649,13 +1737,14 @@ class TelemetrySampler:
             and "nvidia-smi" in self.temperature_source.availability.sources.values()
         memory_uses_nvidia = "nvidia-smi" in self.memory_sources.values()
         memory_uses_rocm = "rocm-smi" in self.memory_sources.values()
+        memory_uses_xpu = "xpu-smi" in self.memory_sources.values()
         nvidia_captured = memory_uses_nvidia or power_uses_nvidia or temperature_uses_nvidia
         nvidia = self.nvidia_query_fn() if nvidia_captured else None
         vram = (
             (nvidia.memory_used_gb, nvidia.memory_total_gb)
             if memory_uses_nvidia and nvidia and nvidia.memory_used_gb is not None
             and nvidia.memory_total_gb is not None
-            else query_sampler_vram_usage() if memory_uses_rocm else None
+            else query_sampler_vram_usage() if memory_uses_rocm or memory_uses_xpu else None
         )
         if isinstance(self.temperature_source, PollingTemperatureSource):
             temperature = self.temperature_source.read(

@@ -263,7 +263,7 @@ def model_fits(download_size: str, ceiling_gb: float | None) -> bool | None:
 CHECKPOINT_SIZES_GB = {
     "v1-5-pruned-emaonly.safetensors": 4.3,
     "sd_xl_base_1.0.safetensors": 7.0,
-    "sd3.5_large.safetensors":    16.5,
+    "z_image_turbo_bf16.safetensors": 12.4,
     "flux1-dev.safetensors":      23.9,
     "flux2-dev.safetensors":      64.5,
 }
@@ -272,23 +272,28 @@ ENCODER_SIZES_GB = {
     "clip_l.safetensors":                   0.3,
     "clip_g.safetensors":                   1.4,
     "ae.safetensors":                       0.4,
+    "z_image_ae.safetensors":               0.4,
     "flux2-vae.safetensors":                0.4,
     "mistral_3_small_flux2_fp8.safetensors": 18.1,
+    "qwen_3_4b.safetensors":                 8.1,
 }
 
 # Encoder files each image model's "short" name needs alongside its checkpoint. SD1.5/SDXL bundle their own.
 IMAGE_ENCODER_GROUPS = {
-    "sd35-large": ("t5xxl_fp16.safetensors", "clip_l.safetensors", "clip_g.safetensors"),
+    "z-image-turbo": ("qwen_3_4b.safetensors", "z_image_ae.safetensors"),
     "flux-dev":   ("t5xxl_fp16.safetensors", "clip_l.safetensors", "ae.safetensors"),
     "flux2-dev":  ("mistral_3_small_flux2_fp8.safetensors", "flux2-vae.safetensors"),
 }
 
 
-def image_model_memory_requirement_gb(checkpoint: str, short: str) -> float:
-    """Estimated memory footprint: checkpoint plus its IMAGE_ENCODER_GROUPS encoders, times MEMORY_OVERHEAD_MULTIPLIER."""
-    weights_gb = CHECKPOINT_SIZES_GB.get(checkpoint, 0.0) + sum(
+def image_model_weights_gb(checkpoint: str, short: str) -> float:
+    return CHECKPOINT_SIZES_GB.get(checkpoint, 0.0) + sum(
         ENCODER_SIZES_GB[f] for f in IMAGE_ENCODER_GROUPS.get(short, ()))
-    return weights_gb * MEMORY_OVERHEAD_MULTIPLIER
+
+
+def image_model_memory_requirement_gb(checkpoint: str, short: str) -> float:
+    """Estimated model weights plus runtime overhead."""
+    return image_model_weights_gb(checkpoint, short) * MEMORY_OVERHEAD_MULTIPLIER
 
 
 def image_model_fits(checkpoint: str, short: str, ceiling_gb: float | None) -> bool | None:

@@ -147,8 +147,24 @@ def analyze_trial_metric(metric: str, baseline: list[float], candidate: list[flo
     }
 
 
-def build_trial_set(baseline: list[dict], candidate: list[dict]) -> dict:
+def _model_metrics(result: dict, model: str | None) -> dict[str, dict]:
+    metrics = extract_comparable_metrics(result)
+    if model is None:
+        return metrics
+    selected = {}
+    for key, evidence in metrics.items():
+        parts = key.split("/")
+        if len(parts) >= 3 and parts[1] == model:
+            selected["/".join((parts[0], "comparison-model", *parts[2:]))] = evidence
+    return selected
+
+
+def build_trial_set(baseline: list[dict], candidate: list[dict],
+                    *, baseline_model: str | None = None,
+                    candidate_model: str | None = None) -> dict:
     """Build a versioned comparison artifact from two compatible trial groups."""
+    if (baseline_model is None) != (candidate_model is None):
+        raise ValueError("model comparison requires both baseline and candidate model ids")
     digests = [sha256_json(result) for result in [*baseline, *candidate]]
     if len(digests) != len(set(digests)):
         raise ValueError("trial sets must contain distinct independent result files")
@@ -161,8 +177,8 @@ def build_trial_set(baseline: list[dict], candidate: list[dict]) -> dict:
         fields.update(candidate_compatibility["incompatible_fields"])
         fields.update(cross["incompatible_fields"])
         raise ValueError(f"incompatible trial set: {', '.join(sorted(fields))}")
-    baseline_metrics = [extract_comparable_metrics(result) for result in baseline]
-    candidate_metrics = [extract_comparable_metrics(result) for result in candidate]
+    baseline_metrics = [_model_metrics(result, baseline_model) for result in baseline]
+    candidate_metrics = [_model_metrics(result, candidate_model) for result in candidate]
     baseline_keys = [tuple(metrics) for metrics in baseline_metrics]
     candidate_keys = [tuple(metrics) for metrics in candidate_metrics]
     paired = len(baseline) == len(candidate) and baseline_keys == candidate_keys
@@ -178,7 +194,7 @@ def build_trial_set(baseline: list[dict], candidate: list[dict]) -> dict:
             [metrics[key]["value"] for metrics in candidate_metrics],
             paired=paired,
         )})
-    return {
+    artifact = {
         "schema_version": TRIAL_SET_SCHEMA_VERSION,
         "compatible": True,
         "comparison_mode": "paired" if paired else "independent",
@@ -193,3 +209,8 @@ def build_trial_set(baseline: list[dict], candidate: list[dict]) -> dict:
         },
         "rows": rows,
     }
+    if baseline_model is not None and candidate_model is not None:
+        artifact["model_comparison"] = {
+            "baseline": baseline_model, "candidate": candidate_model,
+        }
+    return artifact

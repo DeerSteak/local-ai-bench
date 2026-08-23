@@ -20,6 +20,10 @@ def get_engine(name: str) -> InferenceEngine:
         ) from None
 
 
+def engine_display_name(name: str) -> str:
+    return "llama.cpp" if name == "llamacpp" else name
+
+
 def installed_engine_names(factory=None) -> list[str]:
     """Registered engines whose runtime is actually present. Falls back to every name
     when none is installed, so a frontend still opens and can report the real problem."""

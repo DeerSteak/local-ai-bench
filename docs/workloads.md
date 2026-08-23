@@ -83,17 +83,17 @@ The extra-small tier deliberately spans three roles. Gemma 3 1B is the ultra-lig
 | Qwen3.5 9B 4-Bit Quantization | `qwen3.5:9b-q4_K_M` | `QuantTrio/Qwen3.5-9B-AWQ` | ~6.2 GB | Dense |
 | Gemma 4 12B 4-Bit Quantization | `gemma4:12b-it-q4_K_M` | `mattbucci/gemma-4-12B-AWQ` | ~7.7 GB | Dense |
 
-The small tier scales the same worker-model experiment upward. Granite 4.1 8B measures how the Granite tool/structured-execution specialization improves with more capacity, while Qwen3.5 9B is the corresponding stronger general executor. Gemma 4 12B anchors the top of the tier and pairs with Gemma 3 27B in the medium tier the same way Qwen3.5/Qwen3.6 span small→medium. Together, the Granite 3B→8B and Qwen3.5 4B→9B pairs expose whether extra capacity materially improves execution reliability, while Gemma 1B and Gemma 4 12B bracket the two tiers with a speed floor and capability ceiling.
+The small tier scales the same worker-model experiment upward. Granite 4.1 8B measures how the Granite tool/structured-execution specialization improves with more capacity, while Qwen3.5 9B is the corresponding stronger general executor. Gemma 4 12B anchors the top of the tier and pairs with Gemma 4 26B-A4B in the medium tier, while Qwen3.5 9B pairs with Qwen 3.8 27B. Together, these pairs expose whether extra capacity materially improves execution reliability, while Gemma 1B and Gemma 4 12B bracket the two lower tiers with a speed floor and capability ceiling.
 
 ### Medium tier (26–35B params)
 
 | Model | llama.cpp Tag | vLLM Tag | llama.cpp Size | Architecture |
 |---|---|---|---|---|
-| Gemma 3 27B 4-Bit Quantization | `gemma3:27b-it-q4_K_M` | `RedHatAI/gemma-3-27b-it-quantized.w4a16` | ~16.6 GB | Dense |
-| Nemotron Cascade 2 30B-A3B | `nemotron-cascade2:30b-a3b-q4_K_M` | `cyankiwi/Nemotron-Cascade-2-30B-A3B-AWQ-4bit` | ~24.7 GB | Hybrid Mamba MoE — 3B active of 32B total |
-| Qwen3.6 35B-A3B | `qwen3.6:35b-a3b` | `cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit` | ~24.0 GB | MoE — 3B active of 35B total |
+| Gemma 4 26B-A4B 4-Bit Quantization | `gemma4:26b-a4b-it-ud-q4_K_M` | `cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit` | ~16.9 GB | MoE — 4B active of 26B total |
+| Qwen 3.8 27B 4-Bit Quantization | `qwen3.8:27b-ud-q4_K_M` | `pearsonkyle/Qwen3.8-27B-GPTQ-W4A16` | ~16.5 GB | Dense |
+| Nemotron 3.5 Lightning 30B-A3B | `nemotron3.5-lightning:30b-a3b-ud-q4_K_M` | `Local-Axiom-AI/Nemotron-3.5-Lightning-awq` | ~25.3 GB | Hybrid Mamba MoE — 3B active of 30B total |
 
-The medium tier contrasts three models with similar total parameter counts but very different execution costs and roles. Gemma 3 27B is the dense general-purpose baseline and provides a full-compute comparison against Gemma 3 1B at the other end of the catalog. Nemotron Cascade 2 represents hybrid long-context reasoning with only 3B parameters active per token; it is post-trained from Nemotron 3 Nano's base and replaced that model in this tier. Qwen3.6 35B-A3B supplies a conventional sparse MoE generalist at the same active scale. This keeps one Qwen model in the tier while using the dense slot for architecture and vendor diversity.
+The medium tier contrasts three current architectures with similar total parameter counts but different execution costs and vendor roles. Qwen 3.8 27B is the dense general-purpose baseline. Gemma 4 26B-A4B supplies sparse Gemma-family coverage with 4B active parameters, while Nemotron 3.5 Lightning supplies NVIDIA's hybrid long-context architecture with 3B active parameters. These replace Gemma 3 27B, Qwen3.6 35B-A3B, and Nemotron Cascade 2 without increasing the active catalog.
 
 ### Large tier (70B+ params)
 
@@ -113,7 +113,7 @@ llama.cpp parses tool calls from the model's own chat template, so every catalog
 
 Preflight records this tool capability before execution as a workload-scoped check. It does not turn missing tool support into a whole-model failure; non-tool measurements remain eligible, and the tool bank owns the durable per-model skip reason.
 
-`models.py` carries `vllm_tool_parser` per entry, set only where vLLM documents a parser for that family: `granite4` (Granite 4.1), `llama3_json` (Llama 3.3), `qwen3_coder` (Qwen3-Coder-Next). Gemma has no parser for its instruct models (only `functiongemma`, for a different model), vLLM documents none for Nemotron, and the correct choice for Qwen3.5/3.6 is unconfirmed — those are left unset until a real run settles them. The value is not a guess to be filled in casually: a *valid but wrong* parser fails silently, producing unparsed calls that score as wrong answers, which is exactly the outcome the skip exists to prevent.
+`models.py` carries `vllm_tool_parser` per entry, set only where vLLM documents or the selected artifact validates a parser for that family: `granite4` (Granite 4.1), `gemma4` (Gemma 4), `qwen3_xml` (Qwen 3.8), `llama3_json` (Llama 3.3), and `qwen3_coder` (Qwen3-Coder-Next). vLLM documents none for Nemotron, and Qwen3.5 remains unconfirmed, so those entries stay unset until a real run settles them. The value is not a guess to be filled in casually: a *valid but wrong* parser fails silently, producing unparsed calls that score as wrong answers, which is exactly the outcome the skip exists to prevent.
 
 ### Per-engine weights
 
@@ -127,9 +127,9 @@ The tier tables above give each model's identifier on both engines. The llama.cp
 | `granite4.1:8b-q4_K_M` | `cyankiwi/granite-4.1-8b-AWQ-INT4` | AWQ INT4 | ~5.5 GB |
 | `qwen3.5:9b-q4_K_M` | `cyankiwi/Qwen3.5-9B-AWQ-4bit` | AWQ INT4 | ~9.1 GB |
 | `gemma4:12b-it-q4_K_M` | `mattbucci/gemma-4-12B-AWQ` | AWQ INT4 | ~7.8 GB |
-| `gemma3:27b-it-q4_K_M` | `ISTA-DASLab/gemma-3-27b-it-GPTQ-4b-128g` | GPTQ 4-bit (128g) | ~16.9 GB |
-| `nemotron-cascade2:30b-a3b-q4_K_M` | `cyankiwi/Nemotron-Cascade-2-30B-A3B-AWQ-4bit` | AWQ INT4 | ~20.8 GB |
-| `qwen3.6:35b-a3b` | `cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit` | AWQ INT4 | ~25.1 GB |
+| `gemma4:26b-a4b-it-ud-q4_K_M` | `cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit` | compressed-tensors W4A16 | ~17.2 GB |
+| `qwen3.8:27b-ud-q4_K_M` | `pearsonkyle/Qwen3.8-27B-GPTQ-W4A16` | compressed-tensors GPTQ W4A16 | ~19.5 GB |
+| `nemotron3.5-lightning:30b-a3b-ud-q4_K_M` | `Local-Axiom-AI/Nemotron-3.5-Lightning-awq` | AWQ INT4 | ~18.1 GB |
 | `llama3.3:70b-instruct-q4_K_M` | `ibnzterrell/Meta-Llama-3.3-70B-Instruct-AWQ-INT4` | AWQ INT4 | ~39.8 GB |
 | `qwen3-coder-next:80b-a3b-q4_K_M` | `bullpoint/Qwen3-Coder-Next-AWQ-4bit` | AWQ INT4 | ~48.3 GB |
 | `nemotron-3-super:120b` | `cyankiwi/NVIDIA-Nemotron-3-Super-120B-A12B-AWQ-4bit` | AWQ INT4 | ~80.7 GB |
@@ -139,6 +139,8 @@ The tier tables above give each model's identifier on both engines. The llama.cp
 These are selected to match `Q4_K_M`'s **bit width**, which is as close as the two runtimes get — see [Limitations](limitations.md#cross-engine-comparison) for what that does and doesn't license you to conclude. Where several builds of the same model exist, the one whose footprint sits closest to the GGUF is preferred over the most popular or the most official, because a size gap is a precision gap (see below). The two embedding models are unquantized upstream fp16 repos on both engines.
 
 Sizes here are the sum of the repo's safetensors and config files. A vLLM snapshot is generally *not* the same size as the corresponding GGUF — compare the two size columns before selecting both engines, and see [Setup](setup.md#choosing-engines).
+
+Native MTP comparison is cataloged per engine artifact rather than inferred from a model-family name. The selected llama.cpp artifacts for Qwen3.5 4B, Qwen3.5 9B, Qwen 3.8 27B, and Nemotron 3.5 Lightning support `--mtp on`/`both`; the two Qwen3.5 models and Nemotron contain embedded predictor tensors, while setup automatically downloads Qwen 3.8's separate ~1.4 GB predictor GGUF alongside its primary weights. Both engines pin speculative depth 3 for the Qwen artifacts and depth 1 for Nemotron 3.5 Lightning; vLLM also pins depth 1 for Nemotron 3 Super. Every MTP-on result records these engine-specific values and whether the predictor was embedded or separate in its methodology identity. `both` runs the normal workload selection once, then runs only the compatible catalog models through server-backed generation, conversation, accuracy, HTTP concurrency, and sustained load with MTP enabled; it does not duplicate image generation, embeddings, llama-bench, llama-batched-bench, or native vLLM bench.
 
 #### Where the two builds diverge
 
@@ -160,11 +162,11 @@ The effect concentrates in small models because a vocabulary embedding is a larg
 
 ### Dense vs. Mixture-of-Experts (MoE)
 
-A **dense** model runs every one of its parameters for every token it generates. A **Mixture-of-Experts (MoE)** model instead routes each token through only a small subset of specialized "expert" sub-networks, out of many more it holds in total — so most of its parameters sit idle on any given token. Catalog tags spell this out for MoE variants with an `-aN` suffix (e.g. `qwen3.6:35b-a3b`): the number after `a` is how many parameters actually activate per token ("active"), versus the number before it (total parameters, which is what drives memory/VRAM use).
+A **dense** model runs every one of its parameters for every token it generates. A **Mixture-of-Experts (MoE)** model instead routes each token through only a small subset of specialized "expert" sub-networks, out of many more it holds in total — so most of its parameters sit idle on any given token. Catalog tags spell this out for MoE variants with an `-aN` suffix (e.g. `gemma4:26b-a4b-it-ud-q4_K_M`): the number after `a` is how many parameters actually activate per token ("active"), versus the number before it (total parameters, which is what drives memory/VRAM use).
 
-Because decode speed tracks active parameters far more closely than total size or VRAM footprint, an MoE model can generate noticeably faster than a dense model of similar total size. That gap is exactly why the medium and large tiers each pair their two MoE entries with one dense model (Gemma 3 27B and Llama 3.3 70B): total download size alone would put an MoE model like Nemotron Cascade 2 (3B active of 32B total) in the same tier as models many times slower to run, so a dense representative keeps each tier honest about what it actually costs in generation time, not just disk space. Nemotron Cascade 2 and Nemotron 3 Super use a hybrid Mamba architecture, while Qwen3-Coder-Next combines gated delta networks with sparse and full attention; both approaches reduce long-context cost relative to a conventional dense transformer, but exercise different inference paths.
+Because decode speed tracks active parameters far more closely than total size or VRAM footprint, an MoE model can generate noticeably faster than a dense model of similar total size. That gap is exactly why the medium and large tiers each pair their two MoE entries with one dense model (Qwen 3.8 27B and Llama 3.3 70B): total download size alone would put an MoE model like Nemotron 3.5 Lightning (3B active of 30B total) in the same tier as models many times slower to run, so a dense representative keeps each tier honest about what it actually costs in generation time, not just disk space. Nemotron 3.5 Lightning and Nemotron 3 Super use a hybrid Mamba architecture, while Qwen3-Coder-Next combines gated delta networks with sparse and full attention; both approaches reduce long-context cost relative to a conventional dense transformer, but exercise different inference paths.
 
-**Reasoning models** (Nemotron Cascade 2 here, a unified model for both reasoning and non-reasoning tasks, with thinking off unless the chat template's `enable_thinking` is set) generate internal thinking tokens before their answer, via llama-server's separate `reasoning_content` field rather than mixing them into the answer text. Tokens/sec uses llama-server's generated-token count, including thinking output; streamed text fragments are never treated as tokens. Both single-shot and conversation TTFT are client-observed from immediately before the HTTP request opens until the first content, reasoning, or tool fragment arrives. Conversation requests still reuse the existing KV cache, while llama-server's separate prompt-evaluation duration is retained only in explicitly named server timing fields.
+**Reasoning models** (Nemotron 3.5 Lightning here, a unified model for both reasoning and non-reasoning tasks) generate internal thinking tokens before their answer, via llama-server's separate `reasoning_content` field rather than mixing them into the answer text. Tokens/sec uses llama-server's generated-token count, including thinking output; streamed text fragments are never treated as tokens. Both single-shot and conversation TTFT are client-observed from immediately before the HTTP request opens until the first content, reasoning, or tool fragment arrives. Conversation requests still reuse the existing KV cache, while llama-server's separate prompt-evaluation duration is retained only in explicitly named server timing fields.
 
 Measured generation results record requested, completed, and valid sample counts. Invalid non-finite, negative, internally inconsistent, or TTFT-after-wall measurements remain visible as diagnostic run entries but are excluded from means and raw valid-sample arrays; legacy `n_runs` keeps its historical completed-call meaning. With at least two valid samples, results also include medians and coefficients of variation without dropping outliers or assigning an instability verdict.
 
@@ -174,7 +176,7 @@ Measured generation results record requested, completed, and valid sample counts
 
 ## Image Generation
 
-Five models are tested at 1024×1024 and 1536×1536 — except Stable Diffusion 1.5, which uses 512×512 and 768×768 instead (see below). Any model whose checkpoint is absent from `models/comfyui/checkpoints/` is skipped automatically; setup downloads selected checkpoints there and configures the resolved ComfyUI installation to search that managed path.
+Five models are tested at 1024×1024 and 1536×1536 — except Stable Diffusion 1.5, which uses 512×512 and 768×768 instead (see below). Any model whose primary weights are absent from its managed `models/comfyui/` subdirectory is skipped automatically; setup downloads every selected pipeline asset and configures the resolved ComfyUI installation to search that managed path.
 
 Each measured run (`--runs`, default 3) uses a different seed, starting at 42 — an identical seed and workflow would let ComfyUI cache every node and return a cached result almost instantly instead of actually re-running generation. Every image model also gets exactly one warmup at its first resolution with seed 41; image generation does not use `--warmup`. Each generation gets twice `--timeout` (600 seconds by default).
 
@@ -182,19 +184,21 @@ Between models, ComfyUI is asked to unload whatever checkpoint it has resident (
 
 If a model's warmup crashes the ComfyUI process outright (e.g. a native segfault while loading text-encoder weights), the benchmark detects the dead server and restarts it before moving to the next model, so a crash on one checkpoint doesn't silently doom every remaining image model to an instant connection-refused failure. If ComfyUI can't be restarted at all, the run stops there and preserves whatever image results were already collected.
 
-| Model | Checkpoint | Steps | Size | Tier | HuggingFace login |
+| Model | Primary weights | Steps | Required downloads | Tier | HuggingFace login |
 |---|---|---|---|---|---|
 | Stable Diffusion 1.5 | `v1-5-pruned-emaonly.safetensors` | 20 | ~4.3 GB | xsmall | No |
 | SDXL | `sd_xl_base_1.0.safetensors` | 20 | ~7.0 GB | small | No |
-| SD3.5 Large | `sd3.5_large.safetensors` | 28 | ~16.5 GB | medium | Yes (free) |
-| Flux.1-dev | `flux1-dev.safetensors` | 20 | ~23.9 GB | large | Yes (free) |
-| Flux.2-dev | `flux2-dev.safetensors` | 28 | ~64.5 GB | large | Yes (free) |
+| Z-Image Turbo | `z_image_turbo_bf16.safetensors` | 8 | ~20.9 GB | medium | No |
+| Flux.1-dev | `flux1-dev.safetensors` | 20 | ~34.4 GB | large | Yes (free) |
+| Flux.2-dev | `flux2-dev.safetensors` | 28 | ~83.0 GB | large | Yes (free) |
 
 **Stable Diffusion 1.5** was trained at 512×512; testing it at the other models' 1024/1536 resolutions produces visibly degraded (duplicated-subject) output, so it gets its own native-range pair — 512×512 and 768×768 (the same 1.5x step used for everything else) — instead of the shared resolution list.
 
-`--maxtier` caps image models the same way it caps LLMs. `--image-models` then narrows that tier-capped list using the stable short IDs in the table (`sd15`, `sdxl`, `sd35-large`, `flux-dev`, `flux2-dev`) or case-sensitive wildcards such as `"sd*"` — see [CLI Reference](cli-reference.md).
+The required-download figures include the primary weights and every separate text encoder or VAE, with each file rounded up to the next 0.1 GB. Z-Image Turbo uses Comfy-Org's core-node workflow: its BF16 transformer under `diffusion_models/`, Qwen 3 4B text encoder under `text_encoders/`, VAE stored locally as `z_image_ae.safetensors`, AuraFlow shift 3.0, eight `res_multistep` steps, CFG 1.0, and the `simple` scheduler. Its three files total about 20.7 GB before conservative per-file rounding. The distinct local VAE name prevents ComfyUI from confusing it with Flux's different `ae.safetensors` artifact.
 
-SD3.5 Large, Flux.1-dev, and Flux.2-dev require a free HuggingFace account and license acceptance — see [HuggingFace token](setup.md#huggingface-token) in the setup guide.
+`--maxtier` caps image models the same way it caps LLMs. `--image-models` then narrows that tier-capped list using the stable short IDs in the table (`sd15`, `sdxl`, `z-image-turbo`, `flux-dev`, `flux2-dev`) or case-sensitive wildcards such as `"sd*"` — see [CLI Reference](cli-reference.md).
+
+Flux.1-dev and Flux.2-dev require a free HuggingFace account and license acceptance — see [HuggingFace token](setup.md#huggingface-token) in the setup guide. Z-Image Turbo is public under Apache 2.0 and needs no account or token. SD3.5 Large was replaced in the active catalog but remains recognized by the dashboard so existing results continue to render.
 
 Generated sample images are saved under `results/images_<hostname>_<timestamp>/` — see [Project Structure](project-structure.md). If `--out` puts the main JSON elsewhere, the image folder remains under `results/` and is named from that output stem.
 
@@ -221,7 +225,7 @@ If you see repeated connection errors or crashes during the embedding tests (som
 
 ## Accuracy
 
-All five accuracy workloads use the same `--llm-models` selection as single-shot and conversation; `--models` remains its backward-compatible alias. Since decoding is deterministic (temperature 0), each workload makes one measured pass and ignores `--runs`.
+All five accuracy workloads use the same `--llm-models` selection as single-shot and conversation; `--models` remains its backward-compatible alias. Since decoding uses the identity-bearing `deterministic-baseline-v1` profile—temperature 0 plus explicit neutral shared and engine-specific logit controls—each workload makes one measured pass and ignores `--runs`.
 
 Question banks are validated when loaded, before any model inference begins: every question needs an ID and category, IDs must be unique, and each workload requires the fields it consumes during inference and scoring. Scoring repeats the common validation defensively for programmatically supplied questions but omits a missing optional breakdown value instead of discarding completed measurements.
 
@@ -378,7 +382,7 @@ On prepared recovery, completed native case IDs are removed from the new command
 
 Unlike every other workload, this one is inherently llama.cpp-specific rather than engine-agnostic — `llama-bench` is llama.cpp's own tool with no cross-engine equivalent — so it's skipped with a warning under any future non-llama.cpp engine rather than attempting a translation that doesn't exist.
 
-For each model, prefill covers `config.LLAMABENCH_PP` as standalone `-p` tests, while decode covers the cross product of those depths via `-d` and `config.LLAMABENCH_TG` via `-n`. The suite starts only two subprocesses per model—one complete prefill sweep and one complete decode sweep—and passes the configured repetition count directly to llama-bench, restoring model reuse across cases and repetitions. JSONL output flushes after each completed case; the suite checkpoints that row immediately and retains llama-bench's individual throughput samples, mean, and standard deviation without dropping outliers. If case 18 times out, cases 1–17 remain saved; the unfinished case and later cases in that sweep are unavailable. The manifest records this streamed internal-repetition mode so the dashboard warns when it is compared with the briefly used per-case-process files or older non-streaming files. GPU offload always passes an explicit `-ngl` (999 for full offload, or 0 under `--cpu-only`), and the selected `--gpu-split-mode` is forwarded to both native llama.cpp tools. The optional `--llamacpp-no-repack` setting is forwarded only to `llama-batched-bench`, because `llama-bench` does not support it.
+For each model, prefill covers `config.LLAMABENCH_PP` as standalone `-p` tests, while decode covers the cross product of those depths via `-d` and `config.LLAMABENCH_TG` via `-n`. The suite starts only two subprocesses per model—one complete prefill sweep and one complete decode sweep—and passes the configured repetition count directly to llama-bench, restoring model reuse across cases and repetitions. JSONL output flushes after each completed case; the suite checkpoints that row immediately and retains llama-bench's individual throughput samples, mean, and standard deviation without dropping outliers. If case 18 times out, cases 1–17 remain saved; the unfinished case and later cases in that sweep are unavailable. The manifest records this streamed internal-repetition mode so the dashboard warns when it is compared with the briefly used per-case-process files or older non-streaming files. GPU offload passes `-ngl 999` for full offload, or `0` under `--cpu-only`, because `llama-bench` accepts only numeric layer counts. A model can therefore run successfully through llama-server's automatic partial offload yet fail this native workload when its weights and requested context do not fit in accelerator memory; that failure means the full-offload native configuration did not fit, not that llama.cpp cannot serve the model. The selected `--gpu-split-mode` is forwarded to both native llama.cpp tools. The optional `--llamacpp-no-repack` setting is forwarded only to `llama-batched-bench`, because `llama-bench` does not support it.
 
 `config.LLAMABENCH_TIMEOUT` (1800s) is an idle timeout, not a ceiling on the whole sweep — `run_one` watches the stderr progress lines already streamed via `--progress` and kills the subprocess only if none arrive for that long, so a legitimately long multi-depth sweep (which can run for hours on the wider `LLAMABENCH_PP` range) doesn't get killed mid-run just for taking a while.
 
@@ -394,7 +398,7 @@ Opt-in (`--tests llamabenchconc`, not part of the default set) — runs llama.cp
 
 Like `llamabench`, this workload is inherently llama.cpp-specific and is skipped with a warning under any future non-llama.cpp engine.
 
-For each model, one `llama-batched-bench` subprocess sweeps the configured prompt, generation, and parallel-sequence matrix. Every valid JSONL row is checkpointed as it arrives, so an idle timeout or later failure preserves earlier matrix cases with requested/completed counts and diagnostics. Context fitting, explicit `-ngl`, and engine shutdown remain as before.
+For each model, one `llama-batched-bench` subprocess sweeps the configured prompt, generation, and parallel-sequence matrix. Every valid JSONL row is checkpointed as it arrives, so an idle timeout or later failure preserves earlier matrix cases with requested/completed counts and diagnostics. GPU runs pass `-ngl auto`, allowing the native tool to fit layers to available accelerator memory; CPU-only runs pass `-ngl 0`. The resolved methodology records that policy alongside context fitting and GPU-split settings.
 
 Resume preserves the one-process-per-model shape for a fresh run and partitions only the unfinished `(tg, pl)` cells into the fewest Cartesian native sweeps that do not include a committed row. It never duplicates completed evidence or presents selected-row retry that the native command cannot honor.
 

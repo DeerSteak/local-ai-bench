@@ -15,6 +15,7 @@ import shutil
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Collection
 from pathlib import Path
 
 from scripts.runtime import config
@@ -50,15 +51,21 @@ from scripts.setup.model_inventory import (
     find_non_catalog_model_dirs,
 )
 from scripts.setup.model_download import (
-    catalog_model_downloaded, download_hf_files, download_hf_snapshot,
+    catalog_model_downloaded, catalog_mtp_artifact_download_size,
+    catalog_mtp_artifact_downloaded, download_hf_files, download_hf_snapshot,
     provision_catalog_models,
 )
 from scripts.setup import llamacpp_install
 from scripts.setup.hf_credentials import HfTokenProvider
-from scripts.setup.comfyui_assets import provision as provision_comfyui_assets
+from scripts.setup.comfyui_assets import (
+    missing_download_size_gb, provision as provision_comfyui_assets,
+)
 from scripts.setup.comfyui_runtime import prepare as prepare_comfyui_runtime
 from scripts.setup.comfyui_install import ensure as ensure_comfyui
-from scripts.workloads.models import LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, IMAGE_MODELS, EMBED_MODELS
+from scripts.workloads.models import (
+    EMBED_MODELS, IMAGE_MODELS, LLM_MODELS_LARGE, LLM_MODELS_MEDIUM,
+    LLM_MODELS_SMALL, LLM_MODELS_XSMALL, image_checkpoint_groups,
+)
 from scripts.setup.setup_selection import (
     additional_disk_space_needed, qualification_model_selection, select_models,
 )
@@ -101,11 +108,38 @@ def llamacpp_backend_rebuild_warning(installed_backend: str | None, required_bac
             "— it will be rebuilt")
 
 
+def llamacpp_install_action(required_backend: str | None, failure: str | None,
+                            runtime_dir: Path) -> str:
+    backend = {
+        "cuda": "CUDA", "rocm": "ROCm/HIP", "xpu": "Intel oneAPI/SYCL",
+    }.get(required_backend or "", "CPU")
+    detail = f" Last failure: {failure}." if failure else ""
+    return (f"Rerun setup to retry the managed llama.cpp {backend} build at "
+            f"{runtime_dir}.{detail} No manual llama.cpp installation is required.")
+
+
 def accessible_file(path: Path) -> bool:
     try:
         return path.is_file()
     except OSError:
         return False
+
+
+def running_comfyui_checkpoints_visible(selected_images: list[dict],
+                                         found_checkpoints: Collection[str], *,
+                                         urlopen=urllib.request.urlopen) -> bool | None:
+    ready_models = [
+        model for model in selected_images if model["checkpoint"] in found_checkpoints
+    ]
+    try:
+        visible = True
+        for loader, expected in image_checkpoint_groups(ready_models).items():
+            with urlopen(f"{config.COMFYUI_URL}/object_info/{loader}", timeout=3) as response:
+                available = checkpoint_names_from_object_info(json.load(response), loader)
+            visible = visible and managed_checkpoints_visible(available, expected)
+        return visible
+    except (OSError, ValueError):
+        return None
 
 
 def main() -> None:  # pragma: no cover - real interactive installer
@@ -168,10 +202,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
 
     issues = []
 
-    # Local aliases for hardware.py's sizes, shared with select_models()'s memory-fit check.
-    CHECKPOINT_SIZES_GB = hardware.CHECKPOINT_SIZES_GB
-    ENCODER_SIZES_GB = hardware.ENCODER_SIZES_GB
-    GATED_IMAGE_SHORTS = {"sd35-large", "flux-dev", "flux2-dev"}
+    GATED_IMAGE_SHORTS = {"flux-dev", "flux2-dev"}
 
     # ── 1. Python version ──────────────────────────────────────────────────────────
 
@@ -428,13 +459,19 @@ def main() -> None:  # pragma: no cover - real interactive installer
         info("Raise it with memory=<N>GB under [wsl2] in %UserProfile%\\.wslconfig, "
              "then run 'wsl --shutdown' — see docs/setup.md")
 
+    _llamacpp_install_failures: list[str] = []
+
     def install_llamacpp():
+        def record_failure(message: str) -> None:
+            _llamacpp_install_failures.append(message)
+            fail(message)
+
         return llamacpp_install.install(
             LLAMACPP_DIR, SCRIPT_DIR, os_name, nvidia=nvidia_ok, rocm=rocm_ok,
             intel_xpu=intel_linux or intel_windows,
             compute_capability=nvidia_compute_cap,
             max_cuda_version=nvidia_max_cuda_version,
-            info=info, warn=warn, fail=fail, ok=ok,
+            info=info, warn=warn, fail=record_failure, ok=ok,
         )
 
     # ── 4a. llama.cpp detection (read-only) ────────────────────────────────────────
@@ -915,9 +952,11 @@ def main() -> None:  # pragma: no cover - real interactive installer
                 warn("llama-batched-bench still not found after install — the llamabenchconc test won't be available")
         else:
             fail("llama.cpp installation failed")
-            issues.append("Install llama.cpp manually: https://github.com/ggml-org/llama.cpp "
-                           "(needs a 'llama-server' binary on PATH, or built under "
-                          f"{LLAMACPP_DIR})")
+            issues.append(llamacpp_install_action(
+                _required_llamacpp_backend,
+                _llamacpp_install_failures[-1] if _llamacpp_install_failures else None,
+                LLAMACPP_DIR,
+            ))
 
     if needs_python_headers(engine_entries, missing_python_header):
         if header_command is None:
@@ -983,30 +1022,14 @@ def main() -> None:  # pragma: no cover - real interactive installer
                 m, engine, models_dir=config.MODELS_DIR, vllm_cache=VLLM_CACHE_HOME,
             ):
                 remaining_gb += hardware.parse_size_gb(engine_download_size(m, engine) or "")
+            if not catalog_mtp_artifact_downloaded(
+                m, engine, models_dir=config.MODELS_DIR,
+            ):
+                remaining_gb += hardware.parse_size_gb(
+                    catalog_mtp_artifact_download_size(m, engine) or ""
+                )
 
-    sd35_selected  = "sd35-large" in selected_image_shorts
-    flux1_selected = "flux-dev" in selected_image_shorts
-    flux2_selected = "flux2-dev" in selected_image_shorts
-
-    for m in selected_images:
-        if not image_asset(m["checkpoint"], "checkpoints"):
-            remaining_gb += CHECKPOINT_SIZES_GB.get(m["checkpoint"], 0.0)
-
-    # Shared T5-XXL + CLIP-L text encoders: used by SD3.5 Large and Flux.1-dev,
-    # NOT Flux.2-dev (which has its own Mistral-based encoder below).
-    if (sd35_selected or flux1_selected):
-        for fname in ("t5xxl_fp16.safetensors", "clip_l.safetensors"):
-            if not image_asset(fname, "clip"):
-                remaining_gb += ENCODER_SIZES_GB[fname]
-    if sd35_selected and not image_asset("clip_g.safetensors", "clip"):
-        remaining_gb += ENCODER_SIZES_GB["clip_g.safetensors"]
-    if flux1_selected and not image_asset("ae.safetensors", "vae"):
-        remaining_gb += ENCODER_SIZES_GB["ae.safetensors"]
-    if flux2_selected:
-        if not image_asset("mistral_3_small_flux2_fp8.safetensors", "text_encoders"):
-            remaining_gb += ENCODER_SIZES_GB["mistral_3_small_flux2_fp8.safetensors"]
-        if not image_asset("flux2-vae.safetensors", "vae"):
-            remaining_gb += ENCODER_SIZES_GB["flux2-vae.safetensors"]
+    remaining_gb += missing_download_size_gb(selected_images, image_asset)
 
     try:
         total, used, free = shutil.disk_usage(SCRIPT_DIR)
@@ -1111,20 +1134,14 @@ def main() -> None:  # pragma: no cover - real interactive installer
             if found_ckpts:
                 ok(f"{len(found_ckpts)}/{len(selected_images)} image checkpoints ready: "
                    f"{', '.join(found_ckpts)}")
-                try:
-                    with urllib.request.urlopen(
-                        f"{config.COMFYUI_URL}/object_info/CheckpointLoaderSimple", timeout=3,
-                    ) as response:
-                        available = checkpoint_names_from_object_info(json.load(response))
-                    if managed_checkpoints_visible(available, set(found_ckpts)):
-                        ok("Running ComfyUI already sees Local AI Bench's managed models")
-                    else:
-                        warn("Restart running ComfyUI once to load the managed model path")
-                except (OSError, urllib.error.URLError, json.JSONDecodeError):
-                    pass
+                visible = running_comfyui_checkpoints_visible(selected_images, found_ckpts)
+                if visible is True:
+                    ok("Running ComfyUI already sees Local AI Bench's managed models")
+                elif visible is False:
+                    warn("Restart running ComfyUI once to load the managed model path")
             else:
                 fail("No image checkpoints available — image benchmarks will be skipped")
-                issues.append("Download at least one image checkpoint into models/comfyui/checkpoints/")
+                issues.append("Download at least one image model through setup")
 
     # ── 9. Summary ────────────────────────────────────────────────────────────────
 
