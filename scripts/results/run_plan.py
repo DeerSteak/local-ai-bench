@@ -327,11 +327,17 @@ class RunPlan:
             invalid_mtp = not isinstance(mtp_configurations, dict) or any(
                 not isinstance(tag, str) or not tag
                 or not isinstance(value, dict)
-                or set(value) != {"num_speculative_tokens", "predictor"}
+                or not {"num_speculative_tokens", "predictor"}.issubset(value)
+                or set(value) - {"num_speculative_tokens", "predictor", "method"}
                 or isinstance(value.get("num_speculative_tokens"), bool)
                 or not isinstance(value.get("num_speculative_tokens"), int)
                 or value["num_speculative_tokens"] < 1
                 or value.get("predictor") not in {"embedded", "separate"}
+                or ("method" in value and (
+                    self.engine_name != "vllm"
+                    or not isinstance(value["method"], str)
+                    or not value["method"].strip()
+                ))
                 for tag, value in mtp_configurations.items()
             )
             if invalid_mtp:

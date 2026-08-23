@@ -195,16 +195,58 @@ def test_mtp_configuration_is_structured_methodology_and_identity_bearing():
     assert make_plan(effective_config=changed).plan_id != plan.plan_id
 
 
+def test_vllm_mtp_configuration_accepts_engine_method_identity():
+    settings = complete_plan().effective_config
+    settings.update({
+        "mtp_enabled": True,
+        "mtp_configurations": {"model:4b": {
+            "num_speculative_tokens": 2,
+            "predictor": "embedded",
+            "method": "qwen3_5_mtp",
+        }},
+        "methodology_profile": "neutral-v2",
+        "effective_optimizations": ["vllm:native_mtp=on"],
+        "sampling_profile": baseline_sampling_profile("vllm"),
+    })
+    plan = make_plan(engine_name="vllm", effective_config=settings)
+
+    plan.validate_for_execution()
+    assert plan.execution_identity["methodology"]["native_mtp"] == {
+        "model:4b": {
+            "num_speculative_tokens": 2,
+            "predictor": "embedded",
+            "method": "qwen3_5_mtp",
+        },
+    }
+
+
 @pytest.mark.parametrize("configurations", [
     None,
     {"model:4b": {"num_speculative_tokens": True, "predictor": "embedded"}},
     {"model:4b": {"num_speculative_tokens": 0, "predictor": "embedded"}},
     {"model:4b": {"num_speculative_tokens": 1, "predictor": "external"}},
     {"model:4b": {"num_speculative_tokens": 1}},
+    {"model:4b": {
+        "num_speculative_tokens": 1, "predictor": "embedded", "method": "",
+    }},
 ])
 def test_current_plan_rejects_missing_or_malformed_mtp_configuration(configurations):
     settings = complete_plan().effective_config
     settings["mtp_configurations"] = configurations
+    with pytest.raises(ValueError, match="mtp_configurations"):
+        make_plan(effective_config=settings).validate_for_execution()
+
+
+def test_llamacpp_mtp_configuration_rejects_vllm_method_identity():
+    settings = complete_plan().effective_config
+    settings.update({
+        "mtp_enabled": True,
+        "mtp_configurations": {"model:4b": {
+            "num_speculative_tokens": 1,
+            "predictor": "embedded",
+            "method": "qwen3_5_mtp",
+        }},
+    })
     with pytest.raises(ValueError, match="mtp_configurations"):
         make_plan(effective_config=settings).validate_for_execution()
 
