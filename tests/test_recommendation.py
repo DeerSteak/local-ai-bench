@@ -84,6 +84,31 @@ def test_hard_filters_run_before_ranking_and_name_the_eliminating_measurement():
                 "trial_values": [70.0],
             },
     }]
+
+
+def test_quantization_variants_enter_the_existing_constraint_first_candidate_pool():
+    data = result()
+    data["llm"] = {
+        "demo-q4": data["llm"]["fast"],
+        "demo-q8": data["llm"]["accurate"],
+    }
+    data["code"] = {
+        "demo-q4": {"accuracy_pct": 70},
+        "demo-q8": {"accuracy_pct": 90},
+    }
+    data["run"]["plan"]["models"] = {"llm": [
+        {"short": "demo-q4", "base_model": "demo", "variant": "Q4_K_M"},
+        {"short": "demo-q8", "base_model": "demo", "variant": "Q8_0"},
+    ]}
+
+    artifact = evaluate_recommendation(data, request())
+
+    assert [item["candidate"] for item in artifact["candidates"]["recommended"]] == [
+        "demo-q8",
+    ]
+    assert [item["candidate"] for item in artifact["candidates"]["eliminated"]] == [
+        "demo-q4",
+    ]
     assert "partial" not in [item["candidate"] for item in artifact["candidates"]["recommended"]]
 
 
