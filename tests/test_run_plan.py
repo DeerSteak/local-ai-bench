@@ -95,6 +95,33 @@ def test_measurement_affecting_changes_produce_a_new_plan_identity(change):
     assert changed.plan_id != base.plan_id
 
 
+def test_quantization_variants_have_distinct_model_and_plan_identity():
+    base = make_plan()
+    models = base.models
+    models["llm"] = [
+        {"tag": "model:q4", "short": "model-q4", "base_model": "model", "variant": "Q4_K_M"},
+        {"tag": "model:q8", "short": "model-q8", "base_model": "model", "variant": "Q8_0"},
+    ]
+
+    plan = make_plan(models=models)
+
+    q4, q8 = plan.models["llm"]
+    assert plan.model_id("llm", q4) != plan.model_id("llm", q8)
+    assert make_plan(models={**models, "llm": [q4]}).plan_id \
+        != make_plan(models={**models, "llm": [q8]}).plan_id
+
+
+def test_quantization_identity_requires_current_schema_and_both_fields():
+    models = make_plan().models
+    models["llm"][0].update(base_model="model", variant="Q4_K_M")
+    with pytest.raises(ValueError, match="schema 7"):
+        make_plan(models=models, schema_version=6)
+
+    models["llm"][0].pop("variant")
+    with pytest.raises(ValueError, match="requires base_model and variant"):
+        make_plan(models=models)
+
+
 def test_methodology_profile_is_identity_bearing_and_validated():
     config = complete_plan().effective_config
     config.update({
@@ -505,6 +532,15 @@ def test_complete_plan_validation_rejects_missing_settings_and_model_identity():
     models["llm"] = [{"tag": "model:4b", "short": ""}]
     invalid = make_plan(models=models, effective_config=plan.effective_config)
     with pytest.raises(ValueError, match="invalid model identity"):
+        invalid.validate_for_execution()
+
+
+def test_complete_plan_validation_rejects_quantization_identity_outside_text_models():
+    plan = complete_plan()
+    models = plan.models
+    models["images"] = [{"short": "sdxl", "base_model": "image", "variant": "fp16"}]
+    invalid = make_plan(models=models, effective_config=plan.effective_config)
+    with pytest.raises(ValueError, match="invalid quantization identity"):
         invalid.validate_for_execution()
 
 

@@ -85,8 +85,12 @@ def test_model_counts_does_not_treat_diagnostics_as_measurements():
 
 def test_model_identity_excludes_paths_and_unknown_fields():
     assert result_store.model_identity([{
-        "tag": "a", "short": "b", "size_gb": 4, "path": "/secret", "token": "x",
-    }]) == [{"tag": "a", "short": "b", "size_gb": 4}]
+        "tag": "a", "short": "b", "size_gb": 4, "base_model": "base", "variant": "Q4_K_M",
+        "path": "/secret", "token": "x",
+    }]) == [{
+        "tag": "a", "short": "b", "size_gb": 4,
+        "base_model": "base", "variant": "Q4_K_M",
+    }]
 
 
 def test_run_manifest_identifies_streamed_internal_llamabench_methodology(
