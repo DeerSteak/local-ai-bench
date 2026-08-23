@@ -71,6 +71,10 @@ def default_model_variant(model: dict) -> dict:
     return next((variant for variant in variants if variant.get("default")), variants[0])
 
 
+def expanded_variant_catalog(catalog: list[dict]) -> list[dict]:
+    return [variant for model in catalog for variant in expanded_model_variants(model)]
+
+
 def normalize_variant_selectors(selectors: list[str] | None, catalog: list[dict]) -> dict[str, tuple[str, ...]]:
     if selectors is None:
         return {}

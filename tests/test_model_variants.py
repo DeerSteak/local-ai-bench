@@ -1,7 +1,8 @@
 import pytest
 
 from scripts.workloads.model_variants import (
-    default_model_variant, expanded_model_variants, normalize_variant_selectors,
+    default_model_variant, expanded_model_variants, expanded_variant_catalog,
+    normalize_variant_selectors,
     select_model_variants, validate_model_variants,
 )
 from scripts.workloads.models import LLM_MODELS
@@ -61,6 +62,9 @@ def test_catalog_variants_are_valid_and_default_preserves_legacy_gemma_identity(
     ]
     assert default_model_variant(gemma)["tag"] == "gemma3:1b-it-q4_K_M"
     assert default_model_variant(gemma)["short"] == "gemma3-1b"
+    assert {item["tag"] for item in expanded_variant_catalog([gemma])} == {
+        "gemma3:1b-it-q4_K_M", "gemma3:1b-it-q6_K", "gemma3:1b-it-q8_0",
+    }
 
 
 def test_variant_selectors_preserve_catalog_order_and_unselected_models():
