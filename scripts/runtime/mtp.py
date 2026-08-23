@@ -73,18 +73,38 @@ def mtp_tests(tests: Sequence[str], enabled: bool) -> list[str]:
     return list(tests) if not enabled else [test for test in tests if test in MTP_SERVER_TESTS]
 
 
-def mtp_on_selection_error(engine_names: Sequence[str], mode: str,
-                           models: Sequence[dict], tests: Sequence[str]) -> str | None:
-    if mode != "on":
+def mtp_selection_error(engine_names: Sequence[str], mode: str,
+                        models: Sequence[dict], tests: Sequence[str]) -> str | None:
+    if mode == "off":
         return None
     incompatible = [test for test in tests if test not in MTP_SERVER_TESTS]
-    if incompatible:
+    if mode == "on" and incompatible:
         return (
             "--mtp on cannot run non-MTP workloads: " + ", ".join(incompatible)
             + "; use --mtp both to run them once in the baseline pass"
         )
-    if not any(native_mtp_models(models, engine_name) for engine_name in engine_names):
-        return "--mtp on requires a selected model with cataloged native MTP support"
+    capable_engines = {
+        engine_name for engine_name in engine_names
+        if native_mtp_models(models, engine_name)
+    }
+    if mode == "on":
+        missing = [engine_name for engine_name in engine_names if engine_name not in capable_engines]
+        if missing:
+            return (
+                "--mtp on requires a selected model with cataloged native MTP support "
+                "for every selected engine; missing: " + ", ".join(missing)
+            )
+    elif mode == "both":
+        if not capable_engines:
+            return (
+                "--mtp both requires a selected model with cataloged native MTP support; "
+                "use --mtp off for a baseline-only run"
+            )
+        if not set(tests) & MTP_SERVER_TESTS:
+            return (
+                "--mtp both requires at least one server-backed text workload; "
+                "use --mtp off for a baseline-only run"
+            )
     return None
 
 

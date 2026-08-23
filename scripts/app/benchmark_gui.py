@@ -58,7 +58,7 @@ from scripts.setup.runtime_update import (
 from scripts.stage_registry import STAGE_ORDER
 from scripts.runtime.pause_control import PAUSE_CONTROL_ENV, create_pause_control, write_pause_state
 from scripts.runtime.progress_events import PROGRESS_PREFIX
-from scripts.runtime.mtp import mtp_on_selection_error, mtp_progress_names
+from scripts.runtime.mtp import mtp_progress_names, mtp_selection_error
 from scripts.runtime.crash_cache import clear_crash_caches, crash_cache_paths
 from scripts.runtime.shared import Shared
 from scripts.workloads.models import LLM_MODELS
@@ -329,7 +329,7 @@ def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[Men
     if selection_error:
         errors.append(selection_error)
     selected_catalog = selected_catalog_models(entries)
-    mtp_error = mtp_on_selection_error(
+    mtp_error = mtp_selection_error(
         parse_engine_selection(engine), gui_options["mtp"], selected_catalog, tests,
     )
     if mtp_error:

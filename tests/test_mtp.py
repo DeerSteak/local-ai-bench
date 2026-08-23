@@ -2,7 +2,7 @@ import pytest
 
 from scripts.runtime.mtp import (
     active_mtp_configurations, expand_mtp_passes, mtp_mode_states, mtp_pass_label,
-    mtp_on_selection_error, mtp_progress_names, mtp_tests, native_mtp_config,
+    mtp_progress_names, mtp_selection_error, mtp_tests, native_mtp_config,
     native_mtp_models,
 )
 from scripts.workloads.models import LLM_MODELS
@@ -151,21 +151,57 @@ def test_mtp_on_rejects_non_mtp_workloads_instead_of_dropping_them():
     capable = {"tag": "capable", "native_mtp": {"llamacpp": {
         "num_speculative_tokens": 1,
     }}}
-    assert mtp_on_selection_error(
+    assert mtp_selection_error(
         ["llamacpp"], "on", [capable], ["llm", "img", "emb", "llamabench"],
     ) == (
         "--mtp on cannot run non-MTP workloads: img, emb, llamabench; "
         "use --mtp both to run them once in the baseline pass"
     )
-    assert mtp_on_selection_error(
+    assert mtp_selection_error(
         ["llamacpp"], "both", [capable], ["llm", "img"],
     ) is None
 
 
 def test_mtp_on_requires_support_in_the_selected_models():
-    assert mtp_on_selection_error(
+    assert mtp_selection_error(
         ["llamacpp", "vllm"], "on", [{"tag": "plain"}], ["llm"],
-    ) == "--mtp on requires a selected model with cataloged native MTP support"
+    ) == (
+        "--mtp on requires a selected model with cataloged native MTP support for every "
+        "selected engine; missing: llamacpp, vllm"
+    )
+
+
+def test_mtp_on_rejects_an_engine_that_would_be_silently_dropped():
+    vllm_only = {"tag": "capable", "native_mtp": {
+        "vllm": {"num_speculative_tokens": 1},
+    }}
+    assert mtp_selection_error(
+        ["llamacpp", "vllm"], "on", [vllm_only], ["llm"],
+    ) == (
+        "--mtp on requires a selected model with cataloged native MTP support for every "
+        "selected engine; missing: llamacpp"
+    )
+
+
+def test_mtp_both_rejects_a_baseline_only_selection():
+    assert mtp_selection_error(
+        ["llamacpp"], "both", [{"tag": "plain"}], ["llm"],
+    ) == (
+        "--mtp both requires a selected model with cataloged native MTP support; "
+        "use --mtp off for a baseline-only run"
+    )
+
+
+def test_mtp_both_requires_a_workload_that_can_run_the_on_pass():
+    capable = {"tag": "capable", "native_mtp": {
+        "llamacpp": {"num_speculative_tokens": 1},
+    }}
+    assert mtp_selection_error(
+        ["llamacpp"], "both", [capable], ["img", "emb"],
+    ) == (
+        "--mtp both requires at least one server-backed text workload; "
+        "use --mtp off for a baseline-only run"
+    )
 
 
 def test_mtp_pass_label_distinguishes_progress_identity():
