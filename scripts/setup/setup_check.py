@@ -15,6 +15,7 @@ import shutil
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Collection
 from pathlib import Path
 
 from scripts.runtime import config
@@ -122,6 +123,23 @@ def accessible_file(path: Path) -> bool:
         return path.is_file()
     except OSError:
         return False
+
+
+def running_comfyui_checkpoints_visible(selected_images: list[dict],
+                                         found_checkpoints: Collection[str], *,
+                                         urlopen=urllib.request.urlopen) -> bool | None:
+    ready_models = [
+        model for model in selected_images if model["checkpoint"] in found_checkpoints
+    ]
+    try:
+        visible = True
+        for loader, expected in image_checkpoint_groups(ready_models).items():
+            with urlopen(f"{config.COMFYUI_URL}/object_info/{loader}", timeout=3) as response:
+                available = checkpoint_names_from_object_info(json.load(response), loader)
+            visible = visible and managed_checkpoints_visible(available, expected)
+        return visible
+    except (OSError, ValueError):
+        return None
 
 
 def main() -> None:  # pragma: no cover - real interactive installer
@@ -1116,24 +1134,11 @@ def main() -> None:  # pragma: no cover - real interactive installer
             if found_ckpts:
                 ok(f"{len(found_ckpts)}/{len(selected_images)} image checkpoints ready: "
                    f"{', '.join(found_ckpts)}")
-                try:
-                    visible = True
-                    ready_models = [model for model in selected_images
-                                    if model["checkpoint"] in found_ckpts]
-                    for loader, expected in image_checkpoint_groups(ready_models).items():
-                        with urllib.request.urlopen(
-                            f"{config.COMFYUI_URL}/object_info/{loader}", timeout=3,
-                        ) as response:
-                            available = checkpoint_names_from_object_info(
-                                json.load(response), loader,
-                            )
-                        visible = visible and managed_checkpoints_visible(available, expected)
-                    if visible:
-                        ok("Running ComfyUI already sees Local AI Bench's managed models")
-                    else:
-                        warn("Restart running ComfyUI once to load the managed model path")
-                except (OSError, urllib.error.URLError, json.JSONDecodeError):
-                    pass
+                visible = running_comfyui_checkpoints_visible(selected_images, found_ckpts)
+                if visible is True:
+                    ok("Running ComfyUI already sees Local AI Bench's managed models")
+                elif visible is False:
+                    warn("Restart running ComfyUI once to load the managed model path")
             else:
                 fail("No image checkpoints available — image benchmarks will be skipped")
                 issues.append("Download at least one image model through setup")

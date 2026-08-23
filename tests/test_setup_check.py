@@ -2,6 +2,7 @@ from pathlib import Path
 
 from scripts.setup.setup_check import (
     accessible_file, llamacpp_backend_rebuild_warning, llamacpp_install_action,
+    running_comfyui_checkpoints_visible,
 )
 
 
@@ -40,3 +41,15 @@ def test_intel_llamacpp_failure_retries_the_managed_sycl_build(tmp_path):
     assert str(runtime) in action
     assert "Last failure: cmake configure failed" in action
     assert "No manual llama.cpp installation is required" in action
+
+
+def test_running_comfyui_visibility_treats_an_unknown_loader_as_unavailable():
+    model = {"checkpoint": "future.safetensors", "checkpoint_loader": "FutureLoader"}
+    response = type("Response", (), {
+        "__enter__": lambda self: self,
+        "__exit__": lambda self, *_args: None,
+        "read": lambda self: b"{}",
+    })()
+    assert running_comfyui_checkpoints_visible(
+        [model], {"future.safetensors"}, urlopen=lambda *_args, **_kwargs: response,
+    ) is None
