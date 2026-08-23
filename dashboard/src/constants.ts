@@ -2,6 +2,8 @@
 // models.py's extra-small -> small -> medium -> large tier order)
 export const MODEL_COLORS = {
   "gemma3-1b":              "#0969da",
+  "gemma3-1b-q6":           "#0550ae",
+  "gemma3-1b-q8":           "#0a3069",
   "granite4.1-3b-q4":       "#8250df",
   "qwen3.5-4b-q4":          "#b54708",
   "granite4.1-8b-q4":       "#1a7f37",
@@ -114,6 +116,8 @@ export const MEMORY_HEADROOM_LABELS = {
 // in models.py, the single source of truth for the model roster)
 export const LLM_MODEL_LABELS = {
   "gemma3-1b":              "Gemma 3 1B",
+  "gemma3-1b-q6":           "Gemma 3 1B — Q6_K",
+  "gemma3-1b-q8":           "Gemma 3 1B — Q8_0",
   "granite4.1-3b-q4":       "Granite 4.1 3B 4-Bit Quantization",
   "qwen3.5-4b-q4":          "Qwen3.5 4B 4-Bit Quantization",
   "granite4.1-8b-q4":       "Granite 4.1 8B 4-Bit Quantization",
@@ -144,7 +148,7 @@ export const LLM_MODEL_LABELS = {
 // Matches models.py: LLM_MODELS_XSMALL + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM
 // + LLM_MODELS_LARGE.
 export const LLM_MODEL_ORDER = [
-  "gemma3-1b", "granite4.1-3b-q4", "qwen3.5-4b-q4",
+  "gemma3-1b", "gemma3-1b-q6", "gemma3-1b-q8", "granite4.1-3b-q4", "qwen3.5-4b-q4",
   "granite4.1-8b-q4", "qwen3.5-9b-q4", "gemma4-12b-q4",
   "gemma4-26b-a4b-q4", "qwen3.8-27b-q4", "nemotron3.5-lightning-30b-a3b",
   "llama3.3-70b-q4", "qwen3-coder-next-80b-a3b-q4", "nemotron3-super-120b",
@@ -164,6 +168,8 @@ export const LLM_DISPLAY_ORDER = [...LLM_MODEL_ORDER, ...LEGACY_LLM_MODEL_ORDER]
 // depend on it).
 export const MODEL_SIZE_TIER = {
   "gemma3-1b":              "xsmall",
+  "gemma3-1b-q6":           "xsmall",
+  "gemma3-1b-q8":           "xsmall",
   "granite4.1-3b-q4":       "xsmall",
   "qwen3.5-4b-q4":          "xsmall",
   "granite4.1-8b-q4":       "small",
