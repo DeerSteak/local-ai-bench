@@ -42,7 +42,8 @@ describe("model registry consistency", () => {
       "gemma4-12b-q4", "gemma4-12b-q6", "gemma4-12b-q8",
       "gemma4-26b-a4b-q4", "gemma4-26b-a4b-q6", "gemma4-26b-a4b-q8",
       "qwen3.8-27b-q4", "qwen3.8-27b-q6", "qwen3.8-27b-q8",
-      "nemotron3.5-lightning-30b-a3b",
+      "nemotron3.5-lightning-30b-a3b", "nemotron3.5-lightning-30b-a3b-q6",
+      "nemotron3.5-lightning-30b-a3b-q8",
       "llama3.3-70b-q4", "llama3.3-70b-q6", "llama3.3-70b-q8",
       "qwen3-coder-next-80b-a3b-q4", "qwen3-coder-next-80b-a3b-q6",
       "qwen3-coder-next-80b-a3b-q8", "nemotron3-super-120b",
@@ -61,8 +62,8 @@ describe("model registry consistency", () => {
   });
 
   it("labels every cataloged quantization explicitly", () => {
-    for (const model of LLM_MODEL_ORDER.filter(model => model !== "nemotron3.5-lightning-30b-a3b")) {
-      expect(lookup(LLM_MODEL_LABELS, model)).toMatch(/ — Q(4_K_M|6_K|8_0)$/);
+    for (const model of LLM_MODEL_ORDER) {
+      expect(lookup(LLM_MODEL_LABELS, model)).toMatch(/ — Q(4_K_M|6_K(?:_XL)?|8_0)$/);
     }
   });
 

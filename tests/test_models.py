@@ -76,18 +76,21 @@ def test_exact_standard_quantizations_cover_every_repo_that_has_all_three():
     expected_families = {
         "Gemma 3 1B", "Granite 4.1 3B", "Qwen3.5 4B", "Granite 4.1 8B",
         "Qwen3.5 9B", "Gemma 4 12B", "Gemma 4 26B-A4B", "Qwen 3.8 27B",
-        "Llama 3.3 70B", "Qwen3-Coder-Next 80B-A3B", "Nemotron 3 Super 120B",
+        "Nemotron 3.5 Lightning 30B-A3B", "Llama 3.3 70B",
+        "Qwen3-Coder-Next 80B-A3B", "Nemotron 3 Super 120B",
     }
     families = {model["label"]: model for model in LLM_MODELS if model.get("variants")}
 
     assert set(families) == expected_families
-    for model in families.values():
+    preferred_xl = {
+        "Gemma 4 26B-A4B", "Qwen 3.8 27B",
+        "Nemotron 3.5 Lightning 30B-A3B", "Nemotron 3 Super 120B",
+    }
+    for label, model in families.items():
+        expected_q6 = "Q6_K_XL" if label in preferred_xl else "Q6_K"
         assert [variant["quantization"] for variant in model["variants"]] == [
-            "Q4_K_M", "Q6_K", "Q8_0",
+            "Q4_K_M", expected_q6, "Q8_0",
         ]
-    gap = next(model for model in LLM_MODELS
-               if model["label"] == "Nemotron 3.5 Lightning 30B-A3B")
-    assert "variants" not in gap
 
 
 def test_large_roster_preserves_distinct_baseline_agent_and_planner_roles():

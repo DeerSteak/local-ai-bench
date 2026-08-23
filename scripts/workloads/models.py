@@ -365,9 +365,9 @@ LLM_MODELS_MEDIUM = sorted([
                 "download_size": "~16.9 GB", "default": True,
             },
             {
-                "tag": "gemma4:26b-a4b-it-ud-q6_K", "short": "gemma4-26b-a4b-q6",
-                "quantization": "Q6_K", "hf_repo": "unsloth/gemma-4-26B-A4B-it-GGUF",
-                "hf_file": "gemma-4-26B-A4B-it-UD-Q6_K.gguf", "download_size": "~23.2 GB",
+                "tag": "gemma4:26b-a4b-it-ud-q6_K_XL", "short": "gemma4-26b-a4b-q6",
+                "quantization": "Q6_K_XL", "hf_repo": "unsloth/gemma-4-26B-A4B-it-GGUF",
+                "hf_file": "gemma-4-26B-A4B-it-UD-Q6_K_XL.gguf", "download_size": "~23.3 GB",
             },
             {
                 "tag": "gemma4:26b-a4b-it-q8_0", "short": "gemma4-26b-a4b-q8",
@@ -409,9 +409,9 @@ LLM_MODELS_MEDIUM = sorted([
                 "download_size": "~16.5 GB", "default": True,
             },
             {
-                "tag": "qwen3.8:27b-ud-q6_K", "short": "qwen3.8-27b-q6",
-                "quantization": "Q6_K", "hf_repo": "unsloth/Qwen3.8-27B-GGUF",
-                "hf_file": "Qwen3.8-27B-UD-Q6_K.gguf", "download_size": "~22.0 GB",
+                "tag": "qwen3.8:27b-ud-q6_K_XL", "short": "qwen3.8-27b-q6",
+                "quantization": "Q6_K_XL", "hf_repo": "unsloth/Qwen3.8-27B-GGUF",
+                "hf_file": "Qwen3.8-27B-UD-Q6_K_XL.gguf", "download_size": "~25.3 GB",
             },
             {
                 "tag": "qwen3.8:27b-q8_0", "short": "qwen3.8-27b-q8",
@@ -424,6 +424,7 @@ LLM_MODELS_MEDIUM = sorted([
         "tag":            "nemotron3.5-lightning:30b-a3b-ud-q4_K_M",
         "label":          "Nemotron 3.5 Lightning 30B-A3B",
         "short":          "nemotron3.5-lightning-30b-a3b",
+        "base_model":     "nemotron3.5-lightning:30b-a3b",
         "tier":           "medium",
         "download_size":  "~25.3 GB",
         "params_b":       30,   # 3B active — hybrid Mamba MoE
@@ -435,6 +436,29 @@ LLM_MODELS_MEDIUM = sorted([
             "llamacpp": {"num_speculative_tokens": 1},
             "vllm": {"num_speculative_tokens": 1},
         },
+        "variants": [
+            {
+                "tag": "nemotron3.5-lightning:30b-a3b-ud-q4_K_M",
+                "short": "nemotron3.5-lightning-30b-a3b", "quantization": "Q4_K_M",
+                "hf_repo": "unsloth/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
+                "hf_file": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-UD-Q4_K_M.gguf",
+                "download_size": "~25.3 GB", "default": True,
+            },
+            {
+                "tag": "nemotron3.5-lightning:30b-a3b-ud-q6_K_XL",
+                "short": "nemotron3.5-lightning-30b-a3b-q6", "quantization": "Q6_K_XL",
+                "hf_repo": "unsloth/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
+                "hf_file": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-UD-Q6_K_XL.gguf",
+                "download_size": "~35.1 GB",
+            },
+            {
+                "tag": "nemotron3.5-lightning:30b-a3b-q8_0",
+                "short": "nemotron3.5-lightning-30b-a3b-q8", "quantization": "Q8_0",
+                "hf_repo": "unsloth/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
+                "hf_file": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Q8_0.gguf",
+                "download_size": "~35.1 GB",
+            },
+        ],
     },
 ], key=lambda m: m["params_b"])
 
@@ -561,15 +585,15 @@ LLM_MODELS_LARGE = sorted([
                 ], "download_size": "~87.0 GB", "default": True,
             },
             {
-                "tag": "nemotron-3-super:120b-ud-q6_K", "short": "nemotron3-super-120b-q6",
-                "quantization": "Q6_K",
+                "tag": "nemotron-3-super:120b-ud-q6_K_XL", "short": "nemotron3-super-120b-q6",
+                "quantization": "Q6_K_XL",
                 "hf_repo": "unsloth/NVIDIA-Nemotron-3-Super-120B-A12B-GGUF",
                 "hf_file": [
-                    "UD-Q6_K/NVIDIA-Nemotron-3-Super-120B-A12B-UD-Q6_K-00001-of-00004.gguf",
-                    "UD-Q6_K/NVIDIA-Nemotron-3-Super-120B-A12B-UD-Q6_K-00002-of-00004.gguf",
-                    "UD-Q6_K/NVIDIA-Nemotron-3-Super-120B-A12B-UD-Q6_K-00003-of-00004.gguf",
-                    "UD-Q6_K/NVIDIA-Nemotron-3-Super-120B-A12B-UD-Q6_K-00004-of-00004.gguf",
-                ], "download_size": "~114.8 GB",
+                    "UD-Q6_K_XL/NVIDIA-Nemotron-3-Super-120B-A12B-UD-Q6_K_XL-00001-of-00004.gguf",
+                    "UD-Q6_K_XL/NVIDIA-Nemotron-3-Super-120B-A12B-UD-Q6_K_XL-00002-of-00004.gguf",
+                    "UD-Q6_K_XL/NVIDIA-Nemotron-3-Super-120B-A12B-UD-Q6_K_XL-00003-of-00004.gguf",
+                    "UD-Q6_K_XL/NVIDIA-Nemotron-3-Super-120B-A12B-UD-Q6_K_XL-00004-of-00004.gguf",
+                ], "download_size": "~117.9 GB",
             },
             {
                 "tag": "nemotron-3-super:120b-q8_0", "short": "nemotron3-super-120b-q8",
