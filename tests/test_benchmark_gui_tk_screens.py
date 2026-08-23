@@ -68,6 +68,53 @@ def test_configuration_screen_constructs_and_rerenders_models(tk_shell):
     assert set(screen.model_widgets) == {"model-a", "model-b"}
 
 
+def test_configuration_screen_groups_llamacpp_quantizations(tk_shell):
+    root, notebook, tk, ttk = tk_shell
+    tests = [
+        MenuEntry(name, label, family, "Tests", enabled)
+        for name, label, family, enabled in TEST_DEFINITIONS
+    ]
+    test_vars = {entry.value: tk.BooleanVar(root, value=entry.checked) for entry in tests}
+    models = [
+        MenuEntry(
+            "demo:q4", "Demo — Q4 (~1 GB)", "llm", "Small", True,
+            base_model="demo", base_label="Demo", variant="Q4", default_variant=True,
+        ),
+        MenuEntry(
+            "demo:q8", "Demo — Q8 (~2 GB)", "llm", "Small", False,
+            base_model="demo", base_label="Demo", variant="Q8",
+        ),
+    ]
+    model_vars = {
+        entry.value: tk.BooleanVar(root, value=entry.checked) for entry in models
+    }
+    screen = build_configuration_screen(
+        notebook, tk=tk, ttk=ttk,
+        discovery={
+            "system": "Test", "models": "2", "storage": "100 GB",
+            "memory_risk": "Low", "runtime": "Available", "comfyui": "Available",
+            "issues": [],
+        },
+        advanced_var=tk.BooleanVar(root), preset_var=tk.StringVar(root, value="Custom"),
+        project_status=tk.StringVar(root, value="No project"), preset_names=["Custom"],
+        test_vars=test_vars, test_defaults={entry.value: entry.checked for entry in tests},
+        custom_tests=tests,
+        model_vars=model_vars, model_defaults={"demo:q4": True, "demo:q8": False},
+        custom_models=models, cap_var=tk.StringVar(root, value="No cap"),
+        tg_vars={value: tk.BooleanVar(root, value=True) for value in TG_TOKEN_OPTIONS},
+    )
+
+    parent_widgets = screen.variant_parent_widgets
+    assert parent_widgets is not None
+    parent_widgets["demo"].invoke()
+    assert all(variable.get() for variable in model_vars.values())
+    parent_widgets["demo"].invoke()
+    assert not any(variable.get() for variable in model_vars.values())
+    screen.set_variant_children_visible(False)
+    assert set(screen.model_widgets) == {"demo:q4"}
+    assert screen.variant_parent_widgets == {}
+
+
 def test_run_log_screen_constructs_and_navigates_back(tk_shell):
     root, notebook, tk, ttk = tk_shell
     configuration = ttk.Frame(notebook)

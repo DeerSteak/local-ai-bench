@@ -23,6 +23,7 @@ from scripts.stage_registry import (
 from scripts.runtime.engines import engine_names, get_engine
 from scripts.setup.model_inventory import build_model_inventory
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+from scripts.workloads.model_variants import collapse_variant_selection
 from scripts.runtime.shared import Shared
 from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config
 
@@ -125,6 +126,7 @@ class MenuEntry:
     available: bool = True
     tier: str | None = None
     base_model: str | None = None
+    base_label: str | None = None
     variant: str | None = None
     default_variant: bool = False
 
@@ -214,6 +216,15 @@ def build_frontend_state(engine_name: str, tests: list[str],
                          gui_options: dict | None = None,
                          selected_preset: str | None = None) -> dict:
     selected = [entry for entry in entries if entry.checked]
+    if "vllm" in parse_engine_selection(engine_name):
+        collapsed = collapse_variant_selection(
+            [{
+                "tag": entry.value, "base_model": entry.base_model,
+                "variant": entry.variant, "default": entry.default_variant,
+            } for entry in entries if entry.base_model],
+            {entry.value for entry in selected},
+        )
+        selected = [entry for entry in selected if not entry.base_model or entry.value in collapsed]
     state = {
         "version": FRONTEND_STATE_VERSION,
         "engine": engine_name,
@@ -609,7 +620,8 @@ def build_model_entries(inventory: dict[str, list[dict]], tests: list[str]) -> l
             entries.append(MenuEntry(
                 model["tag"], model["label"], "llm", f"LLM — {tier}",
                 checked=(model.get("default", False) if is_variant else tier != "large"),
-                tier=tier, base_model=model.get("base_model"), variant=model.get("variant"),
+                tier=tier, base_model=model.get("base_model"),
+                base_label=model.get("base_label"), variant=model.get("variant"),
                 default_variant=bool(model.get("default", False)),
             ))
         for model in inventory["custom"]:
@@ -777,6 +789,15 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
         if gui_options["comfyui"] and "--comfyui" in command:
             command[command.index("--comfyui") + 1] = gui_options["comfyui"]
     selected = [entry for entry in entries if entry.checked]
+    if "vllm" in parse_engine_selection(engine_name):
+        collapsed = collapse_variant_selection(
+            [{
+                "tag": entry.value, "base_model": entry.base_model,
+                "variant": entry.variant, "default": entry.default_variant,
+            } for entry in entries if entry.base_model],
+            {entry.value for entry in selected},
+        )
+        selected = [entry for entry in selected if not entry.base_model or entry.value in collapsed]
     if any(test in LLM_BACKED_TESTS for test in tests):
         selected_llm = [entry for entry in selected if entry.kind in ("llm", "custom")]
         variant_bases = {

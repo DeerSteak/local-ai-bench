@@ -171,6 +171,20 @@ def test_build_command_omits_variant_flag_for_default_only():
     assert "--model-variant" not in command
 
 
+def test_build_command_collapses_variant_sweep_when_vllm_is_selected():
+    inventory = empty_inventory()
+    inventory["llm"] = expanded_model_variants(LLM_MODELS[0])
+    entries = build_model_entries(inventory, ["llm"])
+    for entry in entries:
+        entry.checked = True
+
+    command = build_benchmark_command("llamacpp,vllm", Path("ComfyUI"), ["llm"], entries)
+
+    assert "--model-variant" not in command
+    llm_index = command.index("--llm-models")
+    assert command[llm_index + 1:] == ["gemma3:1b-it-q4_K_M"]
+
+
 def test_power_telemetry_is_exposed_and_requires_shared_memory_sampling():
     options = dict(GUI_OPTION_DEFAULTS, power_telemetry=True)
     assert validate_gui_options(options) == []
