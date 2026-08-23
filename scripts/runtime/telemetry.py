@@ -624,6 +624,7 @@ def add_power_efficiency(power: dict[str, Any] | None, unit: str,
 def discover_power_source(platform_name: str | None = None, *, which_fn=shutil.which,
                           run_fn=subprocess.run,
                           rapl_paths: Sequence[Path] | None = None,
+                          rapl_probe_fn: Callable[[str, float], bool] | None = None,
                           is_file_fn: Callable[[str], bool] | None = None,
                           adl_discovery_fn=discover_amd_adl_power) -> PowerAvailability:
     platform_name = platform_name or platform.system()
@@ -687,17 +688,11 @@ def discover_power_source(platform_name: str | None = None, *, which_fn=shutil.w
         return PowerAvailability(True, "rapl", "cpu_package", location=str(readable))
     if paths:
         sudo = which_fn("sudo")
+        probe = rapl_probe_fn or probe_privileged_rapl_source
         for path in paths:
             if not sudo:
                 break
-            try:
-                result = run_fn(
-                    [sudo, "-n", "test", "-r", str(path)], capture_output=True,
-                    text=True, timeout=2, check=False,
-                )
-            except (OSError, subprocess.SubprocessError):
-                continue
-            if result.returncode == 0:
+            if probe(str(path), config.TELEMETRY_INTERVAL_SEC):
                 return PowerAvailability(
                     True, "rapl", "cpu_package", location=str(path),
                     requires_elevation=True,
@@ -887,6 +882,33 @@ class RaplPowerSource(_StreamingPowerSource):
             if previous is not None and now > previous[0] and joules >= previous[1]:
                 self._publish((joules - previous[1]) / (now - previous[0]), now)
             previous = (now, joules)
+
+
+def probe_privileged_rapl_source(location: str, interval_sec: float, *,
+                                 timeout_sec: float = 2.0,
+                                 monotonic=time.monotonic,
+                                 sleep=time.sleep,
+                                 popen_fn: Callable[..., Any] = subprocess.Popen) -> bool:
+    source = RaplPowerSource(
+        PowerAvailability(
+            True, "rapl", "cpu_package", location=location, requires_elevation=True,
+        ),
+        interval_sec, popen_fn=popen_fn, monotonic=monotonic,
+    )
+    source.start()
+    deadline = monotonic() + timeout_sec
+    try:
+        while monotonic() < deadline:
+            if source.read_watts() is not None:
+                return True
+            process = source._process
+            poll = getattr(process, "poll", None)
+            if process is None or (callable(poll) and poll() is not None):
+                return False
+            sleep(min(0.05, interval_sec))
+        return False
+    finally:
+        source.stop()
 
 
 def create_power_source(availability: PowerAvailability, interval_sec: float,
