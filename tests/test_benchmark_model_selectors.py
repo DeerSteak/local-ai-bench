@@ -1,8 +1,11 @@
 import argparse
 
+import pytest
+
 from scripts.app.benchmark import (
     LLM_TESTS,
     add_model_selection_arguments,
+    apply_variant_selections,
     engine_scope_tests,
     filter_models_by_pattern,
     resolve_catalog_scopes,
@@ -51,11 +54,44 @@ def test_embedding_and_image_selectors_parse_independently():
     assert args.image_models == ["sd*", "flux-dev"]
 
 
+def test_model_variant_is_repeatable_and_model_qualified():
+    args = parser().parse_args([
+        "--model-variant", "gemma3:1b-it=Q4_K_M",
+        "--model-variant", "gemma3:1b-it=Q8_0",
+    ])
+    assert args.model_variants == ["gemma3:1b-it=Q4_K_M", "gemma3:1b-it=Q8_0"]
+
+
+def test_variant_selection_expands_llm_and_downloaded_concurrency_scopes():
+    gemma = LLM_MODELS[0]
+    scope = {
+        "name": "llamacpp", "llm_models": [gemma], "concurrency_models": [gemma],
+    }
+
+    apply_variant_selections(
+        [scope], ["gemma3:1b-it=Q4_K_M", "gemma3:1b-it=Q8_0"],
+        ["llamacpp"], ["llm", "conc_chat"],
+    )
+
+    assert [model["variant"] for model in scope["llm_models"]] == ["Q4_K_M", "Q8_0"]
+    assert [model["variant"] for model in scope["concurrency_models"]] == [
+        "Q4_K_M", "Q8_0",
+    ]
+
+
+def test_variant_selection_rejects_vllm_before_execution():
+    with pytest.raises(ValueError, match="requires --engine llamacpp"):
+        apply_variant_selections(
+            [], ["gemma3:1b-it=Q4_K_M"], ["vllm"], ["llm"],
+        )
+
+
 def test_every_selector_defaults_to_none():
     args = parser().parse_args([])
     assert args.llm_models is None
     assert args.embedding_models is None
     assert args.image_models is None
+    assert args.model_variants is None
 
 
 def test_filter_models_can_match_image_short_instead_of_tag():

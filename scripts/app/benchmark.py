@@ -61,6 +61,9 @@ from scripts.workloads.code_benchmark import CodeBenchmark
 from scripts.workloads.tool_benchmark import ToolBenchmark
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
 from scripts.workloads.models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS
+from scripts.workloads.model_variants import (
+    normalize_variant_selectors, select_model_variants,
+)
 from scripts.setup.model_inventory import build_model_inventory, format_model_inventory, sanitize_tag_to_short
 from scripts.app.orchestration import (
     LifecycleCoordinator, RunContext, RunPaths, StageDefinition,
@@ -500,6 +503,19 @@ def validate_engine_scopes(tests: list[str], engine_name: str, llm_patterns: lis
     return errors
 
 
+def apply_variant_selections(engine_scopes: list[dict], selectors: list[str] | None,
+                             engine_names: list[str], tests: list[str]) -> None:
+    selections = normalize_variant_selectors(selectors, LLM_MODELS)
+    if selections and engine_names != ["llamacpp"]:
+        raise ValueError("--model-variant requires --engine llamacpp")
+    for scope in engine_scopes:
+        scope["llm_models"] = select_model_variants(scope["llm_models"], selections)
+        if any(test in tests for test in CONCURRENCY_TESTS):
+            scope["concurrency_models"] = select_model_variants(
+                scope["concurrency_models"], selections,
+            )
+
+
 def resolve_engine_scopes(engine_names: list[str], engine_factory, tier_models: list[dict],
                           tier_label: str, llm_patterns: list[str] | None, tests: list[str],
                           *, embedding_models: list[dict] | None = None,
@@ -636,6 +652,12 @@ def add_model_selection_arguments(parser: argparse.ArgumentParser) -> None:
              "actually downloaded locally, so a model outside our curated catalog can be "
              "tested (see --list-models). Quote wildcards so your shell doesn't expand "
              "them first. --models is retained as a backward-compatible alias.",
+    )
+    parser.add_argument(
+        "--model-variant", dest="model_variants", action="append", default=None,
+        metavar="BASE=VARIANT",
+        help="Select one GGUF quantization for a catalog base model; repeat for a sweep "
+             "(llama.cpp only). Omission keeps every model's documented default.",
     )
     parser.add_argument(
         "--embedding-models", nargs="+", default=None,
@@ -957,6 +979,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         embedding_models=embedding_models, embedding_patterns=args.embedding_models,
     )
     validation_errors.extend(engine_errors)
+    try:
+        apply_variant_selections(
+            engine_scopes, args.model_variants, run_engine_names, args.tests,
+        )
+    except ValueError as exc:
+        validation_errors.append(str(exc))
     if validation_errors:
         for error in validation_errors:
             Shared.err(error)
@@ -1110,6 +1138,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         Shared.output(f"  Models:    {tier_label}")
         if args.llm_models:
             Shared.output(f"  --llm-models: {', '.join(m['label'] for m in llm_models)}")
+        if args.model_variants:
+            Shared.output(f"  --model-variant: {', '.join(args.model_variants)}")
         if args.embedding_models:
             Shared.output(f"  --embedding-models: {', '.join(m['label'] for m in embedding_models)}")
         if args.maxtier or args.image_models:
