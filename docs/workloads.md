@@ -75,7 +75,7 @@ Separately, *within* the conversation test itself: if the decode speed at any hi
 
 The extra-small tier deliberately spans three roles. Gemma 3 1B is the ultra-light speed floor, showing what the suite costs on the smallest practical general model. Granite 4.1 3B is the compact structured-execution and tool-calling specialist. Qwen3.5 4B is the more capable general executor, trading some speed for stronger instruction following, reasoning, coding, and tool use. This makes the tier useful for evaluating fast worker models rather than filling it with three interchangeable general chat baselines.
 
-Eleven base models provide a bounded same-repository quantization sweep: Q4_K_M (default), Q6_K, and Q8_0 are distinct GGUF files or complete split-file sets from the repository already used by that model. Selecting no sweep retains the existing Q4_K_M identity and therefore does not change ordinary runtime or disk requirements. Nemotron 3.5 Lightning remains the sole gap because its repository offers Q6_K_XL instead of exact Q6_K; the catalog does not silently treat those formats as equivalent.
+All twelve base models provide a bounded same-repository quantization sweep: Q4_K_M (default), one preferred Q6-family variant, and Q8_0 are distinct GGUF files or complete split-file sets from the repository already used by that model. The catalog chooses Q6_K_XL when available, otherwise Q6_K_M, otherwise standard Q6_K; it does not substitute Q6_K_L. Selecting no sweep retains the existing Q4_K_M identity and therefore does not change ordinary runtime or disk requirements.
 
 ### Small tier (≤20B params)
 
