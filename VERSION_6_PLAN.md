@@ -524,8 +524,8 @@ Repository entries below are starting points for the audit, not compatibility cl
 - [x] No performance-ranking claim is made from the compatibility evidence.
 - [x] Retired entries remain in the legacy dashboard registry and old results render unchanged.
 - [x] The accepted catalog is documented in the permanent catalog and workload documentation.
-- [ ] Native MTP `both` passes complete on real hardware for the four selected llama.cpp artifacts and the selected vLLM artifacts.
-- [ ] Z-Image Turbo completes the managed ComfyUI image workload on real hardware with retained generated-image evidence.
+- [x] Native MTP `both` passes complete on real hardware for the four selected llama.cpp artifacts and the selected vLLM artifacts.
+- [x] Z-Image Turbo completes the managed ComfyUI image workload on real hardware with retained generated-image evidence.
 
 ---
 
