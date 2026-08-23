@@ -864,9 +864,10 @@ class RaplPowerSource(_StreamingPowerSource):
         location = self.availability.location
         assert location is not None
         return [
-            shutil.which("sudo") or "/usr/bin/sudo", "-n", "/bin/sh", "-c",
-            'while true; do cat -- "$1" || exit; sleep "$2" || exit; done',
-            "rapl-reader", location, str(self.interval_sec),
+            "/bin/sh", "-c",
+            'while true; do "$1" -n cat -- "$2" || exit; sleep "$3" || exit; done',
+            "rapl-reader", shutil.which("sudo") or "/usr/bin/sudo", location,
+            str(self.interval_sec),
         ]
 
     def _read_output(self) -> None:

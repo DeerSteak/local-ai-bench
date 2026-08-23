@@ -550,7 +550,7 @@ def test_rapl_polling_source_derives_watts_from_counter_delta():
     assert source.read_watts() is None
 
 
-def test_rapl_source_uses_one_long_lived_privileged_reader():
+def test_rapl_source_uses_a_parent_owned_reader_with_short_privileged_reads():
     process = FakeProcess()
     process.stdout = iter(["1000000\n", "2500000\n"])
     commands = []
@@ -571,9 +571,9 @@ def test_rapl_source_uses_one_long_lived_privileged_reader():
     source.stop()
     assert process.terminated is True
     assert commands == [[
-        "/usr/bin/sudo", "-n", "/bin/sh", "-c",
-        'while true; do cat -- "$1" || exit; sleep "$2" || exit; done',
-        "rapl-reader", "/counter", "0.5",
+        "/bin/sh", "-c",
+        'while true; do "$1" -n cat -- "$2" || exit; sleep "$3" || exit; done',
+        "rapl-reader", "/usr/bin/sudo", "/counter", "0.5",
     ]]
     created = create_power_source(
         PowerAvailability(
