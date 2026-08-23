@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from scripts.runtime.comfyui_installation import (
     find_image_asset,
     image_asset_dirs,
@@ -178,7 +180,8 @@ def test_checkpoint_names_from_object_info_handles_valid_and_malformed_data():
     assert checkpoint_names_from_object_info(data, "UNETLoader") == {
         "z-image.safetensors",
     }
-    assert checkpoint_names_from_object_info(data, "UnknownLoader") == set()
+    with pytest.raises(ValueError, match="unsupported ComfyUI checkpoint loader"):
+        checkpoint_names_from_object_info(data, "UnknownLoader")
     assert checkpoint_names_from_object_info({}, "UNETLoader") == set()
 
 

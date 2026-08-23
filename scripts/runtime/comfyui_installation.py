@@ -228,7 +228,7 @@ def checkpoint_names_from_object_info(data: dict, loader: str) -> set[str]:
     """Extract checkpoint choices from ComfyUI's object-info response."""
     input_name = COMFYUI_LOADER_MODEL_INPUTS.get(loader)
     if input_name is None:
-        return set()
+        raise ValueError(f"unsupported ComfyUI checkpoint loader: {loader}")
     try:
         choices = data[loader]["input"]["required"][input_name][0]
     except (KeyError, IndexError, TypeError):
