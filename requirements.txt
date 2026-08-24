@@ -6,4 +6,4 @@ huggingface_hub
 py7zr
 packaging
 gguf
-reportlab==5.0.0
+reportlab==5.0.1
