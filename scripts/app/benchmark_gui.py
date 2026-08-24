@@ -63,6 +63,7 @@ from scripts.runtime.mtp import mtp_progress_names, mtp_selection_error
 from scripts.runtime.crash_cache import clear_crash_caches, crash_cache_paths
 from scripts.runtime.shared import Shared
 from scripts.workloads.models import LLM_MODELS
+from scripts.workloads.model_variants import collapse_variant_selection, expanded_variant_catalog
 from scripts.setup.setup_config import (
     available_gpu_split_modes, configured_comfyui_dir, configured_gpu_devices,
     load_setup_config,
@@ -408,7 +409,7 @@ def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[Men
 
 def selected_catalog_models(entries: list[MenuEntry]) -> list[dict]:
     selected = {entry.value for entry in entries if entry.checked}
-    return [model for model in LLM_MODELS if model["tag"] in selected]
+    return [model for model in expanded_variant_catalog(LLM_MODELS) if model["tag"] in selected]
 
 
 def selected_catalog_models_by_engine(entries: list[MenuEntry], engine_names: Sequence[str],
@@ -622,6 +623,22 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             engine_check_vars[selection.engines[0]].set(True)
         engine_var.set(selection.value)
         engine_note.set(selection.note)
+        llamacpp_only = selection.engines == ["llamacpp"]
+        if not llamacpp_only:
+            selected_tags = {
+                value for value, variable in model_vars.items() if variable.get()
+            }
+            collapsed = collapse_variant_selection(
+                [{
+                    "tag": entry.value, "base_model": entry.base_model,
+                    "variant": entry.variant, "default": entry.default_variant,
+                } for entry in custom_models],
+                selected_tags,
+            )
+            for entry in custom_models:
+                if entry.base_model:
+                    model_vars[entry.value].set(entry.value in collapsed)
+        configuration_screen.set_variant_children_visible(llamacpp_only)
         for value, widget in model_widgets.items():
             available = selection.model_availability.get(value, True)
             widget.configure(state="normal" if available else "disabled")
@@ -798,6 +815,17 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     def reset_models():
         for name, variable in model_vars.items():
             variable.set(custom_model_defaults[name])
+        apply_engine_availability()
+
+    def select_all_models():
+        for variable in model_vars.values():
+            variable.set(True)
+        apply_engine_availability()
+
+    def clear_models():
+        for variable in model_vars.values():
+            variable.set(False)
+        configuration_screen.sync_variant_parents()
 
     def reset_workload():
         cap_var.set("No cap")
@@ -881,6 +909,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             }
             for entry in custom_models:
                 model_vars[entry.value].set(entry.value in selected_models)
+            apply_engine_availability()
             cap = state["max_prompt_tokens"]
             cap_var.set(str(cap) if cap else "No cap")
             selected_tg = set(state["tg_tokens"] or config.LLAMABENCH_TG)
@@ -899,6 +928,12 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     model_actions = ttk.Frame(models_box)
     model_actions.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
     ttk.Button(model_actions, text="Reset Models", command=reset_models).pack(side="left")
+    ttk.Button(
+        model_actions, text="Select All", command=select_all_models,
+    ).pack(side="left", padx=(8, 0))
+    ttk.Button(
+        model_actions, text="Clear", command=clear_models,
+    ).pack(side="left", padx=(8, 0))
     ttk.Button(
         model_actions, text="Import Hugging Face Model",
         command=lambda: open_model_import_dialog(),

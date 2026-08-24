@@ -10,6 +10,7 @@ from scripts.workloads.models import (
     EMBED_MODELS, IMAGE_MODELS, LLM_MODELS, image_checkpoint_path,
     image_required_asset_paths,
 )
+from scripts.workloads.model_variants import expanded_variant_catalog
 from scripts.runtime.model_identity import model_tag_slug
 
 
@@ -99,7 +100,7 @@ def models_missing_engine_support(models: list[dict], engine: str) -> list[str]:
 def find_non_catalog_model_dirs(models_dir: Path, llm_catalog: list[dict] | None = None,
                                 embed_catalog: list[dict] | None = None) -> list[Path]:
     """Return installed model directories not owned by the current catalog."""
-    llm_catalog = LLM_MODELS if llm_catalog is None else llm_catalog
+    llm_catalog = expanded_variant_catalog(LLM_MODELS) if llm_catalog is None else llm_catalog
     embed_catalog = EMBED_MODELS if embed_catalog is None else embed_catalog
     catalog_slugs = {model_tag_slug(model["tag"])
                      for model in llm_catalog + embed_catalog}
@@ -121,7 +122,7 @@ def delete_non_catalog_model_dirs(models_dir: Path, directory_names: list[str],
                                   registry_path: Path = config.CUSTOM_MODELS_PATH,
                                   ) -> tuple[list[str], dict[str, str]]:
     """Delete explicitly named non-catalog directories without following symlinks."""
-    llm_catalog = LLM_MODELS if llm_catalog is None else llm_catalog
+    llm_catalog = expanded_variant_catalog(LLM_MODELS) if llm_catalog is None else llm_catalog
     embed_catalog = EMBED_MODELS if embed_catalog is None else embed_catalog
     catalog_slugs = {model_tag_slug(model["tag"])
                      for model in llm_catalog + embed_catalog}
@@ -195,7 +196,8 @@ def installed_image_models(models_dir: Path, image_catalog: list[dict] | None = 
 
 def build_model_inventory(engine, image_models_dir: Path) -> dict[str, list[dict]]:
     """Build the complete read-only inventory with benchmark-managed images."""
-    inventory = classify_engine_models(engine.list_installed_models())
+    llm_catalog = expanded_variant_catalog(LLM_MODELS) if engine.name == "llamacpp" else LLM_MODELS
+    inventory = classify_engine_models(engine.list_installed_models(), llm_catalog=llm_catalog)
     inventory["image"] = installed_image_models(image_models_dir)
     return inventory
 

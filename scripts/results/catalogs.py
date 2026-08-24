@@ -3,9 +3,10 @@
 from copy import deepcopy
 
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+from scripts.workloads.model_variants import expanded_variant_catalog
 
 
-CATALOG_VERSION = "2"
+CATALOG_VERSION = "3"
 
 HARDWARE_CATALOG = (
     {"id": "apple-mac-mini-m4-pro-2024", "vendor": "Apple", "product": "Mac mini (M4 Pro, 2024)", "kind": "system", "memory_architecture": "unified", "memory_gb_options": [24, 48, 64], "accelerator": "Apple M4 Pro GPU", "source": "https://www.apple.com/mac-mini/specs/", "qualification": "unqualified"},
@@ -18,7 +19,8 @@ def model_catalog():
     """Return catalog records derived from the benchmark's model definitions."""
     records = []
     groups = (
-        ("llm", LLM_MODELS, ["llm", "conversation", "accuracy", "concurrency", "llamabench"]),
+        ("llm", expanded_variant_catalog(LLM_MODELS),
+         ["llm", "conversation", "accuracy", "concurrency", "llamabench"]),
         ("embedding", EMBED_MODELS, ["embedding"]),
         ("image", IMAGE_MODELS, ["image"]),
     )
@@ -49,6 +51,8 @@ def recommendation_eligible(model):
 
 
 def _quantization(model):
+    if isinstance(model.get("quantization"), str):
+        return model["quantization"].lower()
     text = f"{model.get('tag', '')} {model.get('hf_file', '')}".upper()
     for name in ("UD-Q4_K_M", "Q4_K_M", "F16", "FP16"):
         if name in text:

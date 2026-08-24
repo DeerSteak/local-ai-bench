@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 from scripts.results.run_plan import load_run_plan
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+from scripts.workloads.model_variants import expanded_variant_catalog
 
 
 def recovery_executor_command(result_path: Path, python_executable=sys.executable) -> list[str]:
@@ -72,7 +73,9 @@ def fork_review_report(result_path: Path) -> dict:
 def recovery_progress_entries(plan, model_shorts=None) -> list:
     entries = []
     seen = set()
-    labels = {model["tag"]: model["label"] for model in LLM_MODELS}
+    labels = {
+        model["tag"]: model["label"] for model in expanded_variant_catalog(LLM_MODELS)
+    }
     for family, kind in (("llm", "llm"), ("concurrency", "llm")):
         for model in plan.models[family]:
             if model_shorts is not None and model.get("short") not in model_shorts:

@@ -494,6 +494,14 @@ def test_selected_catalog_models_limits_mtp_progress_to_checked_entries():
     ]
 
 
+def test_selected_catalog_models_preserves_nondefault_variant_for_fit_reporting():
+    entries = [MenuEntry(
+        "gemma3:1b-it-q8_0", "Gemma Q8", "llm", "LLM", True,
+    )]
+
+    assert [model["variant"] for model in selected_catalog_models(entries)] == ["Q8_0"]
+
+
 def test_resolve_engine_names_restores_default_without_model_checks():
     assert resolve_engine_names([], ["llamacpp", "vllm"]) == ["llamacpp"]
     assert resolve_engine_names(["vllm"], ["llamacpp", "vllm"]) == ["vllm"]
@@ -796,9 +804,27 @@ def test_recovery_progress_entries_deduplicate_models_and_use_catalog_labels():
     )
     entries = recovery_progress_entries(plan)
     assert [(entry.kind, entry.value, entry.label) for entry in entries] == [
-        ("llm", tag, "Gemma 3 1B"),
+        ("llm", tag, "Gemma 3 1B — Q4_K_M (~0.8 GB)"),
     ]
     assert recovery_progress_entries(plan, {"other"}) == []
+
+
+def test_recovery_progress_entries_label_nondefault_catalog_variant():
+    tag = "gemma3:1b-it-q6_K"
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="llamacpp",
+        tests=["llm"], stage_order=["llm"],
+        models={
+            "llm": [{
+                "tag": tag, "short": "gemma3-1b-q6", "base_model": "gemma3:1b-it",
+                "variant": "Q6_K",
+            }],
+            "concurrency": [], "embeddings": [], "images": [],
+        },
+        effective_config={"cpu_only": False, "force_all": False, "warmup_runs": 0},
+    )
+
+    assert recovery_progress_entries(plan)[0].label == "Gemma 3 1B — Q6_K (~1.0 GB)"
 
 
 def test_recovery_progress_entries_include_embedding_and_image_models():

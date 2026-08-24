@@ -40,6 +40,7 @@ PUBLIC_OPTION_SCHEMA = {
     "--engine": _spec("choice", "guided", "exposed", "Engine selection screen"),
     "--llm-models": _spec("string-list", "guided", "exposed", "LLM model selection screen"),
     "--models": _spec("string-list", "guided", "equivalent", "Alias of --llm-models"),
+    "--model-variant": _spec("string-list", "guided", "exposed", "LLM model selection screen"),
     "--embedding-models": _spec("string-list", "guided", "exposed", "Embedding model selection screen"),
     "--image-models": _spec("string-list", "guided", "exposed", "Image model selection screen"),
     "--max-prompt-tokens": _spec("integer", "guided", "exposed", "Prompt-processing cap screen", minimum=1),

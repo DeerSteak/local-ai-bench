@@ -550,7 +550,7 @@ def test_rapl_polling_source_derives_watts_from_counter_delta():
     assert source.read_watts() is None
 
 
-def test_rapl_source_uses_one_long_lived_privileged_reader():
+def test_rapl_source_uses_one_privileged_reader_with_parent_owned_stop_sentinel():
     process = FakeProcess()
     process.stdout = iter(["1000000\n", "2500000\n"])
     commands = []
@@ -569,12 +569,12 @@ def test_rapl_source_uses_one_long_lived_privileged_reader():
     source._reader.join(timeout=1)
     assert source.read_watts() == 3
     source.stop()
-    assert process.terminated is True
-    assert commands == [[
-        "/usr/bin/sudo", "-n", "/bin/sh", "-c",
-        'while true; do cat -- "$1" || exit; sleep "$2" || exit; done',
-        "rapl-reader", "/counter", "0.5",
-    ]]
+    assert process.terminated is False
+    assert commands[0][:4] == ["/usr/bin/sudo", "-n", "/bin/sh", "-c"]
+    assert 'test -e "$1"' in commands[0][4]
+    assert 'kill -0 "$2"' in commands[0][4]
+    assert commands[0][-2:] == ["/counter", "0.5"]
+    assert source._sentinel is None
     created = create_power_source(
         PowerAvailability(
             True, "rapl", "cpu_package", location="/counter", requires_elevation=True,
@@ -596,7 +596,7 @@ def test_rapl_privileged_probe_requires_a_valid_reading_from_the_sampler_command
         "/counter", 0.5, monotonic=clock, sleep=lambda _delay: None,
         popen_fn=lambda *_args, **_kwargs: process,
     ) is True
-    assert process.terminated is True
+    assert process.terminated is False
 
 
 def test_rapl_privileged_probe_rejects_a_sampler_that_cannot_start():

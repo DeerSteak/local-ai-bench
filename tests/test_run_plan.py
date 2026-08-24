@@ -5,7 +5,10 @@ from pathlib import Path
 import pytest
 
 from scripts.results.run_plan import IDENTITY_SCHEME, PLAN_SCHEMA_VERSION, RunPlan, load_run_plan
+from scripts.results.result_store import model_identity
 from scripts.runtime.sampling import baseline_sampling_profile
+from scripts.workloads.models import LLM_MODELS
+from scripts.workloads.model_variants import select_model_variants
 
 
 def make_plan(**overrides):
@@ -95,6 +98,33 @@ def test_measurement_affecting_changes_produce_a_new_plan_identity(change):
     assert changed.plan_id != base.plan_id
 
 
+def test_quantization_variants_have_distinct_model_and_plan_identity():
+    base = make_plan()
+    models = base.models
+    models["llm"] = [
+        {"tag": "model:q4", "short": "model-q4", "base_model": "model", "variant": "Q4_K_M"},
+        {"tag": "model:q8", "short": "model-q8", "base_model": "model", "variant": "Q8_0"},
+    ]
+
+    plan = make_plan(models=models)
+
+    q4, q8 = plan.models["llm"]
+    assert plan.model_id("llm", q4) != plan.model_id("llm", q8)
+    assert make_plan(models={**models, "llm": [q4]}).plan_id \
+        != make_plan(models={**models, "llm": [q8]}).plan_id
+
+
+def test_quantization_identity_requires_current_schema_and_both_fields():
+    models = make_plan().models
+    models["llm"][0].update(base_model="model", variant="Q4_K_M")
+    with pytest.raises(ValueError, match="schema 7"):
+        make_plan(models=models, schema_version=6)
+
+    models["llm"][0].pop("variant")
+    with pytest.raises(ValueError, match="requires base_model and variant"):
+        make_plan(models=models)
+
+
 def test_methodology_profile_is_identity_bearing_and_validated():
     config = complete_plan().effective_config
     config.update({
@@ -168,16 +198,58 @@ def test_mtp_configuration_is_structured_methodology_and_identity_bearing():
     assert make_plan(effective_config=changed).plan_id != plan.plan_id
 
 
+def test_vllm_mtp_configuration_accepts_engine_method_identity():
+    settings = complete_plan().effective_config
+    settings.update({
+        "mtp_enabled": True,
+        "mtp_configurations": {"model:4b": {
+            "num_speculative_tokens": 2,
+            "predictor": "embedded",
+            "method": "qwen3_5_mtp",
+        }},
+        "methodology_profile": "neutral-v2",
+        "effective_optimizations": ["vllm:native_mtp=on"],
+        "sampling_profile": baseline_sampling_profile("vllm"),
+    })
+    plan = make_plan(engine_name="vllm", effective_config=settings)
+
+    plan.validate_for_execution()
+    assert plan.execution_identity["methodology"]["native_mtp"] == {
+        "model:4b": {
+            "num_speculative_tokens": 2,
+            "predictor": "embedded",
+            "method": "qwen3_5_mtp",
+        },
+    }
+
+
 @pytest.mark.parametrize("configurations", [
     None,
     {"model:4b": {"num_speculative_tokens": True, "predictor": "embedded"}},
     {"model:4b": {"num_speculative_tokens": 0, "predictor": "embedded"}},
     {"model:4b": {"num_speculative_tokens": 1, "predictor": "external"}},
     {"model:4b": {"num_speculative_tokens": 1}},
+    {"model:4b": {
+        "num_speculative_tokens": 1, "predictor": "embedded", "method": "",
+    }},
 ])
 def test_current_plan_rejects_missing_or_malformed_mtp_configuration(configurations):
     settings = complete_plan().effective_config
     settings["mtp_configurations"] = configurations
+    with pytest.raises(ValueError, match="mtp_configurations"):
+        make_plan(effective_config=settings).validate_for_execution()
+
+
+def test_llamacpp_mtp_configuration_rejects_vllm_method_identity():
+    settings = complete_plan().effective_config
+    settings.update({
+        "mtp_enabled": True,
+        "mtp_configurations": {"model:4b": {
+            "num_speculative_tokens": 1,
+            "predictor": "embedded",
+            "method": "qwen3_5_mtp",
+        }},
+    })
     with pytest.raises(ValueError, match="mtp_configurations"):
         make_plan(effective_config=settings).validate_for_execution()
 
@@ -475,6 +547,14 @@ def test_complete_plan_validation_accepts_resolved_execution_inputs():
     complete_plan().validate_for_execution()
 
 
+def test_complete_plan_validation_accepts_real_catalog_default_selection():
+    plan = complete_plan()
+    models = plan.models
+    models["llm"] = model_identity(select_model_variants([LLM_MODELS[0]], {}))
+
+    make_plan(models=models, effective_config=plan.effective_config).validate_for_execution()
+
+
 def test_complete_plan_validation_accepts_no_runnable_models_after_preflight():
     plan = complete_plan()
     models = plan.models
@@ -505,6 +585,15 @@ def test_complete_plan_validation_rejects_missing_settings_and_model_identity():
     models["llm"] = [{"tag": "model:4b", "short": ""}]
     invalid = make_plan(models=models, effective_config=plan.effective_config)
     with pytest.raises(ValueError, match="invalid model identity"):
+        invalid.validate_for_execution()
+
+
+def test_complete_plan_validation_rejects_quantization_identity_outside_text_models():
+    plan = complete_plan()
+    models = plan.models
+    models["images"] = [{"short": "sdxl", "base_model": "image", "variant": "fp16"}]
+    invalid = make_plan(models=models, effective_config=plan.effective_config)
+    with pytest.raises(ValueError, match="invalid quantization identity"):
         invalid.validate_for_execution()
 
 

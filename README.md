@@ -33,6 +33,8 @@ run_bench.bat
 
 With no arguments, the benchmark launcher opens the graphical configuration screen on a usable local desktop and retains the terminal checklist over SSH or without a display. The GUI applies a selected preset immediately, switches the preset label to Custom whenever a setting is changed, and remembers the resulting configuration in `.benchmark_frontend_state.json`. Passing benchmark CLI arguments forwards them straight to the non-interactive benchmark CLI — see [Launch modes](docs/cli-reference.md#launch-modes) for the full behavior and defaults.
 
+When llama.cpp is the only selected engine, every catalog LLM can run its default Q4_K_M artifact or an opt-in same-repository sweep across Q4_K_M, the catalog's preferred Q6-family artifact, and Q8_0. Setup and the benchmark GUI group those choices beneath one base-model checkbox; selecting vLLM hides the GGUF children and retains only the documented default because this workflow does not claim that native vLLM formats are comparable to GGUF. See [Product catalogs](docs/catalogs.md#llamacpp-quantization-variants) for the exact artifacts and [CLI Reference](docs/cli-reference.md) for headless selection.
+
 A full run takes several hours, depending on your hardware and which options you select. When it's done, explore the results in the [dashboard](docs/dashboard.md):
 
 ```bash

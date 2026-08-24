@@ -524,8 +524,8 @@ Repository entries below are starting points for the audit, not compatibility cl
 - [x] No performance-ranking claim is made from the compatibility evidence.
 - [x] Retired entries remain in the legacy dashboard registry and old results render unchanged.
 - [x] The accepted catalog is documented in the permanent catalog and workload documentation.
-- [ ] Native MTP `both` passes complete on real hardware for the four selected llama.cpp artifacts and the selected vLLM artifacts.
-- [ ] Z-Image Turbo completes the managed ComfyUI image workload on real hardware with retained generated-image evidence.
+- [x] Native MTP `both` passes complete on real hardware for the four selected llama.cpp artifacts and the selected vLLM artifacts.
+- [x] Z-Image Turbo completes the managed ComfyUI image workload on real hardware with retained generated-image evidence.
 
 ---
 
@@ -533,9 +533,11 @@ Repository entries below are starting points for the audit, not compatibility cl
 
 ## Why this is tenth
 
-Quantization is fixed at one variant per catalog entry — every model in [models.py](scripts/workloads/models.py) carries a single `Q4_K_M` tag and `hf_repo`. Which quantization to run is one of the top questions a local-AI user faces, and this suite is unusually well-placed to answer it properly: it already has the accuracy banks to measure quality loss, the speed harness to measure the throughput gain, and — after items 1 and 4 — the memory and energy measurement to complete the tradeoff. Almost nothing else answers this with quality evidence attached.
+Before this milestone, quantization was fixed at one variant per catalog entry: every model in [models.py](scripts/workloads/models.py) carried a single `Q4_K_M` tag and repository. The completed workflow now gives all twelve catalog LLM families a same-repository Q4_K_M/default, preferred-Q6, and Q8_0 set while preserving the old default identity. Which quantization to run is one of the top questions a local-AI user faces, and this suite is unusually well-placed to answer it properly because it combines accuracy, throughput, memory, and opt-in energy evidence in one resumable execution.
 
 The initial scope is llama.cpp and GGUF. A single base model may select several GGUF files—including multiple quantizations stored in one Unsloth or other Hugging Face repository—and execute them sequentially in one unattended, resumable run. Native vLLM quantization formats remain outside this milestone until a separate methodology defines which formats are comparable to GGUF and how their engine-specific effects should be reported.
+
+The catalog chooses Q6_K_XL when available, otherwise Q6_K_M, otherwise Q6_K, and never substitutes Q6_K_L. Real-hardware acceptance on the M5 Pro exercised Gemma 3 1B Q4_K_M, Q6_K, and Q8_0 through LLM and the full MCQ bank with memory and processor-package power telemetry; an interrupted first attempt resumed without repeating its completed Q4_K_M LLM unit. That evidence validates the workflow and recovery boundary on that machine, not every catalog artifact or a universal quantization ranking.
 
 It ranks tenth because it multiplies run time and disk consumption substantially, and it serves the enthusiast more directly than the hardware-vendor team the PRD names.
 
@@ -543,7 +545,7 @@ It ranks tenth because it multiplies run time and disk consumption substantially
 
 1. **Generalize the catalog entry** so a llama.cpp model may declare multiple GGUF variants, each with its own tag, repository, filename, size, and quantization label. Several variants may reference different files in the same Hugging Face repository. Preserve the existing single-variant shape as the default so no existing entry changes meaning and no existing results file becomes unreadable.
 2. **Extend model identity** in [model_identity.py](scripts/runtime/model_identity.py) so a variant is a distinct identity for evidence purposes. Two quantizations of one base model must never pool into one evidence set — this is the central correctness requirement of the feature.
-3. **Add explicit variant selection to every run surface**, defaulting to the single documented variant so ordinary runs are unchanged in time and disk. The desktop GUI shows the available GGUF variants for each selected base model as checkboxes, with the catalog default checked and disk size shown beside each option; select-all and clear controls make larger sweeps manageable. The CLI accepts repeatable model-qualified variant selectors so headless runs express the same set without prompts. An explicitly selected set runs sequentially in one invocation across every selected workload and model/quantization pair without another prompt or restart.
+3. **Add explicit variant selection to every run surface**, defaulting to the single documented variant so ordinary runs are unchanged in time and disk. With llama.cpp selected alone, the desktop GUI and graphical Setup group available GGUF variants beneath a base-model checkbox that selects or clears the family, with the catalog default checked and disk size shown beside each child. If vLLM is selected at all, those children are hidden and the family collapses to its documented default; custom models and vLLM repositories are not inferred into quantization families. The CLI accepts repeatable model-qualified variant selectors so headless runs express the same set without prompts. An explicitly selected set runs sequentially in one invocation across every selected workload and model/quantization pair without another prompt or restart.
 4. **Extend setup and download** to enumerate and fetch selected GGUF filenames from a shared or per-variant repository, reusing the existing resumable download and inventory paths rather than adding a second acquisition route. The run journal checkpoints every completed variant so an interrupted multi-quant sweep resumes at the next incomplete unit.
 5. **Report the cost of a sweep before it starts** — added disk, added download, added run time — using the existing estimation path from [result_history.py](scripts/results/result_history.py). A user must not discover a 4x run time after committing to it.
 6. **Extract the tradeoff analysis as pure functions**: for a base model across its variants, compute quality delta from the accuracy banks, throughput delta, memory delta from item 1, and energy delta from item 4, each relative to a chosen reference variant. Include item 3's qualified trial verdicts so an inconclusive or unchanged quality difference is not over-interpreted.
@@ -554,18 +556,18 @@ It ranks tenth because it multiplies run time and disk consumption substantially
 
 ## Acceptance criteria
 
-- [ ] A catalog entry may declare multiple quantization variants; existing single-variant entries are unchanged in meaning.
-- [ ] Each variant is a distinct evidence identity; a test asserts two variants of one base model never pool into one evidence set.
-- [ ] One invocation runs every selected GGUF variant sequentially without further input and resumes without repeating completed variants.
-- [ ] The GUI provides per-model quantization checkboxes with the default preselected, visible artifact sizes, and select-all/clear controls; only checked variants enter the run plan.
-- [ ] The CLI can express the same model-qualified variant selection noninteractively, and invalid, duplicate, or empty selections fail before download or execution.
-- [ ] Multiple selected GGUF filenames may resolve from one Hugging Face repository without duplicating repository metadata or downloads.
-- [ ] A sweep is opt-in, and its added disk, download, and run time are reported before it starts.
-- [ ] Variant comparison reports quality, throughput, memory, and energy deltas against a stated reference variant.
-- [ ] Quality differences classified unchanged or inconclusive by item 3 are not presented as rankings.
-- [ ] Variants are ranked by the item 6 engine rather than a parallel implementation.
-- [ ] Older results files whose model identity has no explicit base-model/variant fields load and render unchanged through a documented legacy mapping.
-- [ ] The initial implementation is explicitly llama.cpp/GGUF-only; vLLM-native quantization comparison is not implied by these results.
+- [x] A catalog entry may declare multiple quantization variants; existing single-variant entries are unchanged in meaning.
+- [x] Each variant is a distinct evidence identity; a test asserts two variants of one base model never pool into one evidence set.
+- [x] One invocation runs every selected GGUF variant sequentially without further input and resumes without repeating completed variants.
+- [x] With llama.cpp selected alone, Setup and the benchmark GUI provide a parent model checkbox plus per-quantization children with the default preselected and artifact sizes visible; selecting vLLM hides the children and restricts the family to its documented default.
+- [x] The CLI can express the same model-qualified variant selection noninteractively, and invalid, duplicate, or empty selections fail before download or execution.
+- [x] Multiple selected GGUF filenames may resolve from one Hugging Face repository without duplicating repository metadata or downloads.
+- [x] A sweep is opt-in, and its added disk, download, and run time are reported before it starts.
+- [x] Variant comparison reports quality, throughput, memory, and energy deltas against a stated reference variant.
+- [x] Quality differences classified unchanged or inconclusive by item 3 are not presented as rankings.
+- [x] Variants are ranked by the item 6 engine rather than a parallel implementation.
+- [x] Older results files whose model identity has no explicit base-model/variant fields load and render unchanged through a documented legacy mapping.
+- [x] The initial implementation is explicitly llama.cpp/GGUF-only; vLLM-native quantization comparison is not implied by these results.
 
 ---
 

@@ -25,6 +25,7 @@ from scripts.runtime.engines.base import ChatMeasurement, EmbeddingMeasurement, 
 from scripts.runtime.engines import openai_api
 from scripts.runtime.engines.chat_flow import chat_measurement, run_bounded_chat, validate_chat_budget
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
+from scripts.workloads.model_variants import expanded_variant_catalog
 from scripts.setup.custom_models import custom_model
 from scripts.setup.intel_xpu_install import oneapi_environment
 from scripts.runtime.model_identity import model_tag_slug
@@ -120,7 +121,9 @@ class LlamaCppEngine(InferenceEngine):
     def _native_mtp_config(self, tag: str, *, embedding: bool = False) -> dict | None:
         if not self._mtp_enabled or embedding:
             return None
-        model = next((model for model in LLM_MODELS if model["tag"] == tag), None)
+        model = next((
+            model for model in expanded_variant_catalog(LLM_MODELS) if model["tag"] == tag
+        ), None)
         if model is None:
             raise RuntimeError(f"{tag} has no cataloged native MTP configuration for llama.cpp")
         config = native_mtp_config(model, self.name)
@@ -162,7 +165,7 @@ class LlamaCppEngine(InferenceEngine):
     @staticmethod
     def _catalog_entry(tag: str) -> dict | None:
         """Look up `tag`'s hf_repo/hf_file in models.py's catalog."""
-        for model in LLM_MODELS + EMBED_MODELS:
+        for model in expanded_variant_catalog(LLM_MODELS) + EMBED_MODELS:
             if model["tag"] == tag:
                 return model
         return None
@@ -331,14 +334,15 @@ class LlamaCppEngine(InferenceEngine):
         """Every fully-present catalog tag, plus any non-catalog directory —
         see docs/engines.md's custom-tag resolution."""
         installed = []
-        for model in LLM_MODELS + EMBED_MODELS:
+        catalog = expanded_variant_catalog(LLM_MODELS) + EMBED_MODELS
+        for model in catalog:
             paths = self._resolve_model_files(model["tag"])
             if paths is not None:
                 installed.append({"tag": model["tag"], "size": sum(p.stat().st_size for p in paths)})
 
         models_dir = self._models_dir()
         if models_dir.exists():
-            catalog_slugs = {self._slug(model["tag"]) for model in LLM_MODELS + EMBED_MODELS}
+            catalog_slugs = {self._slug(model["tag"]) for model in catalog}
             for entry in sorted(p for p in models_dir.iterdir() if p.is_dir()):
                 if entry.name in catalog_slugs:
                     continue

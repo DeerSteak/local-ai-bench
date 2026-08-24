@@ -11,8 +11,8 @@ from scripts.runtime.sampling import baseline_sampling_profile
 from scripts.workloads.methodology_profile import TEXT_GENERATION_STAGES
 
 
-PLAN_SCHEMA_VERSION = 6
-SUPPORTED_PLAN_SCHEMAS = {1, 2, 3, 4, 5, PLAN_SCHEMA_VERSION}
+PLAN_SCHEMA_VERSION = 7
+SUPPORTED_PLAN_SCHEMAS = {1, 2, 3, 4, 5, 6, PLAN_SCHEMA_VERSION}
 IDENTITY_SCHEME = "sha256-v1"
 SAFE_CONFIG_KEYS = {
     "runs", "warmup_runs", "run_timeout_seconds", "accuracy_timeout_seconds",
@@ -34,7 +34,7 @@ SAFE_CONFIG_KEYS = {
 }
 REQUIRED_CONFIG_KEYS = {"warmup_runs", "cpu_only", "force_all"}
 MODEL_FAMILIES = {"llm", "concurrency", "embeddings", "images"}
-SAFE_MODEL_KEYS = {"tag", "short", "size_gb", "params_b"}
+SAFE_MODEL_KEYS = {"tag", "short", "size_gb", "params_b", "base_model", "variant"}
 EXECUTION_CONFIG_KEYS = set(SAFE_CONFIG_KEYS) - {
     "methodology_profile", "effective_optimizations", "sampling_profile", "offline", "gpu_split_mode",
     "mtp_enabled", "mtp_configurations", "progress_engine_name",
@@ -98,6 +98,11 @@ class RunPlan:
                     raise ValueError(
                         f"unsafe or unknown model identity fields: {sorted(unknown_model_keys)}"
                     )
+                variant_keys = {"base_model", "variant"} & set(entry)
+                if variant_keys and schema_version < 7:
+                    raise ValueError("quantization identity requires run-plan schema 7")
+                if variant_keys and variant_keys != {"base_model", "variant"}:
+                    raise ValueError("quantization identity requires base_model and variant")
         return cls(
             schema_version=schema_version,
             _job_id=job_id or "",
@@ -322,11 +327,17 @@ class RunPlan:
             invalid_mtp = not isinstance(mtp_configurations, dict) or any(
                 not isinstance(tag, str) or not tag
                 or not isinstance(value, dict)
-                or set(value) != {"num_speculative_tokens", "predictor"}
+                or not {"num_speculative_tokens", "predictor"}.issubset(value)
+                or set(value) - {"num_speculative_tokens", "predictor", "method"}
                 or isinstance(value.get("num_speculative_tokens"), bool)
                 or not isinstance(value.get("num_speculative_tokens"), int)
                 or value["num_speculative_tokens"] < 1
                 or value.get("predictor") not in {"embedded", "separate"}
+                or ("method" in value and (
+                    self.engine_name != "vllm"
+                    or not isinstance(value["method"], str)
+                    or not value["method"].strip()
+                ))
                 for tag, value in mtp_configurations.items()
             )
             if invalid_mtp:
@@ -379,6 +390,11 @@ class RunPlan:
                 if not all(isinstance(model.get(key), str) and model[key]
                            for key in required_keys):
                     raise ValueError(f"invalid model identity in family: {family}")
+                if "base_model" in model and (
+                        family not in {"llm", "concurrency"}
+                        or not all(isinstance(model.get(key), str) and model[key]
+                                   for key in ("base_model", "variant"))):
+                    raise ValueError(f"invalid quantization identity in family: {family}")
 
     @property
     def plan_id(self) -> str:

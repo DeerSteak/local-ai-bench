@@ -28,6 +28,7 @@ from scripts.workloads.llamabench_concurrency_benchmark import LlamaBenchConcurr
 from scripts.workloads.sustained_benchmark import SustainedBenchmark
 from scripts.workloads.vllm_benchmark import VllmBenchBenchmark
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+from scripts.workloads.model_variants import expanded_variant_catalog
 from scripts.results.native_bench_event_stage import NativeBenchEventStage
 from scripts.results.native_concurrency_event_stage import NativeConcurrencyEventStage
 from scripts.runtime.progress_events import emit_progress, set_progress_engine
@@ -161,7 +162,7 @@ def execute_llm_job(path, job_id, *, engine_factory=get_engine,
     apply_runner_settings(settings)
     config.N_RUNS = settings["runs"]
     config.RUN_TIMEOUT = settings["run_timeout_seconds"]
-    catalog = {model["tag"]: model for model in LLM_MODELS}
+    catalog = {model["tag"]: model for model in expanded_variant_catalog(LLM_MODELS)}
     models = [
         {**identity, "label": (catalog.get(identity["tag"]) or identity).get("label", identity["tag"])}
         for identity in plan.models["llm"]
@@ -208,7 +209,7 @@ def execute_conversation_job(path, job_id, *, engine_factory=get_engine,
     settings = plan.effective_config
     apply_runner_settings(settings)
     config.RUN_TIMEOUT = settings["run_timeout_seconds"]
-    catalog = {model["tag"]: model for model in LLM_MODELS}
+    catalog = {model["tag"]: model for model in expanded_variant_catalog(LLM_MODELS)}
     models = [
         {**identity, "label": (catalog.get(identity["tag"]) or identity).get("label", identity["tag"])}
         for identity in plan.models["llm"]
@@ -273,7 +274,7 @@ def execute_llamabench_job(path, job_id, *, engine_factory=get_engine,
     apply_runner_settings(settings)
     config.LLAMABENCH_PP = settings["llamabench_pp"]
     config.LLAMABENCH_TG = settings["llamabench_tg"]
-    catalog = {model["tag"]: model for model in LLM_MODELS}
+    catalog = {model["tag"]: model for model in expanded_variant_catalog(LLM_MODELS)}
     models = [
         {**identity, "label": (catalog.get(identity["tag"]) or identity).get("label", identity["tag"])}
         for identity in plan.models["llm"]
@@ -314,7 +315,7 @@ def execute_vllmbench_job(path, job_id, *, engine_factory=get_engine,
     settings = plan.effective_config
     apply_runner_settings(settings)
     config.LLAMABENCH_PP = settings["llamabench_pp"]
-    catalog = {model["tag"]: model for model in LLM_MODELS}
+    catalog = {model["tag"]: model for model in expanded_variant_catalog(LLM_MODELS)}
     models = [
         {**identity, "label": (catalog.get(identity["tag"]) or identity).get(
             "label", identity["tag"])}
@@ -353,7 +354,7 @@ def execute_llamabench_concurrency_job(
         raise ValueError("runner job does not include native llama-bench concurrency")
     settings = plan.effective_config
     apply_runner_settings(settings)
-    catalog = {model["tag"]: model for model in LLM_MODELS}
+    catalog = {model["tag"]: model for model in expanded_variant_catalog(LLM_MODELS)}
     models = [
         {**identity, "label": (catalog.get(identity["tag"]) or identity).get(
             "label", identity["tag"])}
@@ -395,7 +396,7 @@ def execute_sustained_job(path, job_id, *, engine_factory=get_engine,
     settings = plan.effective_config
     apply_runner_settings(settings)
     config.RUN_TIMEOUT = settings["run_timeout_seconds"]
-    catalog = {model["tag"]: model for model in LLM_MODELS}
+    catalog = {model["tag"]: model for model in expanded_variant_catalog(LLM_MODELS)}
     models = [
         {**identity, "label": (catalog.get(identity["tag"]) or identity).get(
             "label", identity["tag"])}
@@ -456,7 +457,7 @@ def execute_concurrency_job(path, job_id, stage_name, *, engine_factory=get_engi
     cache = (ConcurrencyBenchmark.TOOL_CRASH_CACHE if is_tool
              else ConcurrencyBenchmark.CHAT_CRASH_CACHE)
     label = "Concurrency (Tool)" if is_tool else "Concurrency (Chat)"
-    catalog = {model["tag"]: model for model in LLM_MODELS}
+    catalog = {model["tag"]: model for model in expanded_variant_catalog(LLM_MODELS)}
     models = [
         {**identity, "label": (catalog.get(identity["tag"]) or identity).get("label", identity["tag"])}
         for identity in plan.models["concurrency"]
@@ -511,7 +512,7 @@ def execute_accuracy_job(path, job_id, stage_name, *, engine_factory=get_engine)
     spec = accuracy_spec(stage_name)
     questions = selected_questions(stage_name, settings.get("sample_size"))
     bank_hash = Shared.file_hash(spec.data_path)
-    catalog = {model["tag"]: model for model in LLM_MODELS}
+    catalog = {model["tag"]: model for model in expanded_variant_catalog(LLM_MODELS)}
     models = [
         {**identity, "label": (catalog.get(identity["tag"]) or identity).get(
             "label", identity["tag"],

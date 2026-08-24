@@ -136,6 +136,44 @@ def test_provision_catalog_models_downloads_missing_llamacpp_model(monkeypatch, 
     assert downloads[0][0][0:2] == ("owner/model", "model.gguf")
 
 
+def test_provision_downloads_shared_repo_variants_without_duplicate_vllm_snapshot(
+        monkeypatch, tmp_path):
+    variants = [
+        {
+            "tag": "demo:q4", "label": "Demo Q4", "variant": "Q4", "default": True,
+            "hf_repo": "owner/demo", "hf_file": "demo-q4.gguf", "download_size": "~4 GB",
+            "vllm_repo": "owner/demo-awq", "vllm_download_size": "~4 GB",
+        },
+        {
+            "tag": "demo:q8", "label": "Demo Q8", "variant": "Q8",
+            "hf_repo": "owner/demo", "hf_file": "demo-q8.gguf", "download_size": "~8 GB",
+        },
+    ]
+    gguf_downloads, snapshots = [], []
+    monkeypatch.setattr(model_download, "models_missing_engine_support", lambda *_args: [])
+    monkeypatch.setattr(model_download, "catalog_model_downloaded", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        model_download, "download_hf_files",
+        lambda repo, filename, *_args, **_kwargs: gguf_downloads.append((repo, filename)) or True,
+    )
+    monkeypatch.setattr(
+        model_download, "download_hf_snapshot",
+        lambda repo, *_args, **_kwargs: snapshots.append(repo) or True,
+    )
+
+    provision_catalog_models(
+        variants, ["llamacpp", "vllm"], models_dir=tmp_path / "models",
+        vllm_cache=tmp_path / "cache", load_token=lambda: None, issues=[],
+        info=lambda _msg: None, warn=lambda _msg: None,
+        fail=lambda _msg: None, ok=lambda _msg: None,
+    )
+
+    assert gguf_downloads == [
+        ("owner/demo", "demo-q4.gguf"), ("owner/demo", "demo-q8.gguf"),
+    ]
+    assert snapshots == ["owner/demo-awq"]
+
+
 def test_provision_catalog_models_downloads_only_missing_llamacpp_mtp_draft(
         monkeypatch, tmp_path):
     model = {

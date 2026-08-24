@@ -23,6 +23,7 @@ from scripts.stage_registry import (
 from scripts.runtime.engines import engine_names, get_engine
 from scripts.setup.model_inventory import build_model_inventory
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+from scripts.workloads.model_variants import collapse_variant_selection
 from scripts.runtime.shared import Shared
 from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config
 
@@ -62,6 +63,7 @@ FRONTEND_CONTROL_BINDINGS = {
     **{flag: f"execution_setting:{key}" for key, flag in GUI_OPTION_FLAGS.items()},
     "--tests": "test_selector", "--engine": "engine_selector",
     "--llm-models": "llm_model_selector",
+    "--model-variant": "llm_variant_selector",
     "--embedding-models": "embedding_model_selector",
     "--image-models": "image_model_selector",
     "--max-prompt-tokens": "prompt_cap_selector",
@@ -123,6 +125,10 @@ class MenuEntry:
     checked: bool
     available: bool = True
     tier: str | None = None
+    base_model: str | None = None
+    base_label: str | None = None
+    variant: str | None = None
+    default_variant: bool = False
 
 
 def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
@@ -210,6 +216,23 @@ def build_frontend_state(engine_name: str, tests: list[str],
                          gui_options: dict | None = None,
                          selected_preset: str | None = None) -> dict:
     selected = [entry for entry in entries if entry.checked]
+    selected_variant_bases = {
+        entry.base_model for entry in selected if entry.base_model and entry.variant
+    }
+    includes_vllm = "vllm" in parse_engine_selection(engine_name)
+    if includes_vllm:
+        collapsed = collapse_variant_selection(
+            [{
+                "tag": entry.value, "base_model": entry.base_model,
+                "variant": entry.variant, "default": entry.default_variant,
+            } for entry in entries if entry.base_model],
+            {entry.value for entry in selected},
+        )
+        selected = [
+            entry for entry in selected
+            if not (entry.base_model and entry.variant)
+            or (entry.value in collapsed and entry.default_variant)
+        ]
     state = {
         "version": FRONTEND_STATE_VERSION,
         "engine": engine_name,
@@ -223,6 +246,14 @@ def build_frontend_state(engine_name: str, tests: list[str],
         "max_prompt_tokens": max_prompt_tokens,
         "tg_tokens": list(tg_tokens) if tg_tokens is not None else None,
     }
+    if "vllm" in parse_engine_selection(engine_name):
+        defaults = {
+            model["base_model"]: model["tag"] for model in LLM_MODELS
+            if model.get("base_model") in selected_variant_bases
+        }
+        for tag in defaults.values():
+            if tag not in state["models"]["llm"]:
+                state["models"]["llm"].append(tag)
     if gui_options is not None:
         state["gui_options"] = dict(gui_options)
     if selected_preset is not None:
@@ -601,9 +632,14 @@ def build_model_entries(inventory: dict[str, list[dict]], tests: list[str]) -> l
     if any(test in LLM_BACKED_TESTS for test in tests):
         for model in inventory["llm"]:
             tier = model["tier"]
+            is_variant = isinstance(model.get("variant"), str)
             entries.append(MenuEntry(
                 model["tag"], model["label"], "llm", f"LLM — {tier}",
-                checked=tier != "large", tier=tier,
+                checked=((model.get("default", False) and tier != "large")
+                         if is_variant else tier != "large"),
+                tier=tier, base_model=model.get("base_model"),
+                base_label=model.get("base_label"), variant=model.get("variant"),
+                default_variant=bool(model.get("default", False)),
             ))
         for model in inventory["custom"]:
             engines = ", ".join(model.get("engines", ()))
@@ -629,8 +665,11 @@ def build_model_entries(inventory: dict[str, list[dict]], tests: list[str]) -> l
 
 
 def missing_catalog_hint(inventory: dict[str, list[dict]], system: str) -> str | None:
+    installed_llm_families = {
+        model.get("base_model", model.get("tag")) for model in inventory["llm"]
+    }
     missing = {
-        "LLM": len(LLM_MODELS) - len(inventory["llm"]),
+        "LLM": max(0, len(LLM_MODELS) - len(installed_llm_families)),
         "embedding": len(EMBED_MODELS) - len(inventory["embedding"]),
         "image": len(IMAGE_MODELS) - len(inventory["image"]),
     }
@@ -770,11 +809,54 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
         if gui_options["comfyui"] and "--comfyui" in command:
             command[command.index("--comfyui") + 1] = gui_options["comfyui"]
     selected = [entry for entry in entries if entry.checked]
+    selected_variant_bases = {
+        entry.base_model for entry in selected if entry.base_model and entry.variant
+    }
+    includes_vllm = "vllm" in parse_engine_selection(engine_name)
+    if includes_vllm:
+        collapsed = collapse_variant_selection(
+            [{
+                "tag": entry.value, "base_model": entry.base_model,
+                "variant": entry.variant, "default": entry.default_variant,
+            } for entry in entries if entry.base_model],
+            {entry.value for entry in selected},
+        )
+        selected = [
+            entry for entry in selected
+            if not (entry.base_model and entry.variant) or entry.value in collapsed
+        ]
     if any(test in LLM_BACKED_TESTS for test in tests):
+        selected_llm = [entry for entry in selected if entry.kind in ("llm", "custom")]
+        variant_bases = selected_variant_bases if includes_vllm else {
+            entry.base_model for entry in selected_llm if entry.base_model and entry.variant
+        }
+        llm_values = [
+            entry.value for entry in selected_llm if not (entry.base_model and entry.variant)
+        ]
+        for base_model in sorted(variant_bases):
+            catalog_model = next(
+                (model for model in LLM_MODELS if model.get("base_model") == base_model), None,
+            )
+            if catalog_model is not None:
+                llm_values.append(catalog_model["tag"])
+            else:
+                stale_entry = next(
+                    (entry.value for entry in selected_llm if entry.base_model == base_model), None,
+                )
+                if stale_entry is not None:
+                    llm_values.append(stale_entry)
         command.extend([
             "--llm-models",
-            *[entry.value for entry in selected if entry.kind in ("llm", "custom")],
+            *llm_values,
         ])
+        for base_model in sorted(variant_bases if not includes_vllm else ()):
+            base_entries = [
+                entry for entry in selected_llm if entry.base_model == base_model
+            ]
+            if len(base_entries) == 1 and base_entries[0].default_variant:
+                continue
+            for entry in base_entries:
+                command.extend(["--model-variant", f"{base_model}={entry.variant}"])
     if "emb" in tests:
         command.extend([
             "--embedding-models",

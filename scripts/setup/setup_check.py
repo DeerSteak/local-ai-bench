@@ -66,6 +66,7 @@ from scripts.workloads.models import (
     EMBED_MODELS, IMAGE_MODELS, LLM_MODELS_LARGE, LLM_MODELS_MEDIUM,
     LLM_MODELS_SMALL, LLM_MODELS_XSMALL, image_checkpoint_groups,
 )
+from scripts.workloads.model_variants import expanded_variant_catalog
 from scripts.setup.setup_selection import (
     additional_disk_space_needed, qualification_model_selection, select_models,
 )
@@ -74,7 +75,8 @@ from scripts.setup.setup_config import (
 )
 from scripts.setup.setup_progress import finish_setup_progress, start_setup_progress
 from scripts.setup.setup_discovery import (
-    discover_linux_amd_gpu, discover_linux_intel_gpu, discover_linux_nvidia_gpu,
+    discover_intel_vram_gb, discover_linux_amd_gpu, discover_linux_intel_gpu,
+    discover_linux_nvidia_gpu,
     discover_metal, discover_nvidia, discover_rocm, discover_system,
     discover_windows_gpu, rocm_version,
 )
@@ -427,10 +429,10 @@ def main() -> None:  # pragma: no cover - real interactive installer
         gpu_vram_gb = None  # no driver-agnostic VRAM query implemented on Windows
     elif intel_windows:
         gpu_vendor = "intel" if windows_gpu_kind == "discrete" else "integrated"
-        gpu_vram_gb = None
+        gpu_vram_gb = discover_intel_vram_gb() if gpu_vendor == "intel" else None
     elif intel_linux:
         gpu_vendor = "intel" if linux_intel_gpu_kind == "discrete" else "integrated"
-        gpu_vram_gb = None
+        gpu_vram_gb = discover_intel_vram_gb() if gpu_vendor == "intel" else None
     else:
         # Apple Silicon (metal_ok) and "no GPU detected" both land here — unified
         # memory and CPU-only both mean total system RAM is the only pool.
@@ -787,7 +789,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
         _embed_tags = set(_gui_plan["embedding_tags"])
         selected_llm = [
             model for tier in (LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE)
-            for model in tier if model["tag"] in _llm_tags
+            for model in expanded_variant_catalog(tier) if model["tag"] in _llm_tags
         ]
         selected_images = [model for model in IMAGE_MODELS if model["short"] in _image_shorts]
         selected_embed = [model for model in EMBED_MODELS if model["tag"] in _embed_tags]

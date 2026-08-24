@@ -15,6 +15,7 @@ from scripts.setup.model_inventory import (
 )
 from scripts.runtime.mtp import native_mtp_config
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
+from scripts.workloads.model_variants import expanded_variant_catalog
 
 
 def download_hf_files(repo: str, filenames: str | list[str], destination: Path, *,
@@ -181,7 +182,8 @@ def import_model(*, inspection: RepositoryInspection, engine: str, variant: Impo
         raise ValueError("model tag may contain only letters, numbers, dots, underscores, and hyphens")
     if not label.strip():
         raise ValueError("display name is required")
-    if tag in {model["tag"] for model in LLM_MODELS + EMBED_MODELS}:
+    catalog = expanded_variant_catalog(LLM_MODELS) + EMBED_MODELS
+    if tag in {model["tag"] for model in catalog}:
         raise ValueError("model tag conflicts with a catalog model")
     registered = custom_model(engine, tag, registry_path)
     if registered is not None:
@@ -303,11 +305,15 @@ def provision_catalog_models(models: list[dict], engines: list[str], *,
     for engine in engines:
         if len(engines) > 1:
             info(f"Models for {engine} ...")
-        unsupported = models_missing_engine_support(models, engine)
+        engine_models = [
+            model for model in models
+            if engine != "vllm" or not model.get("variant") or model.get("default", False)
+        ]
+        unsupported = models_missing_engine_support(engine_models, engine)
         for tag in unsupported:
             warn(f"{tag} — no {engine} weights defined; skipping for this engine")
             issues.append(f"No {engine} weights for {tag}")
-        for model in models:
+        for model in engine_models:
             tag, label = model["tag"], model["label"]
             if tag in unsupported:
                 continue

@@ -56,16 +56,11 @@ def test_medium_roster_preserves_dense_and_sparse_architecture_mix():
 
 def test_medium_models_use_qualified_q4_and_vllm_artifacts():
     models = {model["short"]: model for model in LLM_MODELS_MEDIUM}
-    assert models["gemma4-26b-a4b-q4"] == {
-        "tag": "gemma4:26b-a4b-it-ud-q4_K_M",
-        "label": "Gemma 4 26B-A4B 4-Bit Quantization",
-        "short": "gemma4-26b-a4b-q4", "tier": "medium",
-        "download_size": "~16.9 GB", "params_b": 26,
-        "hf_repo": "unsloth/gemma-4-26B-A4B-it-GGUF",
-        "hf_file": "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf",
-        "vllm_repo": "cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit",
-        "vllm_download_size": "~17.2 GB", "vllm_tool_parser": "gemma4",
-    }
+    gemma = models["gemma4-26b-a4b-q4"]
+    assert gemma["hf_file"] == "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf"
+    assert gemma["vllm_repo"] == "cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit"
+    assert gemma["vllm_download_size"] == "~17.2 GB"
+    assert gemma["vllm_tool_parser"] == "gemma4"
     assert models["qwen3.8-27b-q4"]["hf_file"] == "Qwen3.8-27B-UD-Q4_K_M.gguf"
     assert models["qwen3.8-27b-q4"]["vllm_repo"] == \
         "pearsonkyle/Qwen3.8-27B-GPTQ-W4A16"
@@ -75,6 +70,27 @@ def test_medium_models_use_qualified_q4_and_vllm_artifacts():
         "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-UD-Q4_K_M.gguf"
     assert models["nemotron3.5-lightning-30b-a3b"]["vllm_repo"] == \
         "Local-Axiom-AI/Nemotron-3.5-Lightning-awq"
+
+
+def test_exact_standard_quantizations_cover_every_repo_that_has_all_three():
+    expected_families = {
+        "Gemma 3 1B", "Granite 4.1 3B", "Qwen3.5 4B", "Granite 4.1 8B",
+        "Qwen3.5 9B", "Gemma 4 12B", "Gemma 4 26B-A4B", "Qwen 3.8 27B",
+        "Nemotron 3.5 Lightning 30B-A3B", "Llama 3.3 70B",
+        "Qwen3-Coder-Next 80B-A3B", "Nemotron 3 Super 120B",
+    }
+    families = {model["label"]: model for model in LLM_MODELS if model.get("variants")}
+
+    assert set(families) == expected_families
+    preferred_xl = {
+        "Gemma 4 26B-A4B", "Qwen 3.8 27B",
+        "Nemotron 3.5 Lightning 30B-A3B", "Nemotron 3 Super 120B",
+    }
+    for label, model in families.items():
+        expected_q6 = "Q6_K_XL" if label in preferred_xl else "Q6_K"
+        assert [variant["quantization"] for variant in model["variants"]] == [
+            "Q4_K_M", expected_q6, "Q8_0",
+        ]
 
 
 def test_large_roster_preserves_distinct_baseline_agent_and_planner_roles():

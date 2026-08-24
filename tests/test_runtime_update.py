@@ -380,7 +380,7 @@ def test_llamacpp_cmake_flags_match_backend():
 
 
 @pytest.mark.parametrize(("memory_gib", "expected"), [
-    (16, 2), (20, 2), (21, 4), (30, 4), (31, 8), (60, 8), (128, 8),
+    (16, 1), (30, 1), (31, 4), (60, 4), (61, 8), (128, 8),
 ])
 def test_llamacpp_sycl_build_scales_jobs_with_installed_memory(memory_gib, expected):
     memory = memory_gib * 1024 ** 3

@@ -155,6 +155,17 @@ def test_resolved_plan_lists_models_cases_and_historical_eta(monkeypatch):
     assert "no exact completed local plan match" in format_duration_estimate(None)
 
 
+def test_resolved_plan_reports_variant_sweep_cost_before_execution(monkeypatch):
+    from scripts.runtime import config
+    monkeypatch.setattr(config, "CONTEXT_LENGTHS", [512])
+    preview = format_resolved_plan(
+        "llamacpp", ["llm"], {"llm": [{"short": "demo-q4"}, {"short": "demo-q8"}]},
+        None, runs=1, warmups=0, max_prompt_tokens=None, sample_size=None,
+        sweep_cost={"added_disk_gb": 1.1, "download_gb": 0.8, "runtime_multiplier": 2.0},
+    )
+    assert "Sweep cost: +1.1 GB disk; 0.8 GB download; ~2.00x model-work time" in preview
+
+
 def test_resolved_plan_tolerates_missing_families_and_unlabeled_models(monkeypatch):
     from scripts.runtime import config
     monkeypatch.setattr(config, "CONTEXT_LENGTHS", [512])

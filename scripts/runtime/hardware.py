@@ -121,6 +121,18 @@ def parse_nvidia_vram_gb(value: str | None) -> float | None:
     return float(match.group(1)) * _VRAM_UNITS_GB[match.group(2).upper()]
 
 
+def parse_xpu_smi_memory_gb(output: str) -> tuple[float, float] | None:
+    """Aggregate used and total Intel device memory from XPU-SMI's summary table."""
+    pairs = re.findall(
+        r"([0-9.]+)\s*MiB\s*/\s*([0-9.]+)\s*MiB", output, re.IGNORECASE,
+    )
+    if not pairs:
+        return None
+    used = sum(float(pair[0]) for pair in pairs) / 1024
+    total = sum(float(pair[1]) for pair in pairs) / 1024
+    return (used, total) if total > 0 else None
+
+
 def parse_nvidia_gpus(nvidia_smi_output: str) -> list[dict]:
     """Parse name, VRAM, and driver from nvidia-smi CSV output. A device whose memory
     field is unreadable is still a detected GPU, with vram_gb None."""

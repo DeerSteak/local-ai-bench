@@ -38,6 +38,12 @@ A cross-engine chart therefore answers "how fast does each runtime serve this mo
 
 The 4-bit weights are also not equally portable. AWQ and GPTQ Marlin kernels remain more mature on CUDA; a current ROCm wheel may include `gfx1151` while a particular quantized model or kernel path still fails. A model that benchmarks on one backend may therefore be unavailable on another, which is a coverage difference rather than a performance result.
 
+## Cross-quantization comparison
+
+The llama.cpp quantization workflow holds the base model, source GGUF repository, engine, and run methodology constant while changing the selected artifact. It does not isolate nominal bit width as the only causal variable: Q4_K_M is mixed precision, Q6_K and Q6_K_XL use different quantization policies, Q8_0 has its own block format, and repository conversion choices can affect every artifact. Results therefore describe the measured files on the recorded machine and runtime, not a universal law that one quantization label always has the same quality, speed, memory, or energy effect.
+
+A completed sweep supplies point estimates and a derived tradeoff artifact; it does not make one invocation a statistically qualified ranking. Quality marked unchanged or inconclusive must remain non-ranking, and stronger comparative claims require compatible independent trials through the repeated-trial workflow. Missing memory or energy is unavailable evidence, never a zero delta. vLLM-native formats and separately maintained cross-repository GGUF conversions are outside this workflow because their provenance and format differences would weaken the controlled comparison.
+
 Cross-engine qualification is exact to the recorded platform, normalized architecture, accelerator identity, runtime version, backend, suite version, and smallest-model workload coverage. Accelerator comparison normalizes case and whitespace only; a desktop, laptop, or otherwise decorated product identity does not inherit evidence from a substring match. Runtime and ComfyUI image support are graded separately even when one qualification invocation exercises both. Consult the generated [engine qualification matrix](engines.md#qualification-matrix) for current status; an absent or incomplete component is unverified. Qualification status is informational and does not require an experimental-engine acknowledgment.
 
 ## Recommendations

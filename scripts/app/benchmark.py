@@ -61,6 +61,10 @@ from scripts.workloads.code_benchmark import CodeBenchmark
 from scripts.workloads.tool_benchmark import ToolBenchmark
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
 from scripts.workloads.models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS
+from scripts.workloads.model_variants import (
+    expanded_model_variants, expanded_variant_catalog, normalize_variant_selectors,
+    select_model_variants, variant_sweep_cost,
+)
 from scripts.setup.model_inventory import build_model_inventory, format_model_inventory, sanitize_tag_to_short
 from scripts.app.orchestration import (
     LifecycleCoordinator, RunContext, RunPaths, StageDefinition,
@@ -185,7 +189,8 @@ def eta_match_config(args, *, mtp_enabled: bool = False) -> dict:
 def format_resolved_plan(engine: str, tests: list[str], models: dict[str, list[dict]],
                          estimate_seconds: float | None, *, runs: int, warmups: int,
                          max_prompt_tokens: int | None, sample_size: int | None,
-                         sustained_duration: int = config.SUSTAINED_DURATION_SEC) -> str:
+                         sustained_duration: int = config.SUSTAINED_DURATION_SEC,
+                         sweep_cost: dict | None = None) -> str:
     family_for = {
         "emb": "embeddings", "img": "images", "conc_tool": "concurrency",
         "conc_chat": "concurrency",
@@ -226,6 +231,12 @@ def format_resolved_plan(engine: str, tests: list[str], models: dict[str, list[d
             cases = "one document"
         lines.append(f"  {test}: {', '.join(labels) or '(no models)'} — {cases}")
     lines.append(f"Runs: {runs} measured + {warmups} warmup")
+    if sweep_cost:
+        lines.append(
+            f"Sweep cost: +{sweep_cost['added_disk_gb']:.1f} GB disk; "
+            f"{sweep_cost['download_gb']:.1f} GB download; "
+            f"~{sweep_cost['runtime_multiplier']:.2f}x model-work time"
+        )
     lines.append(f"Estimated duration: {format_duration_estimate(estimate_seconds)}")
     return "\n".join(lines)
 
@@ -284,11 +295,21 @@ def filter_models_by_pattern(models: list, patterns: list[str] | None, key: str 
 
 
 def resolve_custom_models(patterns: list[str], catalog: list[dict], installed_tags: list[str],
-                          known_catalog: list[dict] = LLM_MODELS + EMBED_MODELS) -> list[dict]:
+                          known_catalog: list[dict] | None = None) -> list[dict]:
     """Resolve patterns against catalog entries and installed custom models."""
+    if known_catalog is None:
+        known_catalog = expanded_variant_catalog(LLM_MODELS) + EMBED_MODELS
     known_catalog_tags = {m["tag"] for m in known_catalog}
-    resolved = list(filter_models_by_pattern(catalog, patterns))
-    seen = {m["tag"] for m in resolved}
+    resolved = [
+        model for model in catalog
+        if any(
+            fnmatch.fnmatchcase(variant["tag"], pattern)
+            for variant in expanded_model_variants(model) for pattern in patterns
+        )
+    ]
+    seen = {
+        variant["tag"] for model in resolved for variant in expanded_model_variants(model)
+    }
 
     for pattern in patterns:
         for tag in installed_tags:
@@ -306,6 +327,15 @@ def downloaded_models(catalog: list[dict], installed_tags: list[str]) -> list[di
     order — see docs/workloads.md#concurrency."""
     installed = set(installed_tags)
     return [m for m in catalog if m["tag"] in installed]
+
+
+def downloaded_model_families(catalog: list[dict], installed_tags: list[str]) -> list[dict]:
+    """Keep a catalog family when any of its executable variants is installed."""
+    installed = set(installed_tags)
+    return [
+        model for model in catalog
+        if any(variant["tag"] in installed for variant in expanded_model_variants(model))
+    ]
 
 
 def fork_provenance(source_path: Path, plan: RunPlan, output_path: Path) -> dict:
@@ -359,7 +389,7 @@ def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
     )
     concurrency_models = []
     if concurrency_enabled:
-        concurrency_models = downloaded_models(LLM_MODELS, installed_tags)
+        concurrency_models = downloaded_model_families(LLM_MODELS, installed_tags)
         if patterns:
             concurrency_models = resolve_custom_models(
                 patterns, concurrency_models, installed_tags,
@@ -500,17 +530,41 @@ def validate_engine_scopes(tests: list[str], engine_name: str, llm_patterns: lis
     return errors
 
 
+def apply_variant_selections(engine_scopes: list[dict], selectors: list[str] | None,
+                             engine_names: list[str], tests: list[str]) -> None:
+    selections = normalize_variant_selectors(selectors, LLM_MODELS)
+    if selections and engine_names != ["llamacpp"]:
+        raise ValueError("--model-variant requires --engine llamacpp")
+    for scope in engine_scopes:
+        scope["llm_models"] = select_model_variants(scope["llm_models"], selections)
+        if selections and scope.get("inventory_loaded"):
+            missing = sorted(
+                model["tag"] for model in scope["llm_models"]
+                if model.get("base_model") in selections
+                and model["tag"] not in scope["installed_tags"]
+            )
+            if missing:
+                raise ValueError(
+                    "selected model variants are not installed: " + ", ".join(missing)
+                )
+        if any(test in tests for test in CONCURRENCY_TESTS):
+            scope["concurrency_models"] = select_model_variants(
+                scope["concurrency_models"], selections,
+            )
+
+
 def resolve_engine_scopes(engine_names: list[str], engine_factory, tier_models: list[dict],
                           tier_label: str, llm_patterns: list[str] | None, tests: list[str],
                           *, embedding_models: list[dict] | None = None,
                           embedding_patterns: list[str] | None = None,
+                          variant_selectors: list[str] | None = None,
                           ) -> tuple[list[dict], list[str]]:
     """Resolve and validate every engine before benchmark orchestration."""
     embedding_models = [] if embedding_models is None else embedding_models
     concurrency_enabled = any(test in tests for test in CONCURRENCY_TESTS)
     normal_llm_enabled = any(test in tests for test in LLM_TESTS)
     embedding_enabled = "emb" in tests
-    inventory_needed = concurrency_enabled or bool(
+    inventory_needed = bool(variant_selectors) or concurrency_enabled or bool(
         llm_patterns and normal_llm_enabled
     ) or bool(embedding_patterns and embedding_enabled)
     scopes = []
@@ -523,7 +577,7 @@ def resolve_engine_scopes(engine_names: list[str], engine_factory, tier_models: 
             if inventory_needed else []
         )
         engine_tier_models = (
-            downloaded_models(tier_models, installed_tags)
+            downloaded_model_families(tier_models, installed_tags)
             if llm_patterns and normal_llm_enabled else tier_models
         )
         llm_models, concurrency_models = resolve_model_scopes(
@@ -536,6 +590,8 @@ def resolve_engine_scopes(engine_names: list[str], engine_factory, tier_models: 
         scopes.append({
             "name": engine_name,
             "engine": engine,
+            "installed_tags": frozenset(installed_tags),
+            "inventory_loaded": inventory_needed,
             "llm_models": llm_models,
             "concurrency_models": concurrency_models,
             "embedding_models": engine_embeddings,
@@ -636,6 +692,12 @@ def add_model_selection_arguments(parser: argparse.ArgumentParser) -> None:
              "actually downloaded locally, so a model outside our curated catalog can be "
              "tested (see --list-models). Quote wildcards so your shell doesn't expand "
              "them first. --models is retained as a backward-compatible alias.",
+    )
+    parser.add_argument(
+        "--model-variant", dest="model_variants", action="append", default=None,
+        metavar="BASE=VARIANT",
+        help="Select one GGUF quantization for a catalog base model; repeat for a sweep "
+             "(llama.cpp only). Omission keeps every model's documented default.",
     )
     parser.add_argument(
         "--embedding-models", nargs="+", default=None,
@@ -955,8 +1017,15 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     engine_scopes, engine_errors = resolve_engine_scopes(
         run_engine_names, get_engine, tier_models, tier_label, args.llm_models, args.tests,
         embedding_models=embedding_models, embedding_patterns=args.embedding_models,
+        variant_selectors=args.model_variants,
     )
     validation_errors.extend(engine_errors)
+    try:
+        apply_variant_selections(
+            engine_scopes, args.model_variants, run_engine_names, args.tests,
+        )
+    except ValueError as exc:
+        validation_errors.append(str(exc))
     if validation_errors:
         for error in validation_errors:
             Shared.err(error)
@@ -1012,6 +1081,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 runs=args.runs, warmups=args.warmup,
                 max_prompt_tokens=args.max_prompt_tokens, sample_size=args.sample,
                 sustained_duration=args.sustained_duration,
+                sweep_cost=variant_sweep_cost(
+                    engine_scope["llm_models"], LLM_MODELS,
+                    [item["tag"] for item in engine_scope["engine"].list_installed_models()],
+                ),
             ))
         Shared.output(format_dry_run_output(previews))
         return
@@ -1110,6 +1183,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         Shared.output(f"  Models:    {tier_label}")
         if args.llm_models:
             Shared.output(f"  --llm-models: {', '.join(m['label'] for m in llm_models)}")
+        if args.model_variants:
+            Shared.output(f"  --model-variant: {', '.join(args.model_variants)}")
         if args.embedding_models:
             Shared.output(f"  --embedding-models: {', '.join(m['label'] for m in embedding_models)}")
         if args.maxtier or args.image_models:

@@ -256,7 +256,7 @@ def llamacpp_build_job_count(backend: str, *, total_memory_bytes: int | None = N
         return None
     total = psutil.virtual_memory().total if total_memory_bytes is None else total_memory_bytes
     total_gib = total / (1024 ** 3)
-    return 8 if total_gib > 30 else 4 if total_gib > 20 else 2
+    return 8 if total_gib > 60 else 4 if total_gib > 30 else 1
 
 
 def llamacpp_build_parallel_args(backend: str, *,

@@ -32,12 +32,22 @@ function contrastAgainstWhite(hex: string): number {
 // without also adding it to the others (label, color, size tier) that other
 // code assumes are present for every ordered model.
 describe("model registry consistency", () => {
-  it("contains the complete 12-model LLM catalog in tier order", () => {
+  it("contains every catalog quantization in base-model and tier order", () => {
     expect(LLM_MODEL_ORDER).toEqual([
-      "gemma3-1b", "granite4.1-3b-q4", "qwen3.5-4b-q4",
-      "granite4.1-8b-q4", "qwen3.5-9b-q4", "gemma4-12b-q4",
-      "gemma4-26b-a4b-q4", "qwen3.8-27b-q4", "nemotron3.5-lightning-30b-a3b",
-      "llama3.3-70b-q4", "qwen3-coder-next-80b-a3b-q4", "nemotron3-super-120b",
+      "gemma3-1b", "gemma3-1b-q6", "gemma3-1b-q8",
+      "granite4.1-3b-q4", "granite4.1-3b-q6", "granite4.1-3b-q8",
+      "qwen3.5-4b-q4", "qwen3.5-4b-q6", "qwen3.5-4b-q8",
+      "granite4.1-8b-q4", "granite4.1-8b-q6", "granite4.1-8b-q8",
+      "qwen3.5-9b-q4", "qwen3.5-9b-q6", "qwen3.5-9b-q8",
+      "gemma4-12b-q4", "gemma4-12b-q6", "gemma4-12b-q8",
+      "gemma4-26b-a4b-q4", "gemma4-26b-a4b-q6", "gemma4-26b-a4b-q8",
+      "qwen3.8-27b-q4", "qwen3.8-27b-q6", "qwen3.8-27b-q8",
+      "nemotron3.5-lightning-30b-a3b", "nemotron3.5-lightning-30b-a3b-q6",
+      "nemotron3.5-lightning-30b-a3b-q8",
+      "llama3.3-70b-q4", "llama3.3-70b-q6", "llama3.3-70b-q8",
+      "qwen3-coder-next-80b-a3b-q4", "qwen3-coder-next-80b-a3b-q6",
+      "qwen3-coder-next-80b-a3b-q8", "nemotron3-super-120b",
+      "nemotron3-super-120b-q6", "nemotron3-super-120b-q8",
     ]);
   });
 
@@ -48,6 +58,12 @@ describe("model registry consistency", () => {
       expect(lookup(MODEL_SIZE_TIER, model), `${model} missing a size tier`).toBeDefined();
       expect(SIZE_TIER_ORDER, `${model}'s tier "${lookup(MODEL_SIZE_TIER, model)}" is not a recognized tier`)
         .toContain(lookup(MODEL_SIZE_TIER, model));
+    }
+  });
+
+  it("labels every cataloged quantization explicitly", () => {
+    for (const model of LLM_MODEL_ORDER) {
+      expect(lookup(LLM_MODEL_LABELS, model)).toMatch(/ — Q(4_K_M|6_K(?:_XL)?|8_0)$/);
     }
   });
 
