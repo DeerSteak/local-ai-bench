@@ -136,6 +136,39 @@ def test_discovers_linux_arc_pro_b65_pci_codename(monkeypatch):
     assert "Battlemage G31" in result.name
 
 
+def test_discovers_intel_vram_from_xpu_smi(monkeypatch, tmp_path):
+    _platform(monkeypatch, "Linux")
+    monkeypatch.setattr(setup_discovery.shutil, "which", lambda _name: "/usr/bin/xpu-smi")
+    monkeypatch.setattr(
+        setup_discovery.subprocess, "check_output",
+        lambda *_args, **_kwargs: "| 1024 MiB / 24576 MiB | 20% Default |\n",
+    )
+
+    assert setup_discovery.discover_intel_vram_gb(sysfs_root=tmp_path) == 24
+
+
+def test_discovers_intel_vram_from_linux_drm_driver(monkeypatch, tmp_path):
+    _platform(monkeypatch, "Linux")
+    monkeypatch.setattr(setup_discovery.shutil, "which", lambda _name: None)
+    intel = tmp_path / "card1" / "device"
+    intel.mkdir(parents=True)
+    (intel / "vendor").write_text("0x8086\n", encoding="utf-8")
+    (intel / "mem_info_vram_total").write_text(str(24 * 1024 ** 3), encoding="utf-8")
+    other = tmp_path / "card2" / "device"
+    other.mkdir(parents=True)
+    (other / "vendor").write_text("0x1002\n", encoding="utf-8")
+    (other / "mem_info_vram_total").write_text(str(16 * 1024 ** 3), encoding="utf-8")
+
+    assert setup_discovery.discover_intel_vram_gb(sysfs_root=tmp_path) == 24
+
+
+def test_intel_vram_discovery_is_unknown_without_tool_or_driver_counter(monkeypatch, tmp_path):
+    _platform(monkeypatch, "Linux")
+    monkeypatch.setattr(setup_discovery.shutil, "which", lambda _name: None)
+
+    assert setup_discovery.discover_intel_vram_gb(sysfs_root=tmp_path) is None
+
+
 def test_discovers_linux_amd_gpu_before_rocm_is_installed(monkeypatch):
     _platform(monkeypatch, "Linux")
     monkeypatch.setattr(

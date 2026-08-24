@@ -75,7 +75,8 @@ from scripts.setup.setup_config import (
 )
 from scripts.setup.setup_progress import finish_setup_progress, start_setup_progress
 from scripts.setup.setup_discovery import (
-    discover_linux_amd_gpu, discover_linux_intel_gpu, discover_linux_nvidia_gpu,
+    discover_intel_vram_gb, discover_linux_amd_gpu, discover_linux_intel_gpu,
+    discover_linux_nvidia_gpu,
     discover_metal, discover_nvidia, discover_rocm, discover_system,
     discover_windows_gpu, rocm_version,
 )
@@ -428,10 +429,10 @@ def main() -> None:  # pragma: no cover - real interactive installer
         gpu_vram_gb = None  # no driver-agnostic VRAM query implemented on Windows
     elif intel_windows:
         gpu_vendor = "intel" if windows_gpu_kind == "discrete" else "integrated"
-        gpu_vram_gb = None
+        gpu_vram_gb = discover_intel_vram_gb() if gpu_vendor == "intel" else None
     elif intel_linux:
         gpu_vendor = "intel" if linux_intel_gpu_kind == "discrete" else "integrated"
-        gpu_vram_gb = None
+        gpu_vram_gb = discover_intel_vram_gb() if gpu_vendor == "intel" else None
     else:
         # Apple Silicon (metal_ok) and "no GPU detected" both land here — unified
         # memory and CPU-only both mean total system RAM is the only pool.

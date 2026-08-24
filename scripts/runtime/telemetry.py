@@ -1382,14 +1382,7 @@ def query_vram_usage() -> tuple[float, float] | None:
 
 
 def parse_xpu_smi_memory(output: str) -> tuple[float, float] | None:
-    pairs = re.findall(
-        r"([0-9.]+)\s*MiB\s*/\s*([0-9.]+)\s*MiB", output, re.IGNORECASE,
-    )
-    if not pairs:
-        return None
-    used = sum(float(pair[0]) for pair in pairs) / 1024
-    total = sum(float(pair[1]) for pair in pairs) / 1024
-    return (used, total) if total > 0 else None
+    return hardware.parse_xpu_smi_memory_gb(output)
 
 
 def query_xpu_smi_memory(executable: str, run_fn=subprocess.run) -> tuple[float, float] | None:

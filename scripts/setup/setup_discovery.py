@@ -2,6 +2,7 @@
 
 import platform
 import json
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -220,6 +221,33 @@ def discover_linux_intel_gpu() -> DisplayDiscovery:
             name = line.split(":", 2)[-1].strip()
             return DisplayDiscovery("intel", hardware.classify_gpu(name), name)
     return DisplayDiscovery(None, None, None)
+
+
+def discover_intel_vram_gb(*, sysfs_root: Path = Path("/sys/class/drm")) -> float | None:
+    """Read total Intel device-local memory from XPU-SMI or the Linux DRM driver."""
+    if executable := shutil.which("xpu-smi"):
+        try:
+            output = subprocess.check_output(
+                [executable], text=True, stderr=subprocess.DEVNULL, timeout=5,
+            )
+            snapshot = hardware.parse_xpu_smi_memory_gb(output)
+            if snapshot is not None:
+                return snapshot[1]
+        except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            pass
+    if platform.system() != "Linux":
+        return None
+    totals = []
+    for device in sorted(sysfs_root.glob("card[0-9]*/device")):
+        try:
+            if (device / "vendor").read_text(encoding="utf-8").strip().casefold() != "0x8086":
+                continue
+            total = int((device / "mem_info_vram_total").read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            continue
+        if total > 0:
+            totals.append(total / (1024 ** 3))
+    return sum(totals) if totals else None
 
 
 def discover_linux_amd_gpu() -> DisplayDiscovery:
