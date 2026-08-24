@@ -11,6 +11,7 @@
 - [Multi-file comparison](#multi-file-comparison)
 - [Repeated-trial artifacts](#repeated-trial-artifacts)
 - [Recommendation artifacts](#recommendation-artifacts)
+- [Decision workspace](#decision-workspace)
 - [Exporting](#exporting)
 - [Development](#development)
 
@@ -140,6 +141,21 @@ The repeated-trial view shows each common metric's baseline and candidate mean, 
 Recommendation schema 1 is a derived artifact with `artifact_type: "recommendation"`. Load the clearly labeled synthetic [recommendation_example.json](../samples/recommendation_example.json) by itself to inspect a recommended, eliminated, and unevaluated candidate derived from [results_recommendation_synthetic.json](../samples/results_recommendation_synthetic.json). Empty outcome groups are hidden; eliminated entries show the failed hard constraint and collapsible evidence references, while unevaluated entries name missing evidence and never use failure styling. The artifact's verdict is always recommended, tied, or insufficient evidence. Interactive constraint entry and shared workspace state belong to Version 6 milestone 11 and are deliberately not implemented in the standalone dashboard.
 
 Variant-comparison schema 1 is a derived artifact with `artifact_type: "variant_comparison"` and must also be loaded by itself. The [variant_comparison_example.json](../samples/variant_comparison_example.json) sample shows quality, throughput, peak-memory, and energy deltas against a named reference quantization. Quality deltas use percentage points, the other metrics use percent change, and unavailable measurements render as not recorded. `unchanged` and `inconclusive` quality verdicts receive explicit non-ranking treatment rather than being ordered by their point estimates. In ordinary result files, each selected quantization remains a separate model series and every catalog variant label includes its quantization; custom-model labels are unchanged. The derived artifact is the consolidated tradeoff view, while the ordinary charts and tables retain the underlying absolute measurements.
+
+## Decision workspace
+
+With ordinary result files loaded, **Export selection** writes one path-free `workspace_selection` JSON artifact containing each result filename and exact SHA-256 identity, the selected baseline, active section, model filters, label overrides, acceptance policy, and authoritative recommendation. This state is the portable contract between the dashboard view and Python exports; replacing or changing a selected result causes export to fail instead of silently producing an artifact from different evidence.
+
+The current command-line export boundary accepts the saved selection plus the original result files in any order. It resolves them by digest, uses the recorded baseline (or the first selected result when no baseline is set), and records the full selection identity in generated reports and deterministic multi-result bundles:
+
+```bash
+bench-env/bin/python -m scripts.results.workspace_export_cli workspace_selection.json \
+  --result results/first.json --result results/second.json \
+  --html results/decision.html --pdf results/decision.pdf \
+  --bundle results/decision.labworkspace
+```
+
+The selection and workspace bundle contain no source directory paths. The standalone dashboard continues to load files directly and remains fully local; browser-to-Python one-click report and bundle generation is not enabled until its bounded loopback API completes the repository's host/origin, authentication, shutdown, and offline security gates.
 
 ## Exporting
 
