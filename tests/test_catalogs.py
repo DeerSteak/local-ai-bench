@@ -1,5 +1,6 @@
 from scripts.results.catalogs import CATALOG_VERSION, HARDWARE_CATALOG, catalog_bundle, model_catalog, recommendation_eligible
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+from scripts.workloads.model_variants import expanded_variant_catalog
 
 
 def test_catalog_has_stable_unique_hardware_identities_and_sources():
@@ -11,7 +12,7 @@ def test_catalog_has_stable_unique_hardware_identities_and_sources():
 
 def test_model_catalog_covers_benchmark_catalog_with_stable_ids():
     records = model_catalog()
-    expected = len(LLM_MODELS) + len(EMBED_MODELS) + len(IMAGE_MODELS)
+    expected = len(expanded_variant_catalog(LLM_MODELS)) + len(EMBED_MODELS) + len(IMAGE_MODELS)
     assert len(records) == expected
     assert len({record["id"] for record in records}) == expected
     assert all(record["workloads"] and record["runtimes"] for record in records)
@@ -34,4 +35,6 @@ def test_catalog_bundle_is_versioned_and_returns_independent_data():
 def test_quantization_metadata_preserves_known_and_unknown_values():
     records = {record["id"]: record for record in model_catalog()}
     assert records["llm:gemma3:1b-it-q4_K_M"]["quantization"] == "q4_k_m"
+    assert records["llm:gemma3:1b-it-q6_K"]["quantization"] == "q6_k"
+    assert records["llm:gemma3:1b-it-q8_0"]["quantization"] == "q8_0"
     assert records["image:v1-5-pruned-emaonly.safetensors"]["quantization"] is None

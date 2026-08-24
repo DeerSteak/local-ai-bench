@@ -100,7 +100,7 @@ def models_missing_engine_support(models: list[dict], engine: str) -> list[str]:
 def find_non_catalog_model_dirs(models_dir: Path, llm_catalog: list[dict] | None = None,
                                 embed_catalog: list[dict] | None = None) -> list[Path]:
     """Return installed model directories not owned by the current catalog."""
-    llm_catalog = LLM_MODELS if llm_catalog is None else llm_catalog
+    llm_catalog = expanded_variant_catalog(LLM_MODELS) if llm_catalog is None else llm_catalog
     embed_catalog = EMBED_MODELS if embed_catalog is None else embed_catalog
     catalog_slugs = {model_tag_slug(model["tag"])
                      for model in llm_catalog + embed_catalog}
@@ -122,7 +122,7 @@ def delete_non_catalog_model_dirs(models_dir: Path, directory_names: list[str],
                                   registry_path: Path = config.CUSTOM_MODELS_PATH,
                                   ) -> tuple[list[str], dict[str, str]]:
     """Delete explicitly named non-catalog directories without following symlinks."""
-    llm_catalog = LLM_MODELS if llm_catalog is None else llm_catalog
+    llm_catalog = expanded_variant_catalog(LLM_MODELS) if llm_catalog is None else llm_catalog
     embed_catalog = EMBED_MODELS if embed_catalog is None else embed_catalog
     catalog_slugs = {model_tag_slug(model["tag"])
                      for model in llm_catalog + embed_catalog}

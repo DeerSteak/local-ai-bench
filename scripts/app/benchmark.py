@@ -62,7 +62,8 @@ from scripts.workloads.tool_benchmark import ToolBenchmark
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
 from scripts.workloads.models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS
 from scripts.workloads.model_variants import (
-    normalize_variant_selectors, select_model_variants, variant_sweep_cost,
+    expanded_model_variants, expanded_variant_catalog, normalize_variant_selectors,
+    select_model_variants, variant_sweep_cost,
 )
 from scripts.setup.model_inventory import build_model_inventory, format_model_inventory, sanitize_tag_to_short
 from scripts.app.orchestration import (
@@ -294,11 +295,21 @@ def filter_models_by_pattern(models: list, patterns: list[str] | None, key: str 
 
 
 def resolve_custom_models(patterns: list[str], catalog: list[dict], installed_tags: list[str],
-                          known_catalog: list[dict] = LLM_MODELS + EMBED_MODELS) -> list[dict]:
+                          known_catalog: list[dict] | None = None) -> list[dict]:
     """Resolve patterns against catalog entries and installed custom models."""
+    if known_catalog is None:
+        known_catalog = expanded_variant_catalog(LLM_MODELS) + EMBED_MODELS
     known_catalog_tags = {m["tag"] for m in known_catalog}
-    resolved = list(filter_models_by_pattern(catalog, patterns))
-    seen = {m["tag"] for m in resolved}
+    resolved = [
+        model for model in catalog
+        if any(
+            fnmatch.fnmatchcase(variant["tag"], pattern)
+            for variant in expanded_model_variants(model) for pattern in patterns
+        )
+    ]
+    seen = {
+        variant["tag"] for model in resolved for variant in expanded_model_variants(model)
+    }
 
     for pattern in patterns:
         for tag in installed_tags:
@@ -316,6 +327,15 @@ def downloaded_models(catalog: list[dict], installed_tags: list[str]) -> list[di
     order — see docs/workloads.md#concurrency."""
     installed = set(installed_tags)
     return [m for m in catalog if m["tag"] in installed]
+
+
+def downloaded_model_families(catalog: list[dict], installed_tags: list[str]) -> list[dict]:
+    """Keep a catalog family when any of its executable variants is installed."""
+    installed = set(installed_tags)
+    return [
+        model for model in catalog
+        if any(variant["tag"] in installed for variant in expanded_model_variants(model))
+    ]
 
 
 def fork_provenance(source_path: Path, plan: RunPlan, output_path: Path) -> dict:
@@ -369,7 +389,7 @@ def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
     )
     concurrency_models = []
     if concurrency_enabled:
-        concurrency_models = downloaded_models(LLM_MODELS, installed_tags)
+        concurrency_models = downloaded_model_families(LLM_MODELS, installed_tags)
         if patterns:
             concurrency_models = resolve_custom_models(
                 patterns, concurrency_models, installed_tags,
@@ -557,7 +577,7 @@ def resolve_engine_scopes(engine_names: list[str], engine_factory, tier_models: 
             if inventory_needed else []
         )
         engine_tier_models = (
-            downloaded_models(tier_models, installed_tags)
+            downloaded_model_families(tier_models, installed_tags)
             if llm_patterns and normal_llm_enabled else tier_models
         )
         llm_models, concurrency_models = resolve_model_scopes(

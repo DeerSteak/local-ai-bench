@@ -20,6 +20,17 @@ def test_pattern_with_no_catalog_match_falls_back_to_installed_tag():
     assert "custom" in m["label"]
 
 
+def test_installed_catalog_variant_resolves_as_its_family_not_as_custom():
+    result = resolve_custom_models(
+        ["gemma3:1b-it-q6_K"], LLM_MODELS,
+        installed_tags=["gemma3:1b-it-q6_K"],
+    )
+
+    assert len(result) == 1
+    assert result[0]["base_model"] == "gemma3:1b-it"
+    assert result[0]["label"] == "Gemma 3 1B"
+
+
 def test_pattern_not_installed_and_not_in_catalog_matches_nothing():
     result = resolve_custom_models(["nonexistent-model*"], LLM_MODELS, installed_tags=["qwen3.5:4b"])
     assert result == []

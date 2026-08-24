@@ -225,6 +225,28 @@ def test_find_non_catalog_model_dirs_handles_missing_root(tmp_path):
     ) == []
 
 
+def test_catalog_variant_directories_are_never_cleanup_candidates(tmp_path):
+    for name in ("gemma3_1b-it-q6_K", "gemma3_1b-it-q8_0"):
+        directory = tmp_path / name
+        directory.mkdir()
+        (directory / "model.gguf").write_bytes(b"model")
+
+    assert find_non_catalog_model_dirs(tmp_path) == []
+
+
+def test_catalog_variant_directories_cannot_be_deleted_as_cleanup(tmp_path):
+    name = "gemma3_1b-it-q8_0"
+    directory = tmp_path / name
+    directory.mkdir()
+    (directory / "model.gguf").write_bytes(b"model")
+
+    removed, failures = delete_non_catalog_model_dirs(tmp_path, [name])
+
+    assert removed == []
+    assert failures == {name: "not an eligible non-catalog directory"}
+    assert directory.is_dir()
+
+
 def test_delete_non_catalog_model_dirs_removes_only_explicit_safe_names(tmp_path):
     catalog = tmp_path / "llm-small"
     custom = tmp_path / "custom-model"
