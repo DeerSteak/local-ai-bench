@@ -337,6 +337,33 @@ def test_intel_xpu_memory_source_requires_a_readable_summary():
     assert sources["accelerator_memory_total_gb"] == "unsupported"
 
 
+def test_intel_xpu_source_gate_does_not_accept_a_rocm_reading():
+    calls = []
+
+    def run(command, **_kwargs):
+        calls.append(command)
+        if command[0].endswith("xpu-smi"):
+            return type("Result", (), {"returncode": 0, "stdout": "not memory"})()
+        return type("Result", (), {"returncode": 0, "stdout": "{}"})()
+
+    which = lambda name: f"/usr/bin/{name}" if name in {"rocm-smi", "xpu-smi"} else None
+    sources = default_memory_sources(which_fn=which, run_fn=run)
+
+    assert sources["accelerator_memory_used_gb"] == "unsupported"
+    assert calls[-1] == ["/usr/bin/xpu-smi"]
+
+
+def test_windows_xpu_smi_executable_uses_intel_parser():
+    result = type("Result", (), {
+        "returncode": 0, "stdout": "| 256 MiB / 16384 MiB | 72% Default |",
+    })()
+
+    assert query_gpu_usage(
+        "Windows", run_fn=lambda *_args, **_kwargs: result,
+        which_fn=lambda name: "C:/tools/xpu-smi.exe" if name == "xpu-smi" else None,
+    ) == 72
+
+
 @pytest.mark.parametrize(("peak", "ceiling", "absolute", "fraction", "state"), [
     (None, 10, None, None, "unknown"),
     (5, None, None, None, "unknown"),

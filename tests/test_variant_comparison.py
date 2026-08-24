@@ -75,6 +75,21 @@ def test_missing_measurement_is_unavailable_not_zero():
     }
 
 
+def test_measured_zero_accelerator_peak_does_not_fall_back_to_process_rss():
+    data = result()
+    memory = data["llm"]["demo-q8"]["2K"]["memory"]["summary"]
+    memory["accelerator_memory_used_gb"]["peak_gb"] = 0.0
+    memory["process_rss_gb"] = {"peak_gb": 7.0}
+
+    artifact = build_variant_comparison(
+        data, base_model="demo", reference_variant="Q4_K_M",
+        performance_section="llm", case="2K", accuracy_section="mcq",
+    )
+
+    assert artifact["variants"][1]["memory"]["value"] == 0.0
+    assert artifact["variants"][1]["memory"]["delta"] == -100.0
+
+
 def test_single_variant_comparison_is_valid_reference_only():
     artifact = build_variant_comparison(
         result(include_q8=False), base_model="demo", reference_variant="Q4_K_M",

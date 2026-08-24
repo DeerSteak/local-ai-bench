@@ -18,7 +18,8 @@ def _peak_memory(case: dict) -> float | None:
     summary = as_dict(as_dict(case.get("memory")).get("summary"))
     accelerator = as_dict(summary.get("accelerator_memory_used_gb"))
     process = as_dict(summary.get("process_rss_gb"))
-    return _number(accelerator.get("peak_gb")) or _number(process.get("peak_gb"))
+    accelerator_peak = _number(accelerator.get("peak_gb"))
+    return accelerator_peak if accelerator_peak is not None else _number(process.get("peak_gb"))
 
 
 def _metric(value: float | None, reference: float | None, *, percentage_points=False) -> dict:

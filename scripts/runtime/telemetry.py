@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 from typing import Any, Callable, Iterator, Mapping, Protocol, Sequence
@@ -860,15 +861,48 @@ class PowermetricsPowerSource(_StreamingPowerSource):
 
 
 class RaplPowerSource(_StreamingPowerSource):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._sentinel: str | None = None
+
+    def start(self) -> None:
+        fd, self._sentinel = tempfile.mkstemp(prefix="local-ai-bench-rapl-")
+        os.close(fd)
+        super().start()
+        if self._process is None:
+            self._remove_sentinel()
+
     def _command(self) -> list[str]:
         location = self.availability.location
-        assert location is not None
+        assert location is not None and self._sentinel is not None
         return [
-            "/bin/sh", "-c",
-            'while true; do "$1" -n cat -- "$2" || exit; sleep "$3" || exit; done',
-            "rapl-reader", shutil.which("sudo") or "/usr/bin/sudo", location,
-            str(self.interval_sec),
+            shutil.which("sudo") or "/usr/bin/sudo", "-n", "/bin/sh", "-c",
+            'while test -e "$1" && kill -0 "$2"; do cat -- "$3" || exit; '
+            'sleep "$4" || exit; done',
+            "rapl-reader", self._sentinel, str(os.getpid()), location, str(self.interval_sec),
         ]
+
+    def stop(self) -> None:
+        self._remove_sentinel()
+        process = self._process
+        if process is None:
+            return
+        try:
+            process.wait(timeout=max(2.0, self.interval_sec * 2 + 0.5))
+        except (OSError, subprocess.SubprocessError):
+            super().stop()
+            return
+        if self._reader:
+            self._reader.join(timeout=2)
+
+    def _remove_sentinel(self) -> None:
+        if self._sentinel is None:
+            return
+        try:
+            Path(self._sentinel).unlink()
+        except FileNotFoundError:
+            pass
+        self._sentinel = None
 
     def _read_output(self) -> None:
         stdout = getattr(self._process, "stdout", None)
@@ -1283,6 +1317,7 @@ def parse_xpu_smi_gpu_usage(output: str) -> float | None:
 def query_gpu_usage(platform_name: str | None = None, run_fn=subprocess.run,
                     which_fn=shutil.which) -> float | None:
     platform_name = platform_name or platform.system()
+    source = "generic"
     if platform_name == "Darwin":
         executable = which_fn("ioreg") or "/usr/sbin/ioreg"
         command = [executable, "-r", "-d", "1", "-c", "AGXAccelerator"]
@@ -1292,6 +1327,7 @@ def query_gpu_usage(platform_name: str | None = None, run_fn=subprocess.run,
         command = [executable, "--showuse", "--json"]
     elif executable := which_fn("xpu-smi"):
         command = [executable]
+        source = "xpu"
     else:
         return None
     try:
@@ -1300,7 +1336,7 @@ def query_gpu_usage(platform_name: str | None = None, run_fn=subprocess.run,
         return None
     if result.returncode:
         return None
-    if executable.endswith("xpu-smi"):
+    if source == "xpu":
         return parse_xpu_smi_gpu_usage(result.stdout)
     return parse_gpu_usage(platform_name, result.stdout)
 
@@ -1354,6 +1390,16 @@ def parse_xpu_smi_memory(output: str) -> tuple[float, float] | None:
     used = sum(float(pair[0]) for pair in pairs) / 1024
     total = sum(float(pair[1]) for pair in pairs) / 1024
     return (used, total) if total > 0 else None
+
+
+def query_xpu_smi_memory(executable: str, run_fn=subprocess.run) -> tuple[float, float] | None:
+    try:
+        result = run_fn(
+            [executable], capture_output=True, text=True, timeout=2, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return parse_xpu_smi_memory(result.stdout) if result.returncode == 0 else None
 
 
 def query_sampler_vram_usage(run_fn=subprocess.run, which_fn=shutil.which) -> tuple[float, float] | None:
@@ -1530,8 +1576,9 @@ def default_memory_sources(which_fn=shutil.which, run_fn=subprocess.run) -> dict
     elif hardware.rocm_executable("rocm-smi", which_fn=which_fn) \
             and rocm_memory_is_discrete(run_fn, which_fn):
         accelerator = "rocm-smi"
-    elif which_fn("xpu-smi") and query_sampler_vram_usage(run_fn, which_fn) is not None:
-        accelerator = "xpu-smi"
+    elif executable := which_fn("xpu-smi"):
+        if query_xpu_smi_memory(executable, run_fn) is not None:
+            accelerator = "xpu-smi"
     return {
         "host_ram_used_gb": "psutil",
         "process_rss_gb": "psutil",
