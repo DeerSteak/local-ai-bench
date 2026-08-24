@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { DisplayFile } from "../types";
-import { buildWorkspaceSelection } from "./workspace";
+import {
+  buildWorkspaceSelection, requestWorkspaceEvaluation, requestWorkspaceExport,
+  isWorkspaceSelection,
+} from "./workspace";
 
 const digest = (character: string) => character.repeat(64);
 const file = (id: string, sha256: string): DisplayFile => ({
@@ -36,5 +39,54 @@ describe("workspace selection", () => {
       .toThrow("distinct valid");
     expect(() => buildWorkspaceSelection([file("first", digest("a"))], "missing", view))
       .toThrow("not selected");
+  });
+
+  it("recognizes only versioned workspace-selection artifacts", () => {
+    const selection = buildWorkspaceSelection([file("first", digest("a"))], null, view);
+    expect(isWorkspaceSelection(selection)).toBe(true);
+    expect(isWorkspaceSelection({ ...selection, schema_version: 2 })).toBe(false);
+    expect(isWorkspaceSelection({ ...selection, results: [{ name: "x", sha256: "bad" }] }))
+      .toBe(false);
+  });
+
+  it("sends the exact selection and original sources to the bounded service", async () => {
+    const selected = file("first", digest("a"));
+    selected.sourceText = '{"value":1}';
+    const selection = buildWorkspaceSelection([selected], null, view);
+    const requests: { input: string, init?: RequestInit }[] = [];
+    const exported = new Blob(["report"]);
+    const result = await requestWorkspaceExport(selection, [selected], "html", async (input, init) => {
+      requests.push({ input, init });
+      return input.includes("config")
+        ? { ok: true, json: async () => ({ token: "token" }), blob: async () => new Blob() }
+        : { ok: true, json: async () => ({}), blob: async () => exported };
+    });
+    expect(result).toEqual({ blob: exported, filename: "decision.html" });
+    expect(requests[1].init?.headers).toEqual({
+      "Authorization": "Bearer token", "Content-Type": "application/json",
+    });
+    expect(JSON.parse(String(requests[1].init?.body))).toEqual({
+      format: "html", selection, results: [{ name: "first.json", text: '{"value":1}' }],
+    });
+  });
+
+  it("rejects export when original source text is unavailable", async () => {
+    const selected = file("first", digest("a"));
+    const selection = buildWorkspaceSelection([selected], null, view);
+    await expect(requestWorkspaceExport(selection, [selected], "bundle"))
+      .rejects.toThrow("Original result text");
+  });
+
+  it("returns authoritative workspace evaluation without browser-side policy logic", async () => {
+    const selected = file("first", digest("a"));
+    selected.sourceText = "{}";
+    const selection = buildWorkspaceSelection([selected], null, view);
+    const evaluation = { acceptance: { decision: "accepted" }, recommendation: null };
+    const result = await requestWorkspaceEvaluation(selection, [selected], async input => (
+      input.includes("config")
+        ? { ok: true, json: async () => ({ token: "token" }), blob: async () => new Blob() }
+        : { ok: true, json: async () => evaluation, blob: async () => new Blob() }
+    ));
+    expect(result).toEqual(evaluation);
   });
 });

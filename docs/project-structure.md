@@ -123,6 +123,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `results/acceptance_policy_cli.py` | Machine-readable command-line acceptance evaluator with distinct decision exit codes |
 | `results/support_bundle.py` | Allowlisted, deterministic support diagnostics with private-path and credential redaction |
 | `app/benchmark_launcher.py` | Automatic GUI/terminal benchmark frontend dispatcher |
+| `app/workspace_server.py` | Authenticated loopback static dashboard and bounded workspace-export endpoint |
 | `results/run_plan.py` / `results/canonical_json.py` | Immutable execution plans plus the single canonical JSON and digest contract for durable identities |
 | `workloads/methodology_profile.py` | Resolves the neutral profile and records selected workloads' effective runtime settings |
 | `results/event_store.py` | Transactional append-only SQLite job events, immutable plan loading, digest verification, and rebuildable projections |

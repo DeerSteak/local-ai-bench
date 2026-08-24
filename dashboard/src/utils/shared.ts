@@ -11,6 +11,7 @@ export type ParsedNamedSource = {
   data: JsonRecord | null;
   error: string | null;
   sha256: string | null;
+  sourceText: string | null;
 };
 
 // Object.entries on an `any`-typed value can infer T as `unknown` rather than
@@ -50,9 +51,14 @@ export async function sha256Text(text: string): Promise<string> {
 export async function readNamedJSONSource(source: NamedTextSource): Promise<ParsedNamedSource> {
   try {
     const text = await source.text();
-    return { name: source.name, ...parseResultsJSON(text), sha256: await sha256Text(text) };
+    return {
+      name: source.name, ...parseResultsJSON(text), sha256: await sha256Text(text), sourceText: text,
+    };
   } catch {
-    return { name: source.name, data: null, error: "Could not read this file.", sha256: null };
+    return {
+      name: source.name, data: null, error: "Could not read this file.",
+      sha256: null, sourceText: null,
+    };
   }
 }
 

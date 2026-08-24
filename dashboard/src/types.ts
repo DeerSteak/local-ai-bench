@@ -19,6 +19,7 @@ export type ChartRow = Record<string, JsonRecord[string]>;
 export interface DisplayFile extends ResultsFile {
   name: string;
   sourceSha256?: string;
+  sourceText?: string;
   backend: string;
   os: string;
   wsl: boolean;

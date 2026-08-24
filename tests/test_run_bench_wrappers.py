@@ -129,3 +129,14 @@ def test_dashboard_desktop_launchers_call_supported_wrappers():
     assert "bash launch_dashboard.sh" in command
     assert "bash launch_dashboard.sh" in desktop
     assert "call launch_dashboard.bat" in batch
+
+
+def test_dashboard_wrappers_use_the_authenticated_workspace_server():
+    shell = (ROOT / "launch_dashboard.sh").read_text()
+    batch = (ROOT / "launch_dashboard.bat").read_text()
+    assert "-m scripts.app.workspace_server" in shell
+    assert "-m scripts.app.workspace_server" in batch
+    assert "run preview" not in shell
+    assert "run preview" not in batch
+    assert 'cd "$SCRIPT_DIR"' in shell
+    assert 'pushd "%SCRIPT_DIR%"' in batch

@@ -31,7 +31,7 @@ launch_dashboard.bat --result results\first.json --result results\second.json
 
 Desktop users can instead double-click **Launch Local AI Bench Dashboard** with the platform suffix `.command` on macOS, `.desktop` on Linux, or `.bat` on Windows. The launcher keeps the terminal open while the local dashboard server is running; closing or interrupting that server ends the dashboard session.
 
-Requires Node.js/npm. On first run, installs npm dependencies. Every run rebuilds the app, then starts a local server on port 3000 and opens the browser automatically.
+Requires Node.js/npm and the project `bench-env`. On first run, installs npm dependencies. Every run rebuilds the app, then starts the authenticated loopback-only workspace server on port 3000 and opens the browser automatically.
 
 ## Loading results
 
@@ -138,13 +138,13 @@ The repeated-trial view shows each common metric's baseline and candidate mean, 
 
 ## Recommendation artifacts
 
-Recommendation schema 1 is a derived artifact with `artifact_type: "recommendation"`. Load the clearly labeled synthetic [recommendation_example.json](../samples/recommendation_example.json) by itself to inspect a recommended, eliminated, and unevaluated candidate derived from [results_recommendation_synthetic.json](../samples/results_recommendation_synthetic.json). Empty outcome groups are hidden; eliminated entries show the failed hard constraint and collapsible evidence references, while unevaluated entries name missing evidence and never use failure styling. The artifact's verdict is always recommended, tied, or insufficient evidence. Interactive constraint entry and shared workspace state belong to Version 6 milestone 11 and are deliberately not implemented in the standalone dashboard.
+Recommendation schema 1 is a derived artifact with `artifact_type: "recommendation"`. Load the clearly labeled synthetic [recommendation_example.json](../samples/recommendation_example.json) by itself to inspect a recommended, eliminated, and unevaluated candidate derived from [results_recommendation_synthetic.json](../samples/results_recommendation_synthetic.json). Empty outcome groups are hidden; eliminated entries show the failed hard constraint and collapsible evidence references, while unevaluated entries name missing evidence and never use failure styling. The artifact's verdict is always recommended, tied, or insufficient evidence. With ordinary results loaded, **Attach recommendation** validates the same authoritative artifact against the selected evidence and renders it in the decision workspace.
 
 Variant-comparison schema 1 is a derived artifact with `artifact_type: "variant_comparison"` and must also be loaded by itself. The [variant_comparison_example.json](../samples/variant_comparison_example.json) sample shows quality, throughput, peak-memory, and energy deltas against a named reference quantization. Quality deltas use percentage points, the other metrics use percent change, and unavailable measurements render as not recorded. `unchanged` and `inconclusive` quality verdicts receive explicit non-ranking treatment rather than being ordered by their point estimates. In ordinary result files, each selected quantization remains a separate model series and every catalog variant label includes its quantization; custom-model labels are unchanged. The derived artifact is the consolidated tradeoff view, while the ordinary charts and tables retain the underlying absolute measurements.
 
 ## Decision workspace
 
-With ordinary result files loaded, **Export selection** writes one path-free `workspace_selection` JSON artifact containing each result filename and exact SHA-256 identity, the selected baseline, active section, model filters, label overrides, acceptance policy, and authoritative recommendation. This state is the portable contract between the dashboard view and Python exports; replacing or changing a selected result causes export to fail instead of silently producing an artifact from different evidence.
+With ordinary result files loaded, **Selection JSON** writes one path-free `workspace_selection` artifact containing each result filename and exact SHA-256 identity, the selected baseline, active section, model filters, label overrides, acceptance policy, and authoritative recommendation. **Import selection** restores that state only after the exact recorded result files are loaded. This state is the portable contract between the dashboard view and Python exports; replacing or changing a selected result causes import or export to fail instead of silently producing an artifact from different evidence.
 
 The current command-line export boundary accepts the saved selection plus the original result files in any order. It resolves them by digest, uses the recorded baseline (or the first selected result when no baseline is set), and records the full selection identity in generated reports and deterministic multi-result bundles:
 
@@ -155,7 +155,9 @@ bench-env/bin/python -m scripts.results.workspace_export_cli workspace_selection
   --bundle results/decision.labworkspace
 ```
 
-The selection and workspace bundle contain no source directory paths. The standalone dashboard continues to load files directly and remains fully local; browser-to-Python one-click report and bundle generation is not enabled until its bounded loopback API completes the repository's host/origin, authentication, shutdown, and offline security gates.
+Paste or edit a versioned acceptance policy in place and choose **Apply decision inputs** to update its authoritative Python evaluation against the recorded baseline. A recommendation artifact can be attached beside the charts and raw samples; its precomputed Python verdict is validated against the selected evidence and is never recalculated into a browser-side score. Both inputs persist in exported selection state and restore through **Import selection**.
+
+The selection and workspace bundle contain no source directory paths. **HTML report**, **PDF report**, and **Bundle** send only the visible selection and its loaded result text to the per-launch loopback server, then download the generated artifact in the browser. The server binds to `127.0.0.1`, requires a random bearer token plus matching loopback Host and Origin, accepts only fixed evaluation/export endpoints and formats, caps request size, exposes no command or arbitrary output path, and stops with the launcher. The standalone dashboard remains fully local and uses the same build and chart utilities.
 
 ## Exporting
 

@@ -60,3 +60,7 @@ def test_selection_rejects_paths_unknown_view_and_bad_digest(tmp_path):
     selection["results"][0]["sha256"] = "short"
     with pytest.raises(ValueError, match="identity"):
         validate_workspace_selection(selection)
+    selection = build_workspace_selection([result])
+    selection["recommendation"] = "not an artifact"
+    with pytest.raises(ValueError, match="recommendation"):
+        validate_workspace_selection(selection)

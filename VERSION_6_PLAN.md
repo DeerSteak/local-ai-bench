@@ -595,14 +595,14 @@ It is last because it is the largest build for the least new capability — it c
 
 ## Acceptance criteria
 
-- [ ] Selecting runs, viewing charts and raw samples, setting a baseline, evaluating policy, reading the recommendation, and generating report and bundle happen without leaving one surface.
-- [ ] One selection state drives every consumer; a test asserts report and bundle output derives from the same state as the displayed view.
-- [ ] The exported artifact records the selection state that produced it.
-- [ ] Compatibility and methodology warnings appear at selection time, not at export.
-- [ ] Acceptance policy is persistent and editable in place, with results updating.
-- [ ] The standalone dashboard continues to work unchanged for headless and sample review.
-- [ ] No chart logic is duplicated; both surfaces consume the same `utils/*.ts` modules.
-- [ ] The workspace operates fully offline.
+- [x] Selecting runs, viewing charts and raw samples, setting a baseline, evaluating policy, reading the recommendation, and generating report and bundle happen without leaving one surface.
+- [x] One selection state drives every consumer; a test asserts report and bundle output derives from the same state as the displayed view.
+- [x] The exported artifact records the selection state that produced it.
+- [x] Compatibility and methodology warnings appear at selection time, not at export.
+- [x] Acceptance policy is persistent and editable in place, with results updating.
+- [x] The standalone dashboard continues to work unchanged for headless and sample review.
+- [x] No chart logic is duplicated; both surfaces consume the same `utils/*.ts` modules.
+- [x] The workspace operates fully offline.
 
 ---
 

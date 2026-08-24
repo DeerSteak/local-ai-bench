@@ -3,6 +3,7 @@
 import hashlib
 import json
 from pathlib import Path
+import re
 
 from scripts.results.acceptance_policy import validate_policy
 from scripts.results.result_store import validate_json_data
@@ -37,7 +38,8 @@ def build_workspace_selection(result_paths: list[Path], *, baseline_path: Path |
         raise ValueError("workspace baseline must be one of the selected results")
     if policy is not None:
         validate_policy(policy)
-    if recommendation is not None and recommendation.get("artifact_type") != "recommendation":
+    if recommendation is not None and (not isinstance(recommendation, dict)
+                                       or recommendation.get("artifact_type") != "recommendation"):
         raise ValueError("workspace recommendation artifact is invalid")
     selected_view = dict(view or {})
     unknown = set(selected_view) - VIEW_FIELDS
@@ -72,7 +74,8 @@ def validate_workspace_selection(selection: dict) -> dict:
     for item in results:
         if not isinstance(item, dict) or set(item) != {"name", "sha256"} \
                 or not isinstance(item["name"], str) or not item["name"] \
-                or not isinstance(item["sha256"], str) or len(item["sha256"]) != 64:
+                or not isinstance(item["sha256"], str) \
+                or re.fullmatch(r"[0-9a-f]{64}", item["sha256"]) is None:
             raise ValueError("workspace selection result identity is invalid")
         digests.append(item["sha256"])
     if len(set(digests)) != len(digests):
@@ -86,7 +89,8 @@ def validate_workspace_selection(selection: dict) -> dict:
     if selection.get("acceptance_policy") is not None:
         validate_policy(selection["acceptance_policy"])
     recommendation = selection.get("recommendation")
-    if recommendation is not None and recommendation.get("artifact_type") != "recommendation":
+    if recommendation is not None and (not isinstance(recommendation, dict)
+                                       or recommendation.get("artifact_type") != "recommendation"):
         raise ValueError("workspace recommendation artifact is invalid")
     validate_json_data(selection)
     return selection

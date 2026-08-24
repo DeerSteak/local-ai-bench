@@ -89,11 +89,11 @@ if "%HAS_RESULTS%"=="0" if exist "%RESULTS_DIR%" (
     start "" explorer "%RESULTS_DIR%"
 )
 
-if "%HAS_RESULTS%"=="1" (
-    call npm --prefix "%DASHBOARD_DIR%" run preview -- --port %PORT% --open "/?autoload=1"
-) else (
-    call npm --prefix "%DASHBOARD_DIR%" run preview -- --port %PORT% --open
-)
+set OPEN_PATH=/
+if "%HAS_RESULTS%"=="1" set OPEN_PATH=/?autoload=1
+pushd "%SCRIPT_DIR%"
+"%SCRIPT_DIR%bench-env\Scripts\python.exe" -m scripts.app.workspace_server --dist "%DASHBOARD_DIR%\dist" --port %PORT% --open-path "%OPEN_PATH%"
 set PREVIEW_STATUS=%errorlevel%
+popd
 node "%DASHBOARD_DIR%\stage_selected_results.mjs" "%DASHBOARD_DIR%\dist" >nul 2>nul
 exit /b %PREVIEW_STATUS%
