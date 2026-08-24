@@ -5,7 +5,10 @@ from pathlib import Path
 import pytest
 
 from scripts.results.run_plan import IDENTITY_SCHEME, PLAN_SCHEMA_VERSION, RunPlan, load_run_plan
+from scripts.results.result_store import model_identity
 from scripts.runtime.sampling import baseline_sampling_profile
+from scripts.workloads.models import LLM_MODELS
+from scripts.workloads.model_variants import select_model_variants
 
 
 def make_plan(**overrides):
@@ -542,6 +545,14 @@ def complete_plan():
 
 def test_complete_plan_validation_accepts_resolved_execution_inputs():
     complete_plan().validate_for_execution()
+
+
+def test_complete_plan_validation_accepts_real_catalog_default_selection():
+    plan = complete_plan()
+    models = plan.models
+    models["llm"] = model_identity(select_model_variants([LLM_MODELS[0]], {}))
+
+    make_plan(models=models, effective_config=plan.effective_config).validate_for_execution()
 
 
 def test_complete_plan_validation_accepts_no_runnable_models_after_preflight():
