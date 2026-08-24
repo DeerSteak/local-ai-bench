@@ -152,7 +152,7 @@ def normalize_variant_selectors(selectors: list[str] | None, catalog: list[dict]
 
 def select_model_variants(models: list[dict], selections: dict[str, tuple[str, ...]]) -> list[dict]:
     if not selections:
-        return deepcopy(models)
+        return [default_model_variant(model) for model in models]
     selected_bases = {
         base_model for model in models
         if isinstance(base_model := model.get("base_model"), str)
@@ -165,7 +165,7 @@ def select_model_variants(models: list[dict], selections: dict[str, tuple[str, .
         base_model = model.get("base_model")
         requested = selections.get(base_model) if isinstance(base_model, str) else None
         if requested is None:
-            resolved.append(deepcopy(model))
+            resolved.append(default_model_variant(model))
             continue
         variants = {
             item["variant"]: item for item in expanded_model_variants(model)

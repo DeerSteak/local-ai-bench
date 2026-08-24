@@ -517,10 +517,11 @@ def apply_variant_selections(engine_scopes: list[dict], selectors: list[str] | N
         raise ValueError("--model-variant requires --engine llamacpp")
     for scope in engine_scopes:
         scope["llm_models"] = select_model_variants(scope["llm_models"], selections)
-        if selections and "installed_tags" in scope:
+        if selections and scope.get("inventory_loaded"):
             missing = sorted(
                 model["tag"] for model in scope["llm_models"]
-                if model["tag"] not in scope["installed_tags"]
+                if model.get("base_model") in selections
+                and model["tag"] not in scope["installed_tags"]
             )
             if missing:
                 raise ValueError(
@@ -536,13 +537,14 @@ def resolve_engine_scopes(engine_names: list[str], engine_factory, tier_models: 
                           tier_label: str, llm_patterns: list[str] | None, tests: list[str],
                           *, embedding_models: list[dict] | None = None,
                           embedding_patterns: list[str] | None = None,
+                          variant_selectors: list[str] | None = None,
                           ) -> tuple[list[dict], list[str]]:
     """Resolve and validate every engine before benchmark orchestration."""
     embedding_models = [] if embedding_models is None else embedding_models
     concurrency_enabled = any(test in tests for test in CONCURRENCY_TESTS)
     normal_llm_enabled = any(test in tests for test in LLM_TESTS)
     embedding_enabled = "emb" in tests
-    inventory_needed = concurrency_enabled or bool(
+    inventory_needed = bool(variant_selectors) or concurrency_enabled or bool(
         llm_patterns and normal_llm_enabled
     ) or bool(embedding_patterns and embedding_enabled)
     scopes = []
@@ -569,6 +571,7 @@ def resolve_engine_scopes(engine_names: list[str], engine_factory, tier_models: 
             "name": engine_name,
             "engine": engine,
             "installed_tags": frozenset(installed_tags),
+            "inventory_loaded": inventory_needed,
             "llm_models": llm_models,
             "concurrency_models": concurrency_models,
             "embedding_models": engine_embeddings,
@@ -994,6 +997,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     engine_scopes, engine_errors = resolve_engine_scopes(
         run_engine_names, get_engine, tier_models, tier_label, args.llm_models, args.tests,
         embedding_models=embedding_models, embedding_patterns=args.embedding_models,
+        variant_selectors=args.model_variants,
     )
     validation_errors.extend(engine_errors)
     try:

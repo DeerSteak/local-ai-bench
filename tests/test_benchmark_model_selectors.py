@@ -79,6 +79,23 @@ def test_variant_selection_expands_llm_and_downloaded_concurrency_scopes():
     ]
 
 
+def test_ordinary_catalog_selection_emits_complete_default_variant_identity():
+    scope = {
+        "name": "llamacpp", "llm_models": [LLM_MODELS[0]],
+        "concurrency_models": [],
+    }
+
+    apply_variant_selections([scope], None, ["llamacpp"], ["llm"])
+    identities = selected_plan_models(
+        ["llm"], scope["llm_models"], [], [], [],
+    )["llm"]
+
+    assert identities == [{
+        "tag": "gemma3:1b-it-q4_K_M", "short": "gemma3-1b", "params_b": 1,
+        "base_model": "gemma3:1b-it", "variant": "Q4_K_M",
+    }]
+
+
 def test_variant_selection_rejects_vllm_before_execution():
     with pytest.raises(ValueError, match="requires --engine llamacpp"):
         apply_variant_selections(
@@ -90,6 +107,7 @@ def test_variant_selection_rejects_explicit_variants_that_are_not_installed():
     gemma = LLM_MODELS[0]
     scope = {
         "name": "llamacpp",
+        "inventory_loaded": True,
         "installed_tags": frozenset({"gemma3:1b-it-q4_K_M"}),
         "llm_models": [gemma],
         "concurrency_models": [],
@@ -102,6 +120,25 @@ def test_variant_selection_rejects_explicit_variants_that_are_not_installed():
             [scope], ["gemma3:1b-it=Q4_K_M", "gemma3:1b-it=Q8_0"],
             ["llamacpp"], ["llm"],
         )
+
+
+def test_variant_selection_checks_only_explicit_families_for_installation():
+    gemma, granite = LLM_MODELS[:2]
+    scope = {
+        "name": "llamacpp",
+        "inventory_loaded": True,
+        "installed_tags": frozenset({"gemma3:1b-it-q6_K"}),
+        "llm_models": [gemma, granite],
+        "concurrency_models": [],
+    }
+
+    apply_variant_selections(
+        [scope], ["gemma3:1b-it=Q6_K"], ["llamacpp"], ["llm"],
+    )
+
+    assert [model["tag"] for model in scope["llm_models"]] == [
+        "gemma3:1b-it-q6_K", "granite4.1:3b-q4_K_M",
+    ]
 
 
 def test_every_selector_defaults_to_none():
@@ -227,6 +264,24 @@ def test_engine_prepass_requires_explicit_catalog_model_to_be_installed():
         "--llm-models qwen3.5:4b-q4_K_M matched no LLM models in the selected tier "
         "(all) or installed for fake",
     ]
+
+
+def test_engine_prepass_reads_inventory_for_explicit_variant_without_llm_selector():
+    engine = FakeEngine("llamacpp", ["gemma3:1b-it-q6_K"])
+    scopes, errors = resolve_engine_scopes(
+        ["llamacpp"], lambda _: engine, [LLM_MODELS[0]], "extra-small",
+        None, ["llm"], variant_selectors=["gemma3:1b-it=Q6_K"],
+    )
+
+    apply_variant_selections(
+        scopes, ["gemma3:1b-it=Q6_K"], ["llamacpp"], ["llm"],
+    )
+
+    assert engine.list_calls == 1
+    assert [model["tag"] for model in scopes[0]["llm_models"]] == [
+        "gemma3:1b-it-q6_K",
+    ]
+    assert errors == []
 
 
 def test_engine_prepass_reads_inventory_when_wildcard_can_match_custom_models():

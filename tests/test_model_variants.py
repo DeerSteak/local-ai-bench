@@ -103,6 +103,14 @@ def test_variant_selectors_preserve_catalog_order_and_unselected_models():
     assert selected[0]["variant"] == "Q8_0"
 
 
+def test_variant_selection_expands_catalog_default_without_explicit_selector():
+    selected = select_model_variants([model()], {})
+
+    assert [(item["base_model"], item["variant"]) for item in selected] == [
+        ("demo", "Q4_K_M"),
+    ]
+
+
 @pytest.mark.parametrize("selectors, message", [
     ([], "must not be empty"),
     (["demo"], "BASE=VARIANT"),
