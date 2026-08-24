@@ -28,6 +28,7 @@ import VariantComparisonPanel from "./components/VariantComparisonPanel";
 import { dashboardHostname } from "./utils/specCard";
 import { buildRunCardFilename } from "./utils/specCard";
 import { useAutoEnabledSelection } from "./hooks/useAutoEnabledSelection";
+import { buildWorkspaceSelection, downloadWorkspaceSelection } from "./utils/workspace";
 
 export default function Dashboard() {
   const [files, setFiles] = useState<DisplayFile[]>([]);
@@ -129,6 +130,7 @@ export default function Dashboard() {
     const entry: DisplayFile = {
       id: `${file.name}-${Date.now()}`,
       name: file.name,
+      sourceSha256: file.sha256 as string,
       hostname: baseHostname,
       engine:   data.engine || null,
       engineVersion: data.engine_version || null,
@@ -320,6 +322,26 @@ export default function Dashboard() {
     setSortConfig(prev => prev.key === key ? { key, dir: (prev.dir * -1) as 1 | -1 } : { key, dir: 1 });
   };
 
+  const exportWorkspaceSelection = useCallback(() => {
+    try {
+      const selection = buildWorkspaceSelection(files, baselineId, {
+        section,
+        accuracy_test: accuracyTest,
+        enabled_models: [...enabledModels].sort(),
+        enabled_image_models: [...enabledImageModels].sort(),
+        enabled_embedding_models: [...enabledEmbedModels].sort(),
+        hostname_overrides: hostnameOverrides,
+      });
+      downloadWorkspaceSelection(selection);
+      setFileError("");
+    } catch (error) {
+      setFileError(error instanceof Error ? error.message : String(error));
+    }
+  }, [
+    files, baselineId, section, accuracyTest, enabledModels, enabledImageModels,
+    enabledEmbedModels, hostnameOverrides,
+  ]);
+
   const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(true); }, []);
   const handleDragLeave = useCallback(() => setDragOver(false), []);
   const handleLogoDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setLogoDragOver(true); }, []);
@@ -346,6 +368,16 @@ export default function Dashboard() {
       {trialSet ? <TrialSetPanel name={trialSet.name} artifact={trialSet.data} />
         : recommendation ? <RecommendationPanel name={recommendation.name} artifact={recommendation.data} />
           : variantComparison ? <VariantComparisonPanel name={variantComparison.name} artifact={variantComparison.data} /> : <>
+
+      {files.length > 0 && <div className="card" style={{ marginBottom: 20 }}>
+        <div className={styles.workspaceHeader}>
+          <div>
+            <div className={styles.workspaceEyebrow}>Decision workspace</div>
+            <div className={styles.workspaceNote}>Selection, baseline, filters, labels, and exact result identities are exported together.</div>
+          </div>
+          <button className="pill active" onClick={exportWorkspaceSelection}>Export selection</button>
+        </div>
+      </div>}
 
       <Controls
         section={section} setSection={setSection}

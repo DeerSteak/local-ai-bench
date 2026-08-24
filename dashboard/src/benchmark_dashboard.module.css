@@ -8,3 +8,24 @@
   margin: 0 auto;
   box-sizing: border-box;
 }
+
+.workspaceHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+
+.workspaceEyebrow {
+  color: #2457c5;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.workspaceNote {
+  margin-top: 4px;
+  color: #57606a;
+  font-size: 13px;
+}
