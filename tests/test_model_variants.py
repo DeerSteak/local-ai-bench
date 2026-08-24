@@ -52,6 +52,12 @@ def test_vllm_selection_collapses_quantization_family_to_default():
     }
 
 
+def test_vllm_collapse_does_not_clear_family_when_default_is_absent():
+    variants = expanded_model_variants(model())[1:]
+
+    assert collapse_variant_selection(variants, {"demo:q8_0"}) == {"demo:q8_0"}
+
+
 def test_single_variant_model_is_unchanged_and_copied():
     original = {"tag": "legacy:q4", "short": "legacy", "hf_repo": "owner/legacy"}
 

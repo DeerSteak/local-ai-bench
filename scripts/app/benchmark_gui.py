@@ -63,7 +63,7 @@ from scripts.runtime.mtp import mtp_progress_names, mtp_selection_error
 from scripts.runtime.crash_cache import clear_crash_caches, crash_cache_paths
 from scripts.runtime.shared import Shared
 from scripts.workloads.models import LLM_MODELS
-from scripts.workloads.model_variants import collapse_variant_selection
+from scripts.workloads.model_variants import collapse_variant_selection, expanded_variant_catalog
 from scripts.setup.setup_config import (
     available_gpu_split_modes, configured_comfyui_dir, configured_gpu_devices,
     load_setup_config,
@@ -409,7 +409,7 @@ def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[Men
 
 def selected_catalog_models(entries: list[MenuEntry]) -> list[dict]:
     selected = {entry.value for entry in entries if entry.checked}
-    return [model for model in LLM_MODELS if model["tag"] in selected]
+    return [model for model in expanded_variant_catalog(LLM_MODELS) if model["tag"] in selected]
 
 
 def selected_catalog_models_by_engine(entries: list[MenuEntry], engine_names: Sequence[str],

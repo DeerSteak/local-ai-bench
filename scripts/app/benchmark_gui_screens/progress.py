@@ -10,6 +10,7 @@ from scripts.runtime import config
 from scripts.runtime.mtp import mtp_tests, native_mtp_config
 from scripts.stage_registry import STAGE_ORDER
 from scripts.workloads.models import LLM_MODELS
+from scripts.workloads.model_variants import expanded_variant_catalog
 
 
 def progress_engine_base(engine: str) -> str:
@@ -25,7 +26,7 @@ def progress_entries_for_engine(entries, engine: str,
     """Selected entries compatible with one engine; images remain engine-independent."""
     base_engine = progress_engine_base(engine)
     mtp_enabled = progress_engine_mtp_enabled(engine)
-    catalog = {model["tag"]: model for model in LLM_MODELS}
+    catalog = {model["tag"]: model for model in expanded_variant_catalog(LLM_MODELS)}
     return [
         entry for entry in entries if entry.checked and (
             entry.kind == "image" or entry.value not in model_owners

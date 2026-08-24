@@ -142,6 +142,15 @@ def test_variant_model_entries_default_to_only_the_catalog_default():
     assert all("GB" in entry.label for entry in entries)
 
 
+def test_large_variant_family_starts_entirely_unchecked():
+    inventory = empty_inventory()
+    inventory["llm"] = expanded_model_variants(LLM_MODELS[-1])
+
+    entries = build_model_entries(inventory, ["llm"])
+
+    assert not any(entry.checked for entry in entries)
+
+
 def test_build_command_emits_checked_variant_sweep_and_base_model_selector():
     inventory = empty_inventory()
     inventory["llm"] = expanded_model_variants(LLM_MODELS[0])
@@ -183,6 +192,29 @@ def test_build_command_collapses_variant_sweep_when_vllm_is_selected():
     assert "--model-variant" not in command
     llm_index = command.index("--llm-models")
     assert command[llm_index + 1:] == ["gemma3:1b-it-q4_K_M"]
+
+
+def test_vllm_command_uses_default_when_only_nondefault_ggufs_are_listed():
+    inventory = empty_inventory()
+    inventory["llm"] = expanded_model_variants(LLM_MODELS[0])[1:]
+    entries = build_model_entries(inventory, ["llm"])
+    entries[0].checked = True
+
+    command = build_benchmark_command("llamacpp,vllm", Path("ComfyUI"), ["llm"], entries)
+
+    assert command[command.index("--llm-models") + 1:] == ["gemma3:1b-it-q4_K_M"]
+    assert "--model-variant" not in command
+
+
+def test_vllm_state_uses_default_when_only_nondefault_ggufs_are_listed():
+    inventory = empty_inventory()
+    inventory["llm"] = expanded_model_variants(LLM_MODELS[0])[1:]
+    entries = build_model_entries(inventory, ["llm"])
+    entries[0].checked = True
+
+    state = build_frontend_state("llamacpp,vllm", ["llm"], entries)
+
+    assert state["models"]["llm"] == ["gemma3:1b-it-q4_K_M"]
 
 
 def test_power_telemetry_is_exposed_and_requires_shared_memory_sampling():
@@ -875,6 +907,17 @@ def test_missing_catalog_hint_omitted_when_every_catalog_model_installed():
         "embedding": list(EMBED_MODELS), "image": list(IMAGE_MODELS),
     }
     assert missing_catalog_hint(inventory, "Linux") is None
+
+
+def test_missing_catalog_hint_counts_variant_families_without_negative_values():
+    inventory = empty_inventory()
+    inventory["llm"] = expanded_model_variants(LLM_MODELS[0]) * 8
+
+    hint = missing_catalog_hint(inventory, "Linux")
+
+    assert hint is not None
+    assert f"{len(LLM_MODELS) - 1} LLM" in hint
+    assert "-" not in hint.split("LLM", 1)[0]
 
 
 def test_build_command_emits_every_applicable_explicit_selector(tmp_path):

@@ -104,9 +104,9 @@ def collapse_variant_selection(models, selected_tags) -> set[str]:
     for variants in grouped.values():
         tags = {model["tag"] for model in variants}
         if selected & tags:
-            selected -= tags
             default = next((model["tag"] for model in variants if model.get("default")), None)
             if default is not None:
+                selected -= tags
                 selected.add(default)
     return selected
 
