@@ -315,7 +315,7 @@ It ranks below memory only because it needs elevated permissions on some platfor
 - [x] Missing permissions are detected by telemetry source discovery and reported before the run starts, with the reason recorded in the results; item 2's preflight displays the same result when present.
 - [x] Unavailable power never fails a run and never records zero; it records unavailable with a reason.
 - [x] Integration uses real sample timestamps, verified by a test with deliberately uneven spacing.
-- [ ] Power, memory, and temperature samples share one timeline and one set of timestamps.
+- [x] Power, memory, and temperature samples share one timeline and one set of timestamps.
 - [x] Each power source and sampling interval passes the shared observer-effect policy or receives the resulting opt-in/unsupported methodology status.
 - [x] Power-source discovery works without item 2; preflight only presents the result when available.
 - [x] Power telemetry passes the shared privacy and outbound policy.
