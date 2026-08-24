@@ -5,7 +5,7 @@ import os
 import math
 from pathlib import Path
 
-VERSION        = "6.0-pre9"
+VERSION        = "6.0-pre11"
 
 COMFYUI_URL  = "http://localhost:8188"
 
