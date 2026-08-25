@@ -218,6 +218,56 @@ def test_scheduled_tk_layout_refresh_does_not_flush_synchronously():
     assert calls == ["scheduled"]
 
 
+def test_setup_wizard_installs_keyboard_navigation(monkeypatch):
+    tk = pytest.importorskip("tkinter")
+    ttk = pytest.importorskip("tkinter.ttk")
+    from scripts.setup import setup_gui
+
+    try:
+        probe = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"Tk display unavailable: {exc}")
+    probe.destroy()
+    observed = {}
+
+    def descendants(widget):
+        children = list(widget.winfo_children())
+        return [*children, *(item for child in children for item in descendants(child))]
+
+    def inspect_instead_of_mainloop(root):
+        root.update_idletasks()
+        widgets = descendants(root)
+        observed["bindings"] = {
+            sequence: bool(root.bind_all(sequence))
+            for sequence in ("<Tab>", "<Shift-Tab>", "<ISO_Left_Tab>")
+        }
+        observed["space_bindings"] = {
+            widget_class: bool(root.bind_class(widget_class, "<space>"))
+            for widget_class in ("TButton", "TCheckbutton", "TRadiobutton")
+        }
+        observed["navigation"] = {
+            widget.cget("text") for widget in widgets
+            if isinstance(widget, ttk.Button) and widget.cget("text") in {"Back", "Next", "Cancel"}
+        }
+        model_controls = [
+            widget for widget in widgets
+            if isinstance(widget, ttk.Checkbutton) and widget.cget("text")
+        ]
+        observed["labelled_models"] = bool(model_controls)
+
+    monkeypatch.setattr(tk.Tk, "mainloop", inspect_instead_of_mainloop)
+
+    assert setup_gui.run_setup_wizard(
+        memory_ceiling_gb=32.0, detected_comfyui=None, cleanup_names=[],
+    ) is None
+    assert observed == {
+        "bindings": {"<Tab>": True, "<Shift-Tab>": True, "<ISO_Left_Tab>": True},
+        "space_bindings": {"TButton": True, "TCheckbutton": True, "TRadiobutton": True},
+        "navigation": {"Back", "Next", "Cancel"},
+        "labelled_models": True,
+    }
+
+
 def test_engine_checkbox_label_marks_experimental_and_unavailable_engines():
     plain = {"label": "llama.cpp", "enabled": True, "note": "already installed"}
     assert engine_checkbox_label(plain) == "llama.cpp — already installed"

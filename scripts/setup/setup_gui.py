@@ -27,6 +27,7 @@ from scripts.setup.model_inventory import (
     engine_fit_report, engine_fit_warnings, fits_any_engine, format_engine_sizes,
 )
 from scripts.app.tk_utils import mousewheel_scroll_units, refresh_tk_layout
+from scripts.app.benchmark_gui_accessibility import configure_keyboard_accessibility
 
 
 LLM_GROUPS = (
@@ -241,6 +242,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     root.minsize(720, 580)
     root.columnconfigure(0, weight=1)
     root.rowconfigure(0, weight=1)
+    configure_keyboard_accessibility(root, ttk)
 
     def bring_to_front() -> None:
         root.lift()
@@ -416,19 +418,17 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             option_row.columnconfigure(1, weight=1)
             checkbutton = (
                 ttk.Checkbutton(
-                    option_row, variable=model_vars[key], command=sync_variant_parents,
+                    option_row, text=model_row_label(model, initial_engines, memory_ceiling_gb),
+                    variable=model_vars[key], command=sync_variant_parents,
                 )
-                if base_model else ttk.Checkbutton(option_row, variable=model_vars[key])
+                if base_model else ttk.Checkbutton(
+                    option_row, text=model_row_label(model, initial_engines, memory_ceiling_gb),
+                    variable=model_vars[key],
+                )
             )
-            checkbutton.grid(row=0, column=0, sticky="nw")
-            label = ttk.Label(
-                option_row, text=model_row_label(model, initial_engines, memory_ceiling_gb),
-                wraplength=520,
-            )
-            label.grid(row=0, column=1, sticky="w", padx=(2, 0))
-            label.bind("<Button-1>", lambda _event, control=checkbutton: control.invoke())
+            checkbutton.grid(row=0, column=0, columnspan=2, sticky="nw")
             if "download_size" in model:
-                labelled_models[key] = (label, model)
+                labelled_models[key] = (checkbutton, model)
             if base_model:
                 variant_child_rows[key] = (option_row, row)
             license_url = model.get("license_url")
