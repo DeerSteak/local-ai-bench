@@ -32,7 +32,7 @@ def _spec(value_type, classification, ui_status, ui_location, **kwargs):
 
 PUBLIC_OPTION_SCHEMA = {
     "--quick": _spec(
-        "boolean", "guided", "missing", "CLI smoke-test scope differs from GUI Quick run",
+        "boolean", "guided", "excluded", "CLI smoke-test scope differs from GUI Quick run",
         default=False,
     ),
     "--dry-run": _spec("boolean", "contextual", "equivalent", "Final plan preview", default=False),

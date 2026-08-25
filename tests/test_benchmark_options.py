@@ -24,7 +24,7 @@ def test_schema_defines_every_gui_default_and_cli_choice_set():
     assert PUBLIC_OPTION_SCHEMA["--maxtier"].choices == TIER_CHOICES
     assert PUBLIC_OPTION_SCHEMA["--mtp"].choices == ("off", "on", "both")
     assert PUBLIC_OPTION_SCHEMA["--quick"].default is False
-    assert PUBLIC_OPTION_SCHEMA["--quick"].ui_status == "missing"
+    assert PUBLIC_OPTION_SCHEMA["--quick"].ui_status == "excluded"
     assert PUBLIC_OPTION_SCHEMA["--dry-run"].default is False
 
 

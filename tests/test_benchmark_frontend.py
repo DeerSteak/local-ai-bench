@@ -81,7 +81,7 @@ def test_frontend_inventory_classifies_every_public_benchmark_option():
 
 
 def test_frontend_inventory_exposes_the_remaining_configuration_work():
-    assert frontend_option_gaps() == ["--quick"]
+    assert frontend_option_gaps() == []
 
 
 def test_every_exposed_option_is_bound_to_a_concrete_control():

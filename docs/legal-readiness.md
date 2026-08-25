@@ -16,8 +16,8 @@ Setup downloads llama.cpp, ComfyUI, model weights, and image checkpoints from th
 | Python packages | `requirements.txt` and `tests/requirements.txt` | Generated SBOM uses `NOASSERTION` until package metadata is reviewed |
 | Dashboard packages and IBM Plex fonts | `dashboard/package-lock.json` | Locked versions, integrity, and declared npm license captured by SBOM; notice review required |
 | llama.cpp and ComfyUI | Setup discovery/download logic; vendored `ComfyUI/LICENSE` where present | Upstream license and exact distributed form require review |
-| LLM and embedding references | `scripts/workloads/models.py` and the versioned model catalog | License status explicitly unverified; not eligible for supported recommendations |
-| Image checkpoints and supporting encoders | `scripts/workloads/models.py` and setup download definitions | Model-specific license review required |
+| LLM and embedding references | `scripts/workloads/models.py` and the versioned model catalog | Downloaded directly by the user from the recorded source; not distributed with the application |
+| Image checkpoints and supporting encoders | `scripts/workloads/models.py` and setup download definitions | Downloaded directly by the user; gated repositories require upstream acceptance before download |
 | Accuracy question banks and sample document | `scripts/workloads/data/` and the workload loaders | Provenance/authorship record required before commercial distribution |
 | Generated reports, sample results, screenshots, and images | `samples/`, `results/`, and report/export tools | Separate owned, synthetic, customer, and third-party inputs before publication |
 
