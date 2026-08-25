@@ -2,17 +2,41 @@
 // models.py's extra-small -> small -> medium -> large tier order)
 export const MODEL_COLORS = {
   "gemma3-1b":              "#0969da",
+  "gemma3-1b-q6":           "#0550ae",
+  "gemma3-1b-q8":           "#0a3069",
   "granite4.1-3b-q4":       "#8250df",
+  "granite4.1-3b-q6":       "#6639ba",
+  "granite4.1-3b-q8":       "#512a97",
   "qwen3.5-4b-q4":          "#b54708",
+  "qwen3.5-4b-q6":          "#953800",
+  "qwen3.5-4b-q8":          "#762c00",
   "granite4.1-8b-q4":       "#1a7f37",
+  "granite4.1-8b-q6":       "#116329",
+  "granite4.1-8b-q8":       "#044f1e",
   "qwen3.5-9b-q4":          "#cf222e",
+  "qwen3.5-9b-q6":          "#a40e26",
+  "qwen3.5-9b-q8":          "#82071e",
   "gemma4-12b-q4":          "#9a3078",
-  "gemma3-27b-q4":          "#0e7490",
-  "nemotron-cascade2-30b-a3b": "#5c6bc0",
-  "qwen3.6-35b-a3b":        "#00796b",
+  "gemma4-12b-q6":          "#7d245f",
+  "gemma4-12b-q8":          "#64184c",
+  "gemma4-26b-a4b-q4":      "#0e7490",
+  "gemma4-26b-a4b-q6":      "#0b5f77",
+  "gemma4-26b-a4b-q8":      "#084c60",
+  "qwen3.8-27b-q4":         "#00796b",
+  "qwen3.8-27b-q6":         "#006156",
+  "qwen3.8-27b-q8":         "#004d45",
+  "nemotron3.5-lightning-30b-a3b": "#5c6bc0",
+  "nemotron3.5-lightning-30b-a3b-q6": "#4854a3",
+  "nemotron3.5-lightning-30b-a3b-q8": "#363f82",
   "llama3.3-70b-q4":        "#6a1b9a",
+  "llama3.3-70b-q6":        "#55147c",
+  "llama3.3-70b-q8":        "#410d60",
   "qwen3-coder-next-80b-a3b-q4": "#9a6700",
+  "qwen3-coder-next-80b-a3b-q6": "#7d5300",
+  "qwen3-coder-next-80b-a3b-q8": "#624100",
   "nemotron3-super-120b":   "#8d6e63",
+  "nemotron3-super-120b-q6": "#70564d",
+  "nemotron3-super-120b-q8": "#574139",
 
   // Retained so results created by earlier catalog versions use known colors.
   "llama3.2-3b-q4":         "#0550ae",
@@ -23,23 +47,28 @@ export const MODEL_COLORS = {
   "qwen3.6-27b-q4":         "#0a3069",
   "phi4-14b":               "#5a32a3",
   "nemotron3-nano-30b-a3b": "#5c6bc0",
+  "gemma3-27b-q4":          "#0e7490",
+  "nemotron-cascade2-30b-a3b": "#5c6bc0",
+  "qwen3.6-35b-a3b":        "#00796b",
 };
 
 // Matches models.py's IMAGE_MODELS list
 export const IMAGE_MODEL_COLORS = {
   "sd15":         "#cf222e",
   "sdxl":         "#0969da",
-  "sd35-large":   "#7c4dff",
+  "z-image-turbo": "#7c4dff",
   "flux-dev":     "#b54708",
   "flux2-dev":    "#1a7f37",
+  "sd35-large":   "#7c4dff",
 };
 
 export const IMAGE_MODEL_LABELS = {
   "sd15":         "Stable Diffusion 1.5",
   "sdxl":         "SDXL",
-  "sd35-large":   "SD3.5 Large",
+  "z-image-turbo": "Z-Image Turbo",
   "flux-dev":     "Flux.1-dev",
   "flux2-dev":    "Flux.2-dev",
+  "sd35-large":   "SD3.5 Large",
 };
 
 // Fallback palette for unknown model keys (hash-assigned)
@@ -91,21 +120,59 @@ export const MODEL_DASH_PATTERNS = [
 
 export const MAX_FILES = 6;
 
+export const MEMORY_CHANNEL_LABELS = {
+  host_ram_used_gb: "Host RAM",
+  process_rss_gb: "Process RSS",
+  accelerator_memory_used_gb: "Accelerator memory",
+};
+
+export const MEMORY_HEADROOM_LABELS = {
+  comfortable: "Comfortable",
+  tight: "Tight",
+  exceeded: "Exceeded",
+  unknown: "Unknown",
+  not_recorded: "Not recorded",
+};
+
 // Human-readable labels for LLM model short keys (matches the "label" field
 // in models.py, the single source of truth for the model roster)
 export const LLM_MODEL_LABELS = {
-  "gemma3-1b":              "Gemma 3 1B",
-  "granite4.1-3b-q4":       "Granite 4.1 3B 4-Bit Quantization",
-  "qwen3.5-4b-q4":          "Qwen3.5 4B 4-Bit Quantization",
-  "granite4.1-8b-q4":       "Granite 4.1 8B 4-Bit Quantization",
-  "qwen3.5-9b-q4":          "Qwen3.5 9B 4-Bit Quantization",
-  "gemma4-12b-q4":          "Gemma 4 12B 4-Bit Quantization",
-  "gemma3-27b-q4":          "Gemma 3 27B 4-Bit Quantization",
-  "nemotron-cascade2-30b-a3b": "Nemotron Cascade 2 30B-A3B",
-  "qwen3.6-35b-a3b":        "Qwen3.6 35B-A3B",
-  "llama3.3-70b-q4":        "Llama 3.3 70B 4-Bit Quantization",
-  "qwen3-coder-next-80b-a3b-q4": "Qwen3-Coder-Next 80B-A3B 4-Bit Quantization",
-  "nemotron3-super-120b":   "Nemotron 3 Super 120B",
+  "gemma3-1b":              "Gemma 3 1B — Q4_K_M",
+  "gemma3-1b-q6":           "Gemma 3 1B — Q6_K",
+  "gemma3-1b-q8":           "Gemma 3 1B — Q8_0",
+  "granite4.1-3b-q4":       "Granite 4.1 3B — Q4_K_M",
+  "granite4.1-3b-q6":       "Granite 4.1 3B — Q6_K",
+  "granite4.1-3b-q8":       "Granite 4.1 3B — Q8_0",
+  "qwen3.5-4b-q4":          "Qwen3.5 4B — Q4_K_M",
+  "qwen3.5-4b-q6":          "Qwen3.5 4B — Q6_K",
+  "qwen3.5-4b-q8":          "Qwen3.5 4B — Q8_0",
+  "granite4.1-8b-q4":       "Granite 4.1 8B — Q4_K_M",
+  "granite4.1-8b-q6":       "Granite 4.1 8B — Q6_K",
+  "granite4.1-8b-q8":       "Granite 4.1 8B — Q8_0",
+  "qwen3.5-9b-q4":          "Qwen3.5 9B — Q4_K_M",
+  "qwen3.5-9b-q6":          "Qwen3.5 9B — Q6_K",
+  "qwen3.5-9b-q8":          "Qwen3.5 9B — Q8_0",
+  "gemma4-12b-q4":          "Gemma 4 12B — Q4_K_M",
+  "gemma4-12b-q6":          "Gemma 4 12B — Q6_K",
+  "gemma4-12b-q8":          "Gemma 4 12B — Q8_0",
+  "gemma4-26b-a4b-q4":      "Gemma 4 26B-A4B — Q4_K_M",
+  "gemma4-26b-a4b-q6":      "Gemma 4 26B-A4B — Q6_K_XL",
+  "gemma4-26b-a4b-q8":      "Gemma 4 26B-A4B — Q8_0",
+  "qwen3.8-27b-q4":         "Qwen 3.8 27B — Q4_K_M",
+  "qwen3.8-27b-q6":         "Qwen 3.8 27B — Q6_K_XL",
+  "qwen3.8-27b-q8":         "Qwen 3.8 27B — Q8_0",
+  "nemotron3.5-lightning-30b-a3b": "Nemotron 3.5 Lightning 30B-A3B — Q4_K_M",
+  "nemotron3.5-lightning-30b-a3b-q6": "Nemotron 3.5 Lightning 30B-A3B — Q6_K_XL",
+  "nemotron3.5-lightning-30b-a3b-q8": "Nemotron 3.5 Lightning 30B-A3B — Q8_0",
+  "llama3.3-70b-q4":        "Llama 3.3 70B — Q4_K_M",
+  "llama3.3-70b-q6":        "Llama 3.3 70B — Q6_K",
+  "llama3.3-70b-q8":        "Llama 3.3 70B — Q8_0",
+  "qwen3-coder-next-80b-a3b-q4": "Qwen3-Coder-Next 80B-A3B — Q4_K_M",
+  "qwen3-coder-next-80b-a3b-q6": "Qwen3-Coder-Next 80B-A3B — Q6_K",
+  "qwen3-coder-next-80b-a3b-q8": "Qwen3-Coder-Next 80B-A3B — Q8_0",
+  "nemotron3-super-120b":   "Nemotron 3 Super 120B — Q4_K_M",
+  "nemotron3-super-120b-q6": "Nemotron 3 Super 120B — Q6_K_XL",
+  "nemotron3-super-120b-q8": "Nemotron 3 Super 120B — Q8_0",
 
   // Retained so older results remain human-readable.
   "llama3.2-3b-q4":         "Llama 3.2 3B 4-Bit Quantization",
@@ -116,21 +183,35 @@ export const LLM_MODEL_LABELS = {
   "qwen3.6-27b-q4":         "Qwen3.6 27B 4-Bit Quantization",
   "phi4-14b":               "Phi 4 14B",
   "nemotron3-nano-30b-a3b": "Nemotron 3 Nano 30B-A3B",
+  "gemma3-27b-q4":          "Gemma 3 27B 4-Bit Quantization",
+  "nemotron-cascade2-30b-a3b": "Nemotron Cascade 2 30B-A3B",
+  "qwen3.6-35b-a3b":        "Qwen3.6 35B-A3B",
 };
 
 // Canonical model order (determines chart line order and color assignment).
 // Matches models.py: LLM_MODELS_XSMALL + LLM_MODELS_SMALL + LLM_MODELS_MEDIUM
 // + LLM_MODELS_LARGE.
 export const LLM_MODEL_ORDER = [
-  "gemma3-1b", "granite4.1-3b-q4", "qwen3.5-4b-q4",
-  "granite4.1-8b-q4", "qwen3.5-9b-q4", "gemma4-12b-q4",
-  "gemma3-27b-q4", "nemotron-cascade2-30b-a3b", "qwen3.6-35b-a3b",
-  "llama3.3-70b-q4", "qwen3-coder-next-80b-a3b-q4", "nemotron3-super-120b",
+  "gemma3-1b", "gemma3-1b-q6", "gemma3-1b-q8",
+  "granite4.1-3b-q4", "granite4.1-3b-q6", "granite4.1-3b-q8",
+  "qwen3.5-4b-q4", "qwen3.5-4b-q6", "qwen3.5-4b-q8",
+  "granite4.1-8b-q4", "granite4.1-8b-q6", "granite4.1-8b-q8",
+  "qwen3.5-9b-q4", "qwen3.5-9b-q6", "qwen3.5-9b-q8",
+  "gemma4-12b-q4", "gemma4-12b-q6", "gemma4-12b-q8",
+  "gemma4-26b-a4b-q4", "gemma4-26b-a4b-q6", "gemma4-26b-a4b-q8",
+  "qwen3.8-27b-q4", "qwen3.8-27b-q6", "qwen3.8-27b-q8",
+  "nemotron3.5-lightning-30b-a3b", "nemotron3.5-lightning-30b-a3b-q6",
+  "nemotron3.5-lightning-30b-a3b-q8",
+  "llama3.3-70b-q4", "llama3.3-70b-q6", "llama3.3-70b-q8",
+  "qwen3-coder-next-80b-a3b-q4", "qwen3-coder-next-80b-a3b-q6",
+  "qwen3-coder-next-80b-a3b-q8", "nemotron3-super-120b",
+  "nemotron3-super-120b-q6", "nemotron3-super-120b-q8",
 ];
 
 export const LEGACY_LLM_MODEL_ORDER = [
   "llama3.2-3b-q4", "phi4-mini", "mistral-7b-q4", "llama3.1-8b-q4",
   "llama4-16x17b", "qwen3.6-27b-q4", "phi4-14b", "nemotron3-nano-30b-a3b",
+  "gemma3-27b-q4", "nemotron-cascade2-30b-a3b", "qwen3.6-35b-a3b",
 ];
 
 export const LLM_DISPLAY_ORDER = [...LLM_MODEL_ORDER, ...LEGACY_LLM_MODEL_ORDER];
@@ -141,18 +222,42 @@ export const LLM_DISPLAY_ORDER = [...LLM_MODEL_ORDER, ...LEGACY_LLM_MODEL_ORDER]
 // depend on it).
 export const MODEL_SIZE_TIER = {
   "gemma3-1b":              "xsmall",
+  "gemma3-1b-q6":           "xsmall",
+  "gemma3-1b-q8":           "xsmall",
   "granite4.1-3b-q4":       "xsmall",
+  "granite4.1-3b-q6":       "xsmall",
+  "granite4.1-3b-q8":       "xsmall",
   "qwen3.5-4b-q4":          "xsmall",
+  "qwen3.5-4b-q6":          "xsmall",
+  "qwen3.5-4b-q8":          "xsmall",
   "granite4.1-8b-q4":       "small",
+  "granite4.1-8b-q6":       "small",
+  "granite4.1-8b-q8":       "small",
   "qwen3.5-9b-q4":          "small",
+  "qwen3.5-9b-q6":          "small",
+  "qwen3.5-9b-q8":          "small",
   "gemma4-12b-q4":          "small",
-  "gemma3-27b-q4":          "medium",
-  "nemotron-cascade2-30b-a3b": "medium",
+  "gemma4-12b-q6":          "small",
+  "gemma4-12b-q8":          "small",
+  "gemma4-26b-a4b-q4":      "medium",
+  "gemma4-26b-a4b-q6":      "medium",
+  "gemma4-26b-a4b-q8":      "medium",
+  "qwen3.8-27b-q4":         "medium",
+  "qwen3.8-27b-q6":         "medium",
+  "qwen3.8-27b-q8":         "medium",
+  "nemotron3.5-lightning-30b-a3b": "medium",
+  "nemotron3.5-lightning-30b-a3b-q6": "medium",
+  "nemotron3.5-lightning-30b-a3b-q8": "medium",
   "nemotron3-nano-30b-a3b": "medium",
-  "qwen3.6-35b-a3b":        "medium",
   "llama3.3-70b-q4":        "large",
+  "llama3.3-70b-q6":        "large",
+  "llama3.3-70b-q8":        "large",
   "qwen3-coder-next-80b-a3b-q4": "large",
+  "qwen3-coder-next-80b-a3b-q6": "large",
+  "qwen3-coder-next-80b-a3b-q8": "large",
   "nemotron3-super-120b":   "large",
+  "nemotron3-super-120b-q6": "large",
+  "nemotron3-super-120b-q8": "large",
 
   // Retained so older results continue to group into their original tiers.
   "llama3.2-3b-q4":         "xsmall",
@@ -162,9 +267,14 @@ export const MODEL_SIZE_TIER = {
   "llama4-16x17b":          "large",
   "qwen3.6-27b-q4":         "medium",
   "phi4-14b":               "small",
+  "gemma3-27b-q4":          "medium",
+  "nemotron-cascade2-30b-a3b": "medium",
+  "qwen3.6-35b-a3b":        "medium",
 };
 
-export const IMAGE_MODEL_ORDER = ["sd15", "sdxl", "sd35-large", "flux-dev", "flux2-dev"];
+export const IMAGE_MODEL_ORDER = ["sd15", "sdxl", "z-image-turbo", "flux-dev", "flux2-dev"];
+export const LEGACY_IMAGE_MODEL_ORDER = ["sd35-large"];
+export const IMAGE_DISPLAY_ORDER = [...IMAGE_MODEL_ORDER, ...LEGACY_IMAGE_MODEL_ORDER];
 
 // Matches models.py's EMBED_MODELS list
 export const EMBED_MODEL_COLORS = {
@@ -192,10 +302,11 @@ export const SIZE_TIER_LABELS = {
 };
 
 // Sections
-export const SECTIONS = ["llm", "llm_conversation", "concurrency_tool", "concurrency_chat", "accuracy", "embeddings", "images", "llamabench", "llamabenchconc", "vllmbench"];
+export const SECTIONS = ["llm", "llm_conversation", "sustained", "concurrency_tool", "concurrency_chat", "accuracy", "embeddings", "images", "llamabench", "llamabenchconc", "vllmbench"];
 export const SECTION_LABELS = {
   llm: "LLM",
   llm_conversation: "LLM Conversation",
+  sustained: "Sustained Load",
   concurrency_tool: "Concurrency (Tool)",
   concurrency_chat: "Concurrency (Chat)",
   accuracy: "Accuracy",
@@ -266,9 +377,10 @@ export const CTX_COLORS = {
 export const IMAGE_BAR_COLORS = {
   "sd15":         "#cf222e",
   "sdxl":         "#0969da",
-  "sd35-large":   "#b54708",
+  "z-image-turbo": "#b54708",
   "flux-dev":     "#1a7f37",
   "flux2-dev":    "#9a3078",
+  "sd35-large":   "#b54708",
 };
 
 // Colors per embedding model (used in bar chart mode — matches CTX/BATCH palette)

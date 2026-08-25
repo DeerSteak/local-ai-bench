@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -79,6 +80,7 @@ def test_latency_command_pins_iteration_counts_instead_of_vllm_defaults():
     assert command[command.index("--model") + 1] == "org/model"
     assert command[command.index("--input-len") + 1] == "2048"
     assert command[command.index("--output-len") + 1] == "128"
+    assert command[command.index("--gpu-memory-utilization") + 1] == "0.85"
     assert command[command.index("--output-json") + 1] == "/tmp/out.json"
     # vllm's own defaults are 30 iterations and 10 warmups.
     assert command[command.index("--num-iters") + 1] == str(config.VLLMBENCH_ITERS)
@@ -104,6 +106,15 @@ def test_native_commands_use_the_engine_cache_policy(builder):
         "/venv/bin/vllm", "org/model", Path("/tmp/out.json"), 2048, 128, "fp8",
     )
     assert command[command.index("--kv-cache-dtype") + 1] == "fp8"
+    assert "--enforce-eager" in command
+
+
+def test_native_commands_accept_a_lower_platform_memory_reservation():
+    command = VllmBenchBenchmark.build_latency_command(
+        "/venv/bin/vllm", "org/model", Path("/tmp/out.json"), 2048, 128,
+        gpu_memory_utilization=0.70,
+    )
+    assert command[command.index("--gpu-memory-utilization") + 1] == "0.7"
 
 
 def test_native_command_leaves_auto_to_vllm():
@@ -214,3 +225,136 @@ def test_format_entry_labels_each_kind_with_its_own_headline_number():
     )
     assert throughput is not None
     assert "req/s" in VllmBenchBenchmark.format_entry("throughput", throughput)
+
+
+def test_run_opens_measured_window_before_each_native_command(monkeypatch):
+    class FakeEngine:
+        name = "vllm"
+        kv_cache_dtype = "auto"
+
+        @staticmethod
+        def bench_executable(): return "vllm"
+        @staticmethod
+        def stop(): pass
+        @staticmethod
+        def runtime_environment(): return {}
+        @staticmethod
+        def model_pulled(tag): return True
+        @staticmethod
+        def _repo(tag): return "org/model"
+        @staticmethod
+        def max_context_length(tag): return 4096
+        @staticmethod
+        def bench_gpu_memory_utilization(): return 0.85
+
+    class Telemetry:
+        def __init__(self):
+            self.calls = []
+            self.last_power = {"energy_joules": 2}
+        def begin_measured(self, name): self.calls.append(name)
+        def finish_case(self):
+            self.calls.append("finish")
+            return {"summary": {}}
+
+    monkeypatch.setattr("scripts.workloads.vllm_benchmark.VllmEngine", FakeEngine)
+    monkeypatch.setattr(config, "LLAMABENCH_PP", [512])
+    monkeypatch.setattr(config, "VLLMBENCH_OUTPUT", [128])
+    telemetry = Telemetry()
+
+    def fake_run_one(self, command, output_json, timeout, env):
+        assert telemetry.calls[-1].startswith("measured:")
+        if "latency" in command:
+            return {"avg_latency": 1.0}
+        return {"elapsed_time": 1.0, "num_requests": 1}
+
+    monkeypatch.setattr(VllmBenchBenchmark, "run_one", fake_run_one)
+    result = VllmBenchBenchmark().run(
+        FakeEngine(), [{"tag": "model", "label": "Model", "short": "model"}],
+        telemetry=telemetry,
+    )
+    assert result["model"]["completed_cases"] == 2
+    assert telemetry.calls == [
+        "measured:latency:in512:out128:includes-load", "finish",
+        "measured:throughput:in512:out128:includes-load", "finish",
+    ]
+    assert result["model"]["throughput_entries"][0]["power"]["efficiency"] == {
+        "unit": "tokens_per_joule", "work_count": 128, "per_joule": 64,
+    }
+
+
+def test_run_discards_timed_out_native_window(monkeypatch):
+    class FakeEngine:
+        name = "vllm"
+        kv_cache_dtype = "auto"
+        bench_executable = staticmethod(lambda: "vllm")
+        stop = staticmethod(lambda: None)
+        runtime_environment = staticmethod(lambda: {})
+        model_pulled = staticmethod(lambda tag: True)
+        _repo = staticmethod(lambda tag: "org/model")
+        max_context_length = staticmethod(lambda tag: 4096)
+        bench_gpu_memory_utilization = staticmethod(lambda: 0.85)
+
+    class Telemetry:
+        def __init__(self): self.calls = []
+        def begin_measured(self, name): self.calls.append(name)
+        def finish_case(self): self.calls.append("finish"); return {}
+
+    monkeypatch.setattr("scripts.workloads.vllm_benchmark.VllmEngine", FakeEngine)
+    monkeypatch.setattr(config, "LLAMABENCH_PP", [512])
+    monkeypatch.setattr(config, "VLLMBENCH_OUTPUT", [128])
+    monkeypatch.setattr(
+        VllmBenchBenchmark, "run_one",
+        lambda *args, **kwargs: (_ for _ in ()).throw(subprocess.TimeoutExpired("vllm", 1)),
+    )
+    telemetry = Telemetry()
+    result = VllmBenchBenchmark().run(
+        FakeEngine(), [{"tag": "model", "label": "Model", "short": "model"}],
+        telemetry=telemetry,
+    )
+    assert result["model"]["timed_out"] is True
+    assert telemetry.calls == ["measured:latency:in512:out128:includes-load", "finish"]
+
+
+def test_run_closes_native_window_when_result_parser_fails(monkeypatch):
+    class FakeEngine:
+        name = "vllm"
+        kv_cache_dtype = "auto"
+        bench_executable = staticmethod(lambda: "vllm")
+        stop = staticmethod(lambda: None)
+        runtime_environment = staticmethod(lambda: {})
+        model_pulled = staticmethod(lambda tag: True)
+        _repo = staticmethod(lambda tag: f"org/{tag}")
+        max_context_length = staticmethod(lambda tag: 4096)
+        bench_gpu_memory_utilization = staticmethod(lambda: 0.85)
+
+    class Telemetry:
+        def __init__(self): self.calls = []
+        def begin_measured(self, name): self.calls.append(name)
+        def finish_case(self): self.calls.append("finish"); return {}
+
+    def fake_run_one(self, command, output_json, timeout, env):
+        if "org/bad" in command:
+            return {"avg_latency": 1.0, "percentiles": [1.0]}
+        if "latency" in command:
+            return {"avg_latency": 1.0}
+        return {"elapsed_time": 1.0, "num_requests": 1}
+
+    monkeypatch.setattr("scripts.workloads.vllm_benchmark.VllmEngine", FakeEngine)
+    monkeypatch.setattr(config, "LLAMABENCH_PP", [512])
+    monkeypatch.setattr(config, "VLLMBENCH_OUTPUT", [128])
+    monkeypatch.setattr(VllmBenchBenchmark, "run_one", fake_run_one)
+    telemetry = Telemetry()
+    results = VllmBenchBenchmark().run(
+        FakeEngine(), [
+            {"tag": "bad", "label": "Bad", "short": "bad"},
+            {"tag": "good", "label": "Good", "short": "good"},
+        ], telemetry=telemetry,
+    )
+
+    assert "'list' object has no attribute 'items'" in results["bad"]["error"]
+    assert results["good"]["completed_cases"] == 2
+    assert telemetry.calls == [
+        "measured:latency:in512:out128:includes-load", "finish",
+        "measured:latency:in512:out128:includes-load", "finish",
+        "measured:throughput:in512:out128:includes-load", "finish",
+    ]

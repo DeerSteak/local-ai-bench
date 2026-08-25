@@ -1,0 +1,21 @@
+{
+  "version": "4.1",
+  "engine": "llamacpp",
+  "profile": {"hostname": "schema1-golden", "gpu": "Golden GPU", "ram_gb": 64},
+  "llm": {
+    "golden": {
+      "2K": {
+        "ttft_mean_sec": 0.25,
+        "tps_mean": 50.0,
+        "n_runs": 1
+      }
+    }
+  },
+  "run": {
+    "run_id": "00000000-0000-4000-8000-000000000041",
+    "schema_version": 1,
+    "started_at": "2026-01-01T00:00:00+00:00",
+    "finished_at": "2026-01-01T00:10:00+00:00",
+    "status": "complete"
+  }
+}

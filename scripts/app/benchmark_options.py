@@ -19,10 +19,11 @@ class OptionSpec:
 
 TEST_CHOICES = (
     "llm", "conv", "llamabench", "llamabenchconc", "vllmbench", "emb", "mcq", "math",
-    "reasoning", "code", "tool", "acc", "conc_tool", "conc_chat", "conc", "img",
+    "reasoning", "code", "tool", "acc", "conc_tool", "conc_chat", "conc", "sustained", "img",
 )
 TG_TOKEN_CHOICES = (128, 512, 1024)
 TIER_CHOICES = ("xsmall", "small", "medium", "large")
+MTP_CHOICES = ("off", "on", "both")
 
 
 def _spec(value_type, classification, ui_status, ui_location, **kwargs):
@@ -31,7 +32,7 @@ def _spec(value_type, classification, ui_status, ui_location, **kwargs):
 
 PUBLIC_OPTION_SCHEMA = {
     "--quick": _spec(
-        "boolean", "guided", "missing", "CLI smoke-test scope differs from GUI Quick run",
+        "boolean", "guided", "excluded", "CLI smoke-test scope differs from GUI Quick run",
         default=False,
     ),
     "--dry-run": _spec("boolean", "contextual", "equivalent", "Final plan preview", default=False),
@@ -39,6 +40,7 @@ PUBLIC_OPTION_SCHEMA = {
     "--engine": _spec("choice", "guided", "exposed", "Engine selection screen"),
     "--llm-models": _spec("string-list", "guided", "exposed", "LLM model selection screen"),
     "--models": _spec("string-list", "guided", "equivalent", "Alias of --llm-models"),
+    "--model-variant": _spec("string-list", "guided", "exposed", "LLM model selection screen"),
     "--embedding-models": _spec("string-list", "guided", "exposed", "Embedding model selection screen"),
     "--image-models": _spec("string-list", "guided", "exposed", "Image model selection screen"),
     "--max-prompt-tokens": _spec("integer", "guided", "exposed", "Prompt-processing cap screen", minimum=1),
@@ -57,6 +59,10 @@ PUBLIC_OPTION_SCHEMA = {
         "choice", "advanced", "exposed", "Graphical execution settings",
         default="layer", choices=("single", "layer", "tensor"),
     ),
+    "--mtp": _spec(
+        "choice", "advanced", "exposed", "Graphical execution settings",
+        default="off", choices=MTP_CHOICES,
+    ),
     "--llamacpp-no-repack": _spec(
         "boolean", "advanced", "exposed", "Graphical execution settings", default=False,
     ),
@@ -65,6 +71,20 @@ PUBLIC_OPTION_SCHEMA = {
         "boolean", "advanced", "exposed", "Graphical execution settings", default=False,
     ),
     "--offline": _spec("boolean", "advanced", "exposed", "Graphical execution settings", default=False),
+    "--memory-telemetry": _spec(
+        "boolean", "advanced", "exposed", "Graphical execution settings", default=True,
+    ),
+    "--power-telemetry": _spec(
+        "boolean", "advanced", "exposed", "Graphical execution settings", default=False,
+    ),
+    "--sustained-duration": _spec(
+        "integer", "advanced", "exposed", "Graphical execution settings",
+        default=config.SUSTAINED_DURATION_SEC, minimum=config.SUSTAINED_MIN_CLASSIFICATION_SEC,
+    ),
+    "--ambient-temp-c": _spec(
+        "number", "advanced", "exposed", "Graphical execution settings", default=None,
+        minimum=-100, maximum=100,
+    ),
     "--out": _spec("path", "advanced", "exposed", "Graphical path settings", default=""),
     "--comfyui": _spec("path", "advanced", "exposed", "Graphical path settings", default=""),
 }
@@ -74,9 +94,13 @@ GUI_OPTION_FLAGS = {
     "warmup": "--warmup", "runs": "--runs", "timeout": "--timeout",
     "acc_timeout": "--acc-timeout", "acc_token_budget": "--acc-token-budget",
     "cpu_only": "--cpu-only", "gpu_split_mode": "--gpu-split-mode",
+    "mtp": "--mtp",
     "llamacpp_no_repack": "--llamacpp-no-repack",
     "force_all": "--force-all", "retry_crashed_models": "--retry-crashed-models",
-    "offline": "--offline", "out": "--out",
+    "offline": "--offline", "memory_telemetry": "--memory-telemetry",
+    "power_telemetry": "--power-telemetry",
+    "sustained_duration": "--sustained-duration", "ambient_temp_c": "--ambient-temp-c",
+    "out": "--out",
     "comfyui": "--comfyui",
 }
 
@@ -94,6 +118,14 @@ def option_value_errors(values: dict[str, object]) -> list[str]:
         if spec.value_type == "integer":
             if not isinstance(value, int) or isinstance(value, bool):
                 errors.append(f"{flag} must be a whole number.")
+                continue
+            if spec.minimum is not None and value < spec.minimum:
+                errors.append(f"{flag} must be at least {spec.minimum}.")
+            if spec.maximum is not None and value > spec.maximum:
+                errors.append(f"{flag} must be at most {spec.maximum}.")
+        elif spec.value_type == "number":
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                errors.append(f"{flag} must be a number.")
                 continue
             if spec.minimum is not None and value < spec.minimum:
                 errors.append(f"{flag} must be at least {spec.minimum}.")

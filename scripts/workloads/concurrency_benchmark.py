@@ -5,7 +5,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from scripts.runtime import config
-from scripts.runtime.engines.base import aggregate_generation_measurements, measurement_validation_errors
+from scripts.runtime.engines.base import (
+    TIMING_DECIMALS, aggregate_generation_measurements, measurement_validation_errors,
+)
 from scripts.runtime.shared import Shared
 from scripts.runtime.failure_handling import unexpected_model_failure
 from scripts.runtime.crash_cache import check_crash_cache, load_crash_cache, record_crash
@@ -43,7 +45,8 @@ class ConcurrencyBenchmark:
     def _fire_batch(engine, tag: str, level: int, per_request_context: int) -> list:
         """Fire `level` concurrent generate() requests — see docs/workloads.md#concurrency.
         Returns named measurement samples."""
-        prompts = [Shared.build_prompt_for_context(per_request_context) for _ in range(level)]
+        prompts = [Shared.build_prompt_for_context(per_request_context, variant=index)
+                   for index in range(level)]
         slot_ctx = ConcurrencyBenchmark.slot_ctx_for(per_request_context)
         with ThreadPoolExecutor(max_workers=level) as pool:
             futures = [
@@ -155,6 +158,8 @@ class ConcurrencyBenchmark:
                     Shared.log(f"{label}: preparing {level}-way concurrency at "
                                f"{per_request_context} tokens/slot ...")
 
+                    if journal:
+                        journal.begin_model_load()
                     if not engine.prepare_concurrency(
                         tag, level, self.slot_ctx_for(per_request_context), warmup_runs,
                         timeout=config.RUN_TIMEOUT,
@@ -195,6 +200,8 @@ class ConcurrencyBenchmark:
                     if warmup_failed:
                         break
 
+                    if journal:
+                        journal.begin_measured()
                     Shared.log(f"{label}: firing {level} concurrent request(s) ...")
                     samples, status, error, batch_elapsed = self._fire_measured_batch(
                         engine, tag, level, per_request_context, label, progress_stage,
@@ -240,8 +247,8 @@ class ConcurrencyBenchmark:
                     mean_tps      = Shared.mean(tpss)
 
                     results[short][str(level)] = {
-                        "ttft_mean_sec":     round(Shared.mean(ttfts), 3),
-                        "ttft_stdev_sec":    round(Shared.stdev(ttfts), 3),
+                        "ttft_mean_sec":     round(Shared.mean(ttfts), TIMING_DECIMALS),
+                        "ttft_stdev_sec":    round(Shared.stdev(ttfts), TIMING_DECIMALS),
                         "tps_mean":          round(mean_tps, 2),
                         "tps_stdev":         round(Shared.stdev(tpss), 2),
                         "aggregate_tps":     round(aggregate_tps, 2),

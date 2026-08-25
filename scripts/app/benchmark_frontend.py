@@ -23,6 +23,7 @@ from scripts.stage_registry import (
 from scripts.runtime.engines import engine_names, get_engine
 from scripts.setup.model_inventory import build_model_inventory
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+from scripts.workloads.model_variants import collapse_variant_selection
 from scripts.runtime.shared import Shared
 from scripts.setup.setup_config import configured_comfyui_dir, load_setup_config
 
@@ -62,6 +63,7 @@ FRONTEND_CONTROL_BINDINGS = {
     **{flag: f"execution_setting:{key}" for key, flag in GUI_OPTION_FLAGS.items()},
     "--tests": "test_selector", "--engine": "engine_selector",
     "--llm-models": "llm_model_selector",
+    "--model-variant": "llm_variant_selector",
     "--embedding-models": "embedding_model_selector",
     "--image-models": "image_model_selector",
     "--max-prompt-tokens": "prompt_cap_selector",
@@ -123,6 +125,10 @@ class MenuEntry:
     checked: bool
     available: bool = True
     tier: str | None = None
+    base_model: str | None = None
+    base_label: str | None = None
+    variant: str | None = None
+    default_variant: bool = False
 
 
 def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
@@ -154,7 +160,7 @@ def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
         return None
     tg_tokens = state["tg_tokens"]
     if tg_tokens is not None and (
-            not isinstance(tg_tokens, list) or not tg_tokens
+            not isinstance(tg_tokens, list)
             or not all(isinstance(v, int) and v > 0 for v in tg_tokens)
             or len(tg_tokens) != len(set(tg_tokens))):
         return None
@@ -163,7 +169,11 @@ def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
         if isinstance(options, dict):
             missing = set(GUI_OPTION_DEFAULTS) - set(options)
             if missing <= {
-                "offline", "gpu_split_mode", "retry_crashed_models", "llamacpp_no_repack",
+                "offline", "memory_telemetry", "power_telemetry", "gpu_split_mode",
+                "mtp",
+                "retry_crashed_models",
+                "llamacpp_no_repack",
+                "sustained_duration", "ambient_temp_c",
             }:
                 for key in missing:
                     options[key] = GUI_OPTION_DEFAULTS[key]
@@ -181,9 +191,11 @@ def validate_gui_options(options: object) -> list[str]:
         return ["GUI settings are incomplete."]
     errors = option_value_errors({GUI_OPTION_FLAGS[key]: value for key, value in options.items()})
     if any(not isinstance(options[key], bool) for key in (
-            "cpu_only", "force_all", "retry_crashed_models", "offline",
-            "llamacpp_no_repack")):
+            "cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
+            "power_telemetry", "llamacpp_no_repack")):
         errors.append("Execution mode settings must be true or false.")
+    if options.get("power_telemetry") and not options.get("memory_telemetry"):
+        errors.append("Power telemetry requires memory telemetry.")
     if not isinstance(options["out"], str) or not isinstance(options["comfyui"], str):
         errors.append("Output and ComfyUI paths must be text.")
     return errors
@@ -204,6 +216,23 @@ def build_frontend_state(engine_name: str, tests: list[str],
                          gui_options: dict | None = None,
                          selected_preset: str | None = None) -> dict:
     selected = [entry for entry in entries if entry.checked]
+    selected_variant_bases = {
+        entry.base_model for entry in selected if entry.base_model and entry.variant
+    }
+    includes_vllm = "vllm" in parse_engine_selection(engine_name)
+    if includes_vllm:
+        collapsed = collapse_variant_selection(
+            [{
+                "tag": entry.value, "base_model": entry.base_model,
+                "variant": entry.variant, "default": entry.default_variant,
+            } for entry in entries if entry.base_model],
+            {entry.value for entry in selected},
+        )
+        selected = [
+            entry for entry in selected
+            if not (entry.base_model and entry.variant)
+            or (entry.value in collapsed and entry.default_variant)
+        ]
     state = {
         "version": FRONTEND_STATE_VERSION,
         "engine": engine_name,
@@ -217,6 +246,14 @@ def build_frontend_state(engine_name: str, tests: list[str],
         "max_prompt_tokens": max_prompt_tokens,
         "tg_tokens": list(tg_tokens) if tg_tokens is not None else None,
     }
+    if "vllm" in parse_engine_selection(engine_name):
+        defaults = {
+            model["base_model"]: model["tag"] for model in LLM_MODELS
+            if model.get("base_model") in selected_variant_bases
+        }
+        for tag in defaults.values():
+            if tag not in state["models"]["llm"]:
+                state["models"]["llm"].append(tag)
     if gui_options is not None:
         state["gui_options"] = dict(gui_options)
     if selected_preset is not None:
@@ -234,12 +271,17 @@ def frontend_state_from_run_plan(plan: RunPlan, gui_options: dict | None = None)
         "accuracy_timeout_seconds": "acc_timeout",
         "accuracy_token_budget": "acc_token_budget", "cpu_only": "cpu_only",
         "gpu_split_mode": "gpu_split_mode", "force_all": "force_all",
+        "mtp_enabled": "mtp",
         "llamacpp_no_repack": "llamacpp_no_repack",
         "retry_crashed_models": "retry_crashed_models", "offline": "offline",
+        "memory_telemetry": "memory_telemetry", "power_telemetry": "power_telemetry",
+        "sustained_duration_sec": "sustained_duration", "ambient_temp_c": "ambient_temp_c",
     }
     for plan_key, option_key in option_mapping.items():
         if plan_key in effective:
-            options[option_key] = effective[plan_key]
+            options[option_key] = (
+                "on" if effective[plan_key] else "off"
+            ) if plan_key == "mtp_enabled" else effective[plan_key]
     models = plan.models
     llm_models = []
     for family in ("llm", "concurrency"):
@@ -311,7 +353,7 @@ def apply_saved_model_selection(entries: list[MenuEntry], state: dict | None) ->
     for family, kinds in FRONTEND_MODEL_FAMILIES.items():
         family_entries = [entry for entry in entries if entry.kind in kinds]
         saved = set(state["models"][family])
-        if not any(entry.value in saved for entry in family_entries):
+        if saved and not any(entry.value in saved for entry in family_entries):
             continue
         for entry in family_entries:
             entry.checked = entry.value in saved
@@ -590,9 +632,14 @@ def build_model_entries(inventory: dict[str, list[dict]], tests: list[str]) -> l
     if any(test in LLM_BACKED_TESTS for test in tests):
         for model in inventory["llm"]:
             tier = model["tier"]
+            is_variant = isinstance(model.get("variant"), str)
             entries.append(MenuEntry(
                 model["tag"], model["label"], "llm", f"LLM — {tier}",
-                checked=tier != "large", tier=tier,
+                checked=((model.get("default", False) and tier != "large")
+                         if is_variant else tier != "large"),
+                tier=tier, base_model=model.get("base_model"),
+                base_label=model.get("base_label"), variant=model.get("variant"),
+                default_variant=bool(model.get("default", False)),
             ))
         for model in inventory["custom"]:
             engines = ", ".join(model.get("engines", ()))
@@ -618,8 +665,11 @@ def build_model_entries(inventory: dict[str, list[dict]], tests: list[str]) -> l
 
 
 def missing_catalog_hint(inventory: dict[str, list[dict]], system: str) -> str | None:
+    installed_llm_families = {
+        model.get("base_model", model.get("tag")) for model in inventory["llm"]
+    }
     missing = {
-        "LLM": len(LLM_MODELS) - len(inventory["llm"]),
+        "LLM": max(0, len(LLM_MODELS) - len(installed_llm_families)),
         "embedding": len(EMBED_MODELS) - len(inventory["embedding"]),
         "image": len(IMAGE_MODELS) - len(inventory["image"]),
     }
@@ -733,7 +783,11 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
         command.extend(["--timeout", str(gui_options["timeout"])])
         command.extend(["--acc-timeout", str(gui_options["acc_timeout"])])
         command.extend(["--acc-token-budget", str(gui_options["acc_token_budget"])])
+        command.extend(["--sustained-duration", str(gui_options["sustained_duration"])])
+        if "sustained" in tests and gui_options["ambient_temp_c"] is not None:
+            command.extend(["--ambient-temp-c", str(gui_options["ambient_temp_c"])])
         command.extend(["--gpu-split-mode", gui_options["gpu_split_mode"]])
+        command.extend(["--mtp", gui_options["mtp"]])
         if gui_options["cpu_only"]:
             command.append("--cpu-only")
         if gui_options["llamacpp_no_repack"]:
@@ -744,16 +798,65 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
             command.append("--retry-crashed-models")
         if gui_options["offline"]:
             command.append("--offline")
+        if gui_options["memory_telemetry"]:
+            command.append("--memory-telemetry")
+        else:
+            command.append("--no-memory-telemetry")
+        if gui_options["power_telemetry"]:
+            command.append("--power-telemetry")
         if gui_options["out"]:
             command.extend(["--out", gui_options["out"]])
         if gui_options["comfyui"] and "--comfyui" in command:
             command[command.index("--comfyui") + 1] = gui_options["comfyui"]
     selected = [entry for entry in entries if entry.checked]
+    selected_variant_bases = {
+        entry.base_model for entry in selected if entry.base_model and entry.variant
+    }
+    includes_vllm = "vllm" in parse_engine_selection(engine_name)
+    if includes_vllm:
+        collapsed = collapse_variant_selection(
+            [{
+                "tag": entry.value, "base_model": entry.base_model,
+                "variant": entry.variant, "default": entry.default_variant,
+            } for entry in entries if entry.base_model],
+            {entry.value for entry in selected},
+        )
+        selected = [
+            entry for entry in selected
+            if not (entry.base_model and entry.variant) or entry.value in collapsed
+        ]
     if any(test in LLM_BACKED_TESTS for test in tests):
+        selected_llm = [entry for entry in selected if entry.kind in ("llm", "custom")]
+        variant_bases = selected_variant_bases if includes_vllm else {
+            entry.base_model for entry in selected_llm if entry.base_model and entry.variant
+        }
+        llm_values = [
+            entry.value for entry in selected_llm if not (entry.base_model and entry.variant)
+        ]
+        for base_model in sorted(variant_bases):
+            catalog_model = next(
+                (model for model in LLM_MODELS if model.get("base_model") == base_model), None,
+            )
+            if catalog_model is not None:
+                llm_values.append(catalog_model["tag"])
+            else:
+                stale_entry = next(
+                    (entry.value for entry in selected_llm if entry.base_model == base_model), None,
+                )
+                if stale_entry is not None:
+                    llm_values.append(stale_entry)
         command.extend([
             "--llm-models",
-            *[entry.value for entry in selected if entry.kind in ("llm", "custom")],
+            *llm_values,
         ])
+        for base_model in sorted(variant_bases if not includes_vllm else ()):
+            base_entries = [
+                entry for entry in selected_llm if entry.base_model == base_model
+            ]
+            if len(base_entries) == 1 and base_entries[0].default_variant:
+                continue
+            for entry in base_entries:
+                command.extend(["--model-variant", f"{base_model}={entry.variant}"])
     if "emb" in tests:
         command.extend([
             "--embedding-models",
@@ -819,7 +922,8 @@ def run_frontend(input_fn=input, output_fn=Shared.plain_output, process_runner=N
             saved_path=configured_comfyui_dir(setup_config),
             managed_dir=config.COMFYUI_DIR,
         ) or config.COMFYUI_DIR
-        inventory = inventory_builder(engine_factory(selected_engine), config.COMFYUI_MODELS_DIR)
+        selected_engine_instance = engine_factory(selected_engine)
+        inventory = inventory_builder(selected_engine_instance, config.COMFYUI_MODELS_DIR)
         test_entries = build_test_entries(inventory)
         apply_saved_test_selection(test_entries, saved_state)
         if not any(entry.available for entry in test_entries):

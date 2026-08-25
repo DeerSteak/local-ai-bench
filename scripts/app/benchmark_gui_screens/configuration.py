@@ -6,6 +6,7 @@ from typing import Any
 from scripts.app.benchmark_frontend import MAX_PROMPT_TOKEN_OPTIONS, TEST_DEFINITIONS, TG_TOKEN_OPTIONS
 from scripts.app.benchmark_gui_support import plan_preview_sections
 from scripts.runtime import config
+from scripts.workloads.model_variants import variant_selection_state, variant_selection_target
 
 
 @dataclass
@@ -29,34 +30,91 @@ class ConfigurationScreen:
     custom_models: list
     model_vars: dict
     model_defaults: dict
+    tk: Any
+    variant_children_visible: bool = True
+    variant_parent_widgets: dict | None = None
+
+    def variant_groups(self) -> dict[str, list]:
+        groups: dict[str, list] = {}
+        for entry in self.custom_models:
+            if entry.base_model and entry.variant:
+                groups.setdefault(entry.base_model, []).append(entry)
+        return groups
+
+    def sync_variant_parents(self) -> None:
+        selected = {key for key, variable in self.model_vars.items() if variable.get()}
+        for base_model, widget in (self.variant_parent_widgets or {}).items():
+            state = variant_selection_state(
+                [entry.value for entry in self.variant_groups()[base_model]], selected,
+            )
+            widget.state(["selected" if state == "all" else "!selected"])
+            widget.state(["alternate" if state == "some" else "!alternate"])
+
+    def toggle_variant_parent(self, base_model: str) -> None:
+        groups = self.variant_groups()
+        tags = [entry.value for entry in groups[base_model]]
+        selected = {key for key, variable in self.model_vars.items() if variable.get()}
+        target = variant_selection_target(tags, selected)
+        for tag in tags:
+            self.model_vars[tag].set(tag in target)
+        self.sync_variant_parents()
+
+    def set_variant_children_visible(self, visible: bool) -> None:
+        if self.variant_children_visible != visible:
+            self.variant_children_visible = visible
+            self.render_model_rows()
 
     def render_model_rows(self) -> None:
         for child in self.model_rows.winfo_children():
             child.destroy()
         self.model_widgets.clear()
+        self.variant_parent_widgets = {}
+        variant_groups = self.variant_groups()
+        rendered_parents = set()
         previous = None
         row = 0
         for entry in self.custom_models:
+            if entry.base_model and entry.variant and not self.variant_children_visible \
+                    and not entry.default_variant:
+                continue
             if entry.section != previous:
                 self.ttk.Label(
                     self.model_rows, text=entry.section, style="Section.TLabel",
                 ).grid(row=row, column=0, sticky="w", pady=(7, 2))
                 row += 1
                 previous = entry.section
+            if entry.base_model and entry.variant and self.variant_children_visible \
+                    and entry.base_model not in rendered_parents:
+                parent = self.ttk.Checkbutton(
+                    self.model_rows, text=entry.base_label or entry.base_model,
+                    command=lambda base=entry.base_model: self.toggle_variant_parent(base),
+                )
+                parent.grid(row=row, column=0, sticky="w", padx=(12, 0), pady=(4, 1))
+                self.variant_parent_widgets[entry.base_model] = parent
+                rendered_parents.add(entry.base_model)
+                row += 1
             option_row = self.ttk.Frame(self.model_rows)
-            option_row.grid(row=row, column=0, sticky="ew", padx=(12, 0), pady=2)
+            indent = 32 if entry.base_model and self.variant_children_visible else 12
+            option_row.grid(row=row, column=0, sticky="ew", padx=(indent, 0), pady=2)
             option_row.columnconfigure(1, weight=1)
-            widget = self.ttk.Checkbutton(option_row, variable=self.model_vars[entry.value])
-            widget.grid(row=0, column=0, sticky="nw")
-            label = self.ttk.Label(option_row, text=entry.label, wraplength=280)
-            label.grid(row=0, column=1, sticky="w", padx=(2, 0))
-            label.bind("<Button-1>", lambda _event, control=widget: control.invoke())
+            label_text = (
+                entry.label.removeprefix(f"{entry.base_label} — ")
+                if self.variant_children_visible and entry.base_model
+                else entry.base_label or entry.label if entry.base_model
+                else entry.label
+            )
+            widget = self.ttk.Checkbutton(
+                option_row, text=label_text, variable=self.model_vars[entry.value],
+                command=self.sync_variant_parents if entry.base_model else None,
+            )
+            widget.grid(row=0, column=0, columnspan=2, sticky="nw")
             self.ttk.Button(
                 self.model_rows, text="Reset", width=6,
                 command=lambda key=entry.value: self.model_vars[key].set(self.model_defaults[key]),
             ).grid(row=row, column=1, sticky="e", padx=(8, 0))
             self.model_widgets[entry.value] = widget
             row += 1
+        self.sync_variant_parents()
 
 
 def build_configuration_screen(notebook, *, tk, ttk, discovery: dict,
@@ -126,7 +184,7 @@ def build_configuration_screen(notebook, *, tk, ttk, discovery: dict,
     screen = ConfigurationScreen(
         frame, canvas, form, configuration, engine_box, preset_row, project_row, tests_box,
         models_box, model_rows, workload_box, advanced_toggle, test_widgets,
-        test_labels, {}, ttk, custom_models, model_vars, model_defaults,
+        test_labels, {}, ttk, custom_models, model_vars, model_defaults, tk,
     )
     screen.render_model_rows()
     return screen
@@ -162,17 +220,14 @@ def _build_tests(ttk, parent, tests, variables, defaults):
         option_row = ttk.Frame(box)
         option_row.grid(row=row, column=0, sticky="ew", pady=2)
         option_row.columnconfigure(1, weight=1)
-        widget = ttk.Checkbutton(option_row, variable=variables[name])
-        widget.grid(row=0, column=0, sticky="nw")
         text = label if entry.available else f"{label} (model not installed)"
-        option_label = ttk.Label(option_row, text=text, wraplength=280)
-        option_label.grid(row=0, column=1, sticky="w", padx=(2, 0))
-        option_label.bind("<Button-1>", lambda _event, control=widget: control.invoke())
+        widget = ttk.Checkbutton(option_row, text=text, variable=variables[name])
+        widget.grid(row=0, column=0, columnspan=2, sticky="nw")
         ttk.Button(
             box, text="Reset", width=6,
             command=lambda key=name: variables[key].set(defaults[key]),
         ).grid(row=row, column=1, sticky="e", padx=(8, 0))
-        widgets[name], labels[name] = widget, option_label
+        widgets[name], labels[name] = widget, widget
     return box, widgets, labels
 
 

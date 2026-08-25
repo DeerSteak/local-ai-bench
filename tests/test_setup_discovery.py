@@ -116,3 +116,88 @@ def test_discovers_linux_intel_arc(monkeypatch):
 
     assert result.vendor == "intel"
     assert result.name == "Intel Arc A770"
+
+
+def test_discovers_linux_arc_pro_b65_pci_codename(monkeypatch):
+    _platform(monkeypatch, "Linux")
+    monkeypatch.setattr(
+        setup_discovery.subprocess, "check_output",
+        lambda *_args, **_kwargs: (
+            "18:00.0 VGA compatible controller: Intel Corporation "
+            "Battlemage G31 [Intel Graphics] [8086:e222]\n"
+        ),
+    )
+
+    result = setup_discovery.discover_linux_intel_gpu()
+
+    assert result.vendor == "intel"
+    assert result.kind == "discrete"
+    assert result.name is not None
+    assert "Battlemage G31" in result.name
+
+
+def test_discovers_intel_vram_from_xpu_smi(monkeypatch, tmp_path):
+    _platform(monkeypatch, "Linux")
+    monkeypatch.setattr(setup_discovery.shutil, "which", lambda _name: "/usr/bin/xpu-smi")
+    monkeypatch.setattr(
+        setup_discovery.subprocess, "check_output",
+        lambda *_args, **_kwargs: "| 1024 MiB / 24576 MiB | 20% Default |\n",
+    )
+
+    assert setup_discovery.discover_intel_vram_gb(sysfs_root=tmp_path) == 24
+
+
+def test_discovers_intel_vram_from_linux_drm_driver(monkeypatch, tmp_path):
+    _platform(monkeypatch, "Linux")
+    monkeypatch.setattr(setup_discovery.shutil, "which", lambda _name: None)
+    intel = tmp_path / "card1" / "device"
+    intel.mkdir(parents=True)
+    (intel / "vendor").write_text("0x8086\n", encoding="utf-8")
+    (intel / "mem_info_vram_total").write_text(str(24 * 1024 ** 3), encoding="utf-8")
+    other = tmp_path / "card2" / "device"
+    other.mkdir(parents=True)
+    (other / "vendor").write_text("0x1002\n", encoding="utf-8")
+    (other / "mem_info_vram_total").write_text(str(16 * 1024 ** 3), encoding="utf-8")
+
+    assert setup_discovery.discover_intel_vram_gb(sysfs_root=tmp_path) == 24
+
+
+def test_intel_vram_discovery_is_unknown_without_tool_or_driver_counter(monkeypatch, tmp_path):
+    _platform(monkeypatch, "Linux")
+    monkeypatch.setattr(setup_discovery.shutil, "which", lambda _name: None)
+
+    assert setup_discovery.discover_intel_vram_gb(sysfs_root=tmp_path) is None
+
+
+def test_discovers_linux_amd_gpu_before_rocm_is_installed(monkeypatch):
+    _platform(monkeypatch, "Linux")
+    monkeypatch.setattr(
+        setup_discovery.subprocess, "check_output",
+        lambda *_args, **_kwargs: (
+            "0d:00.0 VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] "
+            "Navi 44 [Radeon RX 9060 XT] [1002:7550]\n"
+        ),
+    )
+
+    result = setup_discovery.discover_linux_amd_gpu()
+
+    assert result.vendor == "amd"
+    assert result.kind == "discrete"
+    assert result.name is not None and "Radeon RX 9060 XT" in result.name
+
+
+def test_discovers_linux_nvidia_gpu_before_driver_is_installed(monkeypatch):
+    _platform(monkeypatch, "Linux")
+    monkeypatch.setattr(
+        setup_discovery.subprocess, "check_output",
+        lambda *_args, **_kwargs: (
+            "0d:00.0 VGA compatible controller: NVIDIA Corporation GB202 "
+            "[GeForce RTX 5090] [10de:2b85]\n"
+        ),
+    )
+
+    result = setup_discovery.discover_linux_nvidia_gpu()
+
+    assert result.vendor == "nvidia"
+    assert result.kind == "discrete"
+    assert result.name is not None and "RTX 5090" in result.name

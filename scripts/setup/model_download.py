@@ -13,7 +13,9 @@ from scripts.setup.model_inventory import (
     engine_download_size, engine_model_complete, engine_model_dir,
     models_missing_engine_support,
 )
+from scripts.runtime.mtp import native_mtp_config
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
+from scripts.workloads.model_variants import expanded_variant_catalog
 
 
 def download_hf_files(repo: str, filenames: str | list[str], destination: Path, *,
@@ -180,7 +182,8 @@ def import_model(*, inspection: RepositoryInspection, engine: str, variant: Impo
         raise ValueError("model tag may contain only letters, numbers, dots, underscores, and hyphens")
     if not label.strip():
         raise ValueError("display name is required")
-    if tag in {model["tag"] for model in LLM_MODELS + EMBED_MODELS}:
+    catalog = expanded_variant_catalog(LLM_MODELS) + EMBED_MODELS
+    if tag in {model["tag"] for model in catalog}:
         raise ValueError("model tag conflicts with a catalog model")
     registered = custom_model(engine, tag, registry_path)
     if registered is not None:
@@ -280,41 +283,82 @@ def catalog_model_downloaded(model: dict, engine: str, *, models_dir: Path,
     return engine_model_complete(directory, engine, filenames)
 
 
+def catalog_mtp_artifact_downloaded(model: dict, engine: str, *, models_dir: Path) -> bool:
+    config = native_mtp_config(model, engine)
+    if config is None or "draft_file" not in config:
+        return True
+    directory = engine_model_dir(models_dir, engine, model["tag"])
+    return (directory / Path(config["draft_file"]).name).is_file()
+
+
+def catalog_mtp_artifact_download_size(model: dict, engine: str) -> str | None:
+    config = native_mtp_config(model, engine)
+    if config is None or "draft_file" not in config:
+        return None
+    value = model["native_mtp"][engine].get("draft_download_size")
+    return value if isinstance(value, str) and value.strip() else None
+
+
 def provision_catalog_models(models: list[dict], engines: list[str], *,
                              models_dir: Path, vllm_cache: Path, load_token,
                              issues: list[str], info, warn, fail, ok) -> None:
     for engine in engines:
         if len(engines) > 1:
             info(f"Models for {engine} ...")
-        unsupported = models_missing_engine_support(models, engine)
+        engine_models = [
+            model for model in models
+            if engine != "vllm" or not model.get("variant") or model.get("default", False)
+        ]
+        unsupported = models_missing_engine_support(engine_models, engine)
         for tag in unsupported:
             warn(f"{tag} — no {engine} weights defined; skipping for this engine")
             issues.append(f"No {engine} weights for {tag}")
-        for model in models:
+        for model in engine_models:
             tag, label = model["tag"], model["label"]
             if tag in unsupported:
                 continue
             size = engine_download_size(model, engine)
-            if catalog_model_downloaded(
+            primary_downloaded = catalog_model_downloaded(
                 model, engine, models_dir=models_dir, vllm_cache=vllm_cache,
-            ):
-                ok(f"{label} [{engine}] — already downloaded")
-                continue
-            warn(f"{label} [{engine}] ({size}) — downloading ...")
-            if engine == "vllm":
-                repository, destination = model["vllm_repo"], vllm_cache
-                success = download_hf_snapshot(
-                    repository, vllm_cache, token=load_token(), warn=warn,
-                )
-            else:
-                repository = model["hf_repo"]
+            )
+            success = True
+            if not primary_downloaded:
+                warn(f"{label} [{engine}] ({size}) — downloading ...")
+                if engine == "vllm":
+                    repository, destination = model["vllm_repo"], vllm_cache
+                    success = download_hf_snapshot(
+                        repository, vllm_cache, token=load_token(), warn=warn,
+                    )
+                else:
+                    repository = model["hf_repo"]
+                    destination = engine_model_dir(models_dir, engine, tag)
+                    success = download_hf_files(
+                        repository, model["hf_file"], destination,
+                        token=load_token(), warn=warn,
+                    )
+                if not success:
+                    fail(f"{label} [{engine}] — download failed")
+                    issues.append(f"Download {repository} manually into {destination}")
+                    continue
+
+            mtp_config = native_mtp_config(model, engine)
+            if (mtp_config is not None and "draft_file" in mtp_config
+                    and not catalog_mtp_artifact_downloaded(
+                        model, engine, models_dir=models_dir,
+                    )):
                 destination = engine_model_dir(models_dir, engine, tag)
+                draft_size = catalog_mtp_artifact_download_size(model, engine) or "size unknown"
+                warn(f"{label} [{engine}] MTP predictor ({draft_size}) — downloading ...")
                 success = download_hf_files(
-                    repository, model["hf_file"], destination,
+                    mtp_config["draft_repo"], mtp_config["draft_file"], destination,
                     token=load_token(), warn=warn,
                 )
-            if success:
-                ok(f"{label} [{engine}] — downloaded successfully")
-            else:
-                fail(f"{label} [{engine}] — download failed")
-                issues.append(f"Download {repository} manually into {destination}")
+                if not success:
+                    fail(f"{label} [{engine}] MTP predictor — download failed")
+                    issues.append(
+                        f"Download {mtp_config['draft_repo']}/{mtp_config['draft_file']} "
+                        f"manually into {destination}"
+                    )
+                    continue
+            state = "already downloaded" if primary_downloaded else "downloaded successfully"
+            ok(f"{label} [{engine}] — {state}")

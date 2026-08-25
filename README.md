@@ -1,4 +1,4 @@
-# Local AI Bench v5.1.1
+# Local AI Bench v6.0
 
 Cross-platform benchmarking for LLM generation, image generation, embeddings, accuracy (multiple-choice question answering, math, reasoning, code, and tool calling), and opt-in concurrency/load testing and llama.cpp-native throughput comparisons. Designed for hardware from 8GB GPUs to high-memory unified-memory systems; setup estimates model fit before download, while benchmark failures are isolated so completed measurements are preserved.
 
@@ -15,9 +15,9 @@ cd local-ai-bench
 
 | Platform | Script | What it can install |
 |---|---|---|
-| macOS | `bash setup.sh` | Homebrew, Python, llama.cpp (includes llama-bench, llama-batched-bench), ComfyUI |
-| Linux / DGX Spark | `bash setup.sh` | Python, llama.cpp source build (includes llama-bench, llama-batched-bench), ComfyUI |
-| Windows | `setup.bat` | Python, llama.cpp (CUDA on NVIDIA, Vulkan otherwise; includes llama-bench and llama-batched-bench), ComfyUI portable |
+| macOS | `bash setup.sh` | Homebrew, Python, llama.cpp with Metal, and ComfyUI with MPS |
+| Linux / WSL2 / DGX Spark | `bash setup.sh` | Python, llama.cpp with the detected CUDA, ROCm, or SYCL/XPU backend, ComfyUI, and vLLM where the platform matrix below records support |
+| Windows | `setup.bat` | Python, llama.cpp with CUDA on NVIDIA, Vulkan on AMD, or SYCL/XPU on Intel, plus ComfyUI portable; see the Intel Smart App Control exception below |
 
 `setup.sh` / `setup.bat` first ensure Python and create or reuse `bench-env/`. The setup assistant then shows its installation plan for approval before installing Python packages, llama.cpp, or models, and opens an interactive model picker so you choose every model download before the unattended installation phase begins.
 
@@ -32,6 +32,8 @@ run_bench.bat
 ```
 
 With no arguments, the benchmark launcher opens the graphical configuration screen on a usable local desktop and retains the terminal checklist over SSH or without a display. The GUI applies a selected preset immediately, switches the preset label to Custom whenever a setting is changed, and remembers the resulting configuration in `.benchmark_frontend_state.json`. Passing benchmark CLI arguments forwards them straight to the non-interactive benchmark CLI — see [Launch modes](docs/cli-reference.md#launch-modes) for the full behavior and defaults.
+
+When llama.cpp is the only selected engine, every catalog LLM can run its default Q4_K_M artifact or an opt-in same-repository sweep across Q4_K_M, the catalog's preferred Q6-family artifact, and Q8_0. Setup and the benchmark GUI group those choices beneath one base-model checkbox; selecting vLLM hides the GGUF children and retains only the documented default because this workflow does not claim that native vLLM formats are comparable to GGUF. See [Product catalogs](docs/catalogs.md#llamacpp-quantization-variants) for the exact artifacts and [CLI Reference](docs/cli-reference.md) for headless selection.
 
 A full run takes several hours, depending on your hardware and which options you select. When it's done, explore the results in the [dashboard](docs/dashboard.md):
 
@@ -49,43 +51,53 @@ For platform-specific notes, the HuggingFace token flow, and what setup actually
 
 ---
 
+## Qualified platforms
+
+Local AI Bench publishes support only after the ordinary benchmark completes every workload required for that exact platform, runtime version, backend, and accelerator. Sixteen of the seventeen original runtime targets are qualified for v6.0-pre8. The remaining target is Intel Arc Pro B65 with llama.cpp SYCL/XPU on Windows: enforced Smart App Control blocked the official runtime DLLs on the tested host, so that path is not supported there and remains unverified on other Windows systems.
+
+<!-- qualification-matrix:start -->
+16 of 17 target runtime combinations are supported by current evidence.
+
+| Target | Platform | Architecture | Runtime | Backend | Accelerator | Runtime support | ComfyUI images | Evidence |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `macos-m5-pro-llamacpp-metal` | macos | arm64 | llamacpp | metal | M5 Pro | Supported | Supported | 0.1.2-dev, 2026-08-18, suite 6.0-pre8 |
+| `geforce-windows-llamacpp-cuda` | windows | x86_64 | llamacpp | cuda | NVIDIA GeForce | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
+| `radeon-windows-llamacpp-vulkan` | windows | x86_64 | llamacpp | vulkan | AMD Radeon | Supported | Supported | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
+| `intel-arc-windows-llamacpp-sycl` | windows | x86_64 | llamacpp | xpu | B65 | Unverified | Unverified | No qualification record |
+| `geforce-wsl2-llamacpp-cuda` | wsl2 | x86_64 | llamacpp | cuda | NVIDIA GeForce | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
+| `geforce-wsl2-vllm-cuda` | wsl2 | x86_64 | vllm | cuda | NVIDIA GeForce | Supported | Not applicable | 0.27.1, 2026-08-19, suite 6.0-pre8 |
+| `radeon-wsl2-llamacpp-rocm` | wsl2 | x86_64 | llamacpp | rocm | Radeon RX 9060 XT | Supported | Supported | 0.1.2-dev, 2026-08-20, suite 6.0-pre8 |
+| `nvidia-linux-llamacpp-cuda` | linux | x86_64 | llamacpp | cuda | NVIDIA | Supported | Supported | 0.1.2-dev, 2026-08-22, suite 6.0-pre8 |
+| `nvidia-linux-vllm-cuda` | linux | x86_64 | vllm | cuda | NVIDIA | Supported | Not applicable | 0.27.1, 2026-08-22, suite 6.0-pre8 |
+| `radeon-linux-llamacpp-rocm` | linux | x86_64 | llamacpp | rocm | Radeon RX 9060 XT | Supported | Supported | 0.1.2-dev, 2026-08-21, suite 6.0-pre8 |
+| `radeon-linux-vllm-rocm` | linux | x86_64 | vllm | rocm | Radeon RX 9060 XT | Supported | Not applicable | 0.27.1+rocm723, 2026-08-21, suite 6.0-pre8 |
+| `intel-arc-linux-llamacpp-sycl` | linux | x86_64 | llamacpp | xpu | 8086:e222 | Supported | Supported | 0.1.2-dev, 2026-08-21, suite 6.0-pre8 |
+| `intel-arc-linux-vllm-xpu` | linux | x86_64 | vllm | xpu | 8086:e222 | Supported | Not applicable | 0.27.1+xpu, 2026-08-21, suite 6.0-pre8 |
+| `ryzen-ai-halo-llamacpp-rocm` | linux | x86_64 | llamacpp | rocm | Radeon 8060S | Supported | Supported | 0.1.2-dev, 2026-08-21, suite 6.0-pre8 |
+| `ryzen-ai-halo-vllm-rocm` | linux | x86_64 | vllm | rocm | Radeon 8060S | Supported | Not applicable | 0.27.1+rocm723, 2026-08-21, suite 6.0-pre8 |
+| `dgx-spark-llamacpp-cuda` | linux | aarch64 | llamacpp | cuda | NVIDIA GB10 | Supported | Supported | 0.1.2-dev, 2026-08-19, suite 6.0-pre8 |
+| `dgx-spark-vllm-cuda` | linux | aarch64 | vllm | cuda | NVIDIA GB10 | Supported | Not applicable | 0.27.1, 2026-08-19, suite 6.0-pre8 |
+<!-- qualification-matrix:end -->
+
+**Supported** means complete reviewed smallest-model evidence exists for the exact combination. **Experimental** means complete evidence exists but is stale. **Unverified** means no complete matching evidence has been recorded; it does not by itself mean the runtime is broken. ComfyUI image support is graded separately and is not applicable to vLLM.
+
+Qualification exercises every applicable workload with the smallest compatible LLM, embedding model, and, for llama.cpp, Stable Diffusion 1.5. It proves functional completion of the shipped setup and benchmark path, not full-catalog performance or full-bank accuracy. See [Platform qualification](docs/qualification.md) for the procedure, pass contract, artifact policy, and exact scope.
+
+---
+
 ## Documentation
 
-| Doc | Covers |
+Start with the [documentation index](docs/README.md), which separates current user guidance, methodology, developer references, operational policy, and forward-looking plans.
+
+| Common destination | Covers |
 |---|---|
-| [Setup](docs/setup.md) | What the setup scripts install, the model picker, HuggingFace tokens, platform-specific notes |
-| [Workloads](docs/workloads.md) | What's tested — LLM tiers and modes, images, embeddings, MCQ/math/reasoning/code/tool accuracy, concurrency, and llama-bench |
-| [Methodology Contract](docs/methodology-contract.md) | Supported scope, metric boundaries, cache/retry/timeout rules, validity, aggregation, and decision-grade acceptance |
-| [Product Requirements](docs/product-requirements.md) | Primary pre-launch hardware-validation workflow and quality gates |
-| [User Journey](docs/user-journey.md) | Complete discovery-to-report path, including cancellation, failure, resume, and review |
-| [Consumer Recommendation Policy](docs/recommendation-policy.md) | Evidence, fit, uncertainty, ranking, conflicts, and GPU/Mac decision flows |
-| [Platform Tuning Profiles](docs/platform-tuning.md) | Neutral runtime settings, compatibility workarounds, and profile change rules |
-| [Acceptance Policies](docs/acceptance-policies.md) | Explicit per-case thresholds, evidence requirements, and rejection behavior |
-| [Benchmark Projects](docs/projects.md) | Local decision workflows, portable configuration, baselines, and acceptance policies |
-| [Local Result History](docs/result-history.md) | Filesystem-owned filtering, multi-file dashboard launch, and policy evaluation |
-| [Vendor Diagnostics](docs/vendor-diagnostics.md) | First-divergence evidence and source-verified engineer reproduction package |
-| [Outbound Metadata Review](docs/outbound-review.md) | Embargo review, private aliases, and source-identity verification |
-| [Offline Mode](docs/offline-mode.md) | Loopback-only execution controls and qualification boundary |
-| [Limitations](docs/limitations.md) | Representativeness, environmental variance, compatibility, and recommendation constraints |
-| [Local Data Lifecycle](docs/data-lifecycle.md) | Local storage, retention, deletion, portability, and support-bundle handling |
-| [CLI Reference](docs/cli-reference.md) | Every flag, with examples |
-| [Dashboard](docs/dashboard.md) | Loading results, chart sections, what each chart means, exporting |
-| [Decision Reports](docs/reports.md) | Deterministic self-contained HTML/PDF evidence summaries |
-| [How It Works](docs/how-it-works.md) | Execution order, orchestration, and code organization |
-| [Engines](docs/engines.md) | The `InferenceEngine` interface, `LlamaCppEngine`, `--engine`, and how to add a new engine |
-| [Project Structure](docs/project-structure.md) | What every file and folder in the repo is for |
-| [Testing](docs/testing.md) | How to run tests, coverage boundaries, and a concise suite map |
-| [4.1 Result Compatibility](docs/result-compatibility-v4.1.md) | Export, partial-result, measurement, and dashboard behavior protected during the commercial rewrite |
-| [Architecture Decisions](docs/architecture-decisions.md) | Simplicity gate, data ownership decisions, and migration deletion ledger |
-| [Coordinator API Contract](docs/coordinator-api.md) | Future authenticated localhost API, compatibility, validation, lifecycle, and artifact boundaries |
-| [Security and Privacy](docs/security-and-privacy.md) | Trust boundaries, data classifications, embargo handling, threats, controls, and open verification work |
-| [Release Policy](docs/release-policy.md) | Platform support levels, qualification matrix, stable gates, channels, and compatibility notes |
-| [Contributor Workflow](docs/contributor-workflow.md) | Branch roles, pull requests, validation, merge conventions, releases, hotfixes, and repository protection |
-| [Installation Maintenance](docs/maintenance.md) | Repair, upgrade, rollback, and safe project-owned uninstall boundaries |
-| [Product Governance](docs/governance.md) | Change classes, required evidence, approval authority, and decision records |
-| [Troubleshooting](docs/troubleshooting.md) | Setup, execution, result, report, and privacy-safe support guidance |
-| [Support Operations](docs/support.md) | Intake, severity, escalation, redaction, retention, and resolution runbooks |
-| [Telemetry Contract](docs/telemetry.md) | Current no-telemetry state and future opt-in event/field boundaries |
+| [Setup](docs/setup.md) | Installation, models, credentials, and platform notes |
+| [Workloads](docs/workloads.md) | What each benchmark measures |
+| [CLI Reference](docs/cli-reference.md) | Commands, flags, defaults, and examples |
+| [Dashboard](docs/dashboard.md) | Loading, comparing, interpreting, and exporting results |
+| [Methodology Contract](docs/methodology-contract.md) | Scientific boundaries and aggregation rules |
+| [Troubleshooting](docs/troubleshooting.md) | Setup, execution, result, and report failures |
+| [Version 6 Plan](VERSION_6_PLAN.md) | Active implementation, qualification, pilot, and rollback plan |
 
 ---
 

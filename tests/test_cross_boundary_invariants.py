@@ -1,8 +1,10 @@
 import re
 from pathlib import Path
 
+from scripts.runtime.comfyui_installation import COMFYUI_LOADER_MODEL_INPUTS
+from scripts.workloads.model_variants import expanded_variant_catalog
 from scripts.workloads.llm_conversation_benchmark import LLMConversationBenchmark
-from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS, image_checkpoint_groups
 
 
 DASHBOARD_CONSTANTS = Path(__file__).parents[1] / "dashboard" / "src" / "constants.ts"
@@ -37,7 +39,7 @@ def test_conversation_checkpoints_exist_in_dashboard_context_order():
 def test_dashboard_model_registries_match_python_catalog():
     source = DASHBOARD_CONSTANTS.read_text(encoding="utf-8")
     assert _typescript_string_array(source, "LLM_MODEL_ORDER") == [
-        model["short"] for model in LLM_MODELS
+        model["short"] for model in expanded_variant_catalog(LLM_MODELS)
     ]
     assert _typescript_string_array(source, "IMAGE_MODEL_ORDER") == [
         model["short"] for model in IMAGE_MODELS
@@ -45,3 +47,7 @@ def test_dashboard_model_registries_match_python_catalog():
     assert _typescript_string_array(source, "EMBED_MODEL_ORDER") == [
         model["short"] for model in EMBED_MODELS
     ]
+
+
+def test_every_cataloged_comfyui_loader_has_an_object_info_input_mapping():
+    assert set(image_checkpoint_groups(IMAGE_MODELS)) <= set(COMFYUI_LOADER_MODEL_INPUTS)

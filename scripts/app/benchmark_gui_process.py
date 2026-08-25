@@ -31,6 +31,17 @@ def open_path_command(path: Path, system: str) -> list[str]:
     return ["xdg-open", str(path)]
 
 
+def open_path_process_options(system: str) -> dict:
+    options = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
+    if system != "Windows":
+        options["start_new_session"] = True
+    return options
+
+
 def launch_controlled_process(command: list[str], *, creationflags: int = 0,
                               pause_path_factory=create_pause_control,
                               popen=subprocess.Popen, utc_offset_fn=None,

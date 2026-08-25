@@ -2,6 +2,14 @@
 
 Local AI Bench may help a consumer choose a model for hardware they already own or choose a Mac configuration for intended local-AI work. A recommendation is an explanation over inspectable compatible evidence, never a hidden score, parameter-count shortcut, sponsorship placement, or guarantee that an untested workload will behave the same way.
 
+## Implemented evaluator and artifact
+
+`python -m scripts.results.recommendation_cli RESULT [RESULT ...] --constraints CONSTRAINTS.json --out RECOMMENDATION.json` is the authoritative evaluator. The request identifies an exact workload and case, an optional accuracy workload, a primary objective, and any hard accuracy, latency, throughput, concurrency, memory, headroom, or efficiency limits. Constraints run before ranking. Missing cases, incomplete runs, absent methodology identity, and unavailable measurements produce an unevaluated candidate with a specific resolution request; a measured constraint failure produces an eliminated candidate with its value and evidence path.
+
+One surviving candidate produces recommended. Multiple survivors require at least five distinct compatible independent trials and the repeated-trial verdict machinery: unchanged top candidates are tied, reproducibly worse survivors do not dissolve a top tie, and drift or an inconclusive interval produces insufficient evidence. Memory, efficiency, and image throughput constraints are implemented, but repeated-trial ordering for those objective families remains insufficient until their trial metric semantics and practical thresholds are predeclared. The versioned artifact stores normalized constraints, source digests, original-unit measurements, trial values, and evidence paths under one `candidates` object with mutually exclusive `recommended`, `tied`, `other_eligible`, `eliminated`, and `unevaluated` groups. Python computes it once; reports and both standalone and unified workspace views only validate and render it.
+
+Explicit GGUF variants enter this same candidate pool under their distinct result short keys and run-plan identities. Hard memory, accuracy, latency, throughput, headroom, and efficiency constraints therefore apply before ordering exactly as they do between base models; no quantization-specific score or parallel recommender exists. Variants lacking required measurements remain unevaluated, and multiple surviving variants still require the same five compatible independent trials before an ordering is permitted.
+
 ## Supported goals
 
 | Goal | Required primary evidence | Secondary evidence |
@@ -27,7 +35,7 @@ Evidence confidence is labeled:
 - **Verified** — supported methodology, complete required coverage, verified source/bundle identity, and required valid evidence.
 - **Limited** — compatible first-party evidence with declared partial coverage, low repetition count, or an unqualified environment; useful for narrowing choices but not a supported final recommendation.
 - **Community preview** — externally submitted evidence that has not passed the supported verification/moderation policy; visibly separated and disabled from supported rankings by default.
-- **Insufficient** — missing, invalid, incompatible, expired, license-unknown where commercial use matters, or outside the supported catalog.
+- **Insufficient** — missing, invalid, incompatible, expired, a bundled artifact without verified distribution rights, or outside the supported catalog.
 
 ## Memory fit and headroom
 

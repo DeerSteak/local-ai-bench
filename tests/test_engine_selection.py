@@ -1,10 +1,13 @@
 from scripts.setup.engine_selection import (
     LLAMACPP,
     VLLM,
+    apply_engine_preset,
     build_engine_entries,
     engine_summary_line,
     engines_needing_install,
     needs_python_headers,
+    qualification_engines_needing_install,
+    qualification_setup_failed,
     select_engines,
     find_entry as _find_entry,
     selected_engine_names,
@@ -29,6 +32,19 @@ def test_terminal_picker_toggles_then_accepts():
     assert selected_engine_names(result) == [LLAMACPP, VLLM]
 
 
+def test_qualification_preset_selects_exactly_one_available_engine():
+    entries = build_engine_entries(vllm_support=SUPPORTED)
+    apply_engine_preset(entries, VLLM)
+    assert selected_engine_names(entries) == [VLLM]
+
+
+def test_qualification_preset_rejects_an_unavailable_engine():
+    entries = build_engine_entries(vllm_support=UNSUPPORTED)
+    import pytest
+    with pytest.raises(ValueError, match="vllm is unavailable"):
+        apply_engine_preset(entries, VLLM)
+
+
 def test_terminal_picker_cancel_exits():
     entries = build_engine_entries(vllm_support=SUPPORTED)
 
@@ -40,7 +56,7 @@ def test_terminal_picker_cancel_exits():
 
 
 SUPPORTED = VllmSupport("supported", "cuda_wheel", "CUDA wheels available")
-EXPERIMENTAL = VllmSupport("experimental", "nightly_cu130", "DGX Spark nightly wheels")
+EXPERIMENTAL = VllmSupport("experimental", "cu130_wheel", "DGX Spark CUDA 13 wheels")
 UNSUPPORTED = VllmSupport("unsupported", None, "no upstream Windows support")
 
 
@@ -132,6 +148,42 @@ def test_only_missing_selected_engines_need_installing():
     assert engines_needing_install(entries) == []  # vLLM not selected yet
     toggle_engine(entries, VLLM)
     assert engines_needing_install(entries) == [VLLM]
+
+
+def test_vllm_qualification_installs_native_bench_beside_a_launcher():
+    entries = build_engine_entries(vllm_support=SUPPORTED, vllm_found=True)
+    apply_engine_preset(entries, VLLM)
+    assert qualification_engines_needing_install(
+        entries, VLLM, vllm_bench_found=False,
+    ) == [VLLM]
+    assert qualification_engines_needing_install(
+        entries, VLLM, vllm_bench_found=True,
+    ) == []
+
+
+def test_llamacpp_qualification_installs_complete_managed_toolset():
+    entries = build_engine_entries(vllm_support=SUPPORTED, llamacpp_found=True)
+    apply_engine_preset(entries, LLAMACPP)
+    assert qualification_engines_needing_install(
+        entries, LLAMACPP, vllm_bench_found=False, llamacpp_runtime_ready=False,
+    ) == [LLAMACPP]
+    assert qualification_engines_needing_install(
+        entries, LLAMACPP, vllm_bench_found=False, llamacpp_runtime_ready=True,
+    ) == []
+
+
+def test_vllm_qualification_repairs_a_failed_runtime_preflight():
+    entries = build_engine_entries(vllm_support=SUPPORTED, vllm_found=True)
+    apply_engine_preset(entries, VLLM)
+    assert qualification_engines_needing_install(
+        entries, VLLM, vllm_bench_found=True, vllm_runtime_ready=False,
+    ) == [VLLM]
+
+
+def test_qualification_setup_failure_blocks_the_benchmark_launch():
+    assert qualification_setup_failed(VLLM, ["Install vLLM manually"])
+    assert not qualification_setup_failed(VLLM, [])
+    assert not qualification_setup_failed(None, ["Install vLLM manually"])
 
 
 def test_a_disabled_engine_never_counts_as_selected_or_installable():

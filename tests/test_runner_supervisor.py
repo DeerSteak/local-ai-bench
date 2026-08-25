@@ -9,6 +9,7 @@ from scripts.runtime import config
 from scripts.runtime.engines.base import GenerationMeasurement
 from scripts.results.llm_event_stage import LLMEventStage, export_llm_section
 from scripts.results.native_bench_event_stage import NativeBenchEventStage, export_native_bench_section
+from scripts.results.vllm_bench_event_stage import VllmBenchEventStage, export_vllm_bench
 from scripts.results.run_plan import RunPlan
 from scripts.runtime import runner_supervisor
 from scripts.runtime import workload_runner
@@ -16,6 +17,7 @@ from scripts.runtime.runner_supervisor import (
     RUNNER_EVENT_PREFIX, RunnerHeartbeatTimeout, RunnerSpec, RunnerSupervisor, SupervisedProcess,
     build_runner_command, parse_runner_event,
 )
+from scripts.runtime.telemetry import PowerAvailability, TemperatureAvailability
 
 
 def spec(tmp_path):
@@ -34,7 +36,6 @@ def test_runner_command_is_fixed_and_contains_no_caller_command_surface(tmp_path
 
 @pytest.mark.parametrize("value", [
     RunnerSpec("bad", "llm", Path("/tmp/events")),
-    RunnerSpec("job_x", "img", Path("/tmp/events")),
     RunnerSpec("job_x", "llm", Path("relative")),
 ])
 def test_runner_spec_rejects_unowned_or_unsupported_execution(value):
@@ -86,6 +87,55 @@ def test_supervisor_start_owns_process_group_and_private_token(tmp_path):
     assert supervisor.ownership_token not in captured["command"]
 
 
+def test_supervisor_passes_power_availability_only_in_child_environment(tmp_path):
+    captured = {}
+
+    class Process:
+        stdout = []
+
+    def factory(command, **options):
+        captured.update(command=command, options=options)
+        return Process()
+
+    availability = PowerAvailability(
+        True, "powermetrics", "processor_package", location="/usr/bin/powermetrics",
+    )
+    runner_spec = RunnerSpec(
+        "job_abc", "llm", (tmp_path / "events.sqlite3").resolve(), availability,
+        TemperatureAvailability(
+            True, {"gpu_die_c": "nvidia-smi"},
+            locations={"gpu_die_c": "/usr/bin/nvidia-smi"},
+        ),
+    )
+    RunnerSupervisor(
+        runner_spec, process_factory=cast("type[subprocess.Popen]", factory), system="Darwin",
+    ).start()
+    payload = captured["options"]["env"]["LOCAL_AI_BENCH_POWER_AVAILABILITY"]
+    assert '"source":"powermetrics"' in payload
+    assert '"location":"/usr/bin/powermetrics"' in payload
+    temperature = captured["options"]["env"]["LOCAL_AI_BENCH_TEMPERATURE_AVAILABILITY"]
+    assert '"gpu_die_c":"nvidia-smi"' in temperature
+    assert '"gpu_die_c":"/usr/bin/nvidia-smi"' in temperature
+    assert "/usr/bin/powermetrics" not in captured["command"]
+
+
+def test_macos_supervisor_keeps_controlling_terminal_for_power_permission(tmp_path):
+    captured = {}
+
+    class Process:
+        stdout = []
+
+    def factory(_command, **options):
+        captured.update(options)
+        return Process()
+
+    RunnerSupervisor(
+        spec(tmp_path), process_factory=cast("type[subprocess.Popen]", factory), system="Darwin",
+    ).start()
+    assert captured["process_group"] == 0
+    assert "start_new_session" not in captured
+
+
 def test_heartbeat_uses_supervisor_receive_time_and_times_out(tmp_path):
     now = [10.0]
 
@@ -123,7 +173,7 @@ def test_unstructured_or_wrong_owner_output_is_only_a_log(tmp_path):
     ]
 
 
-def test_unix_cancel_escalates_only_owned_process_group(tmp_path, monkeypatch):
+def test_cancel_stops_the_owned_process_tree(tmp_path, monkeypatch):
     calls = []
 
     class Process:
@@ -133,30 +183,14 @@ def test_unix_cancel_escalates_only_owned_process_group(tmp_path, monkeypatch):
         def poll():
             return None
 
-        @staticmethod
-        def wait(timeout=None):
-            calls.append(("wait", timeout))
-            if len([call for call in calls if call[0] == "wait"]) < 3:
-                raise subprocess.TimeoutExpired("runner", timeout or 0)
-
-        @staticmethod
-        def terminate():
-            calls.append(("terminate",))
-
-        @staticmethod
-        def kill():
-            calls.append(("kill",))
-
-    monkeypatch.setattr(runner_supervisor.os, "getpgid", lambda pid: pid + 1000)
-    monkeypatch.setattr(runner_supervisor.os, "killpg", lambda group, sig: calls.append(
-        ("signal", group, sig)))
+    monkeypatch.setattr(
+        runner_supervisor, "stop_process_tree",
+        lambda process, **kwargs: calls.append((process.pid, kwargs)),
+    )
     supervisor = RunnerSupervisor(spec(tmp_path), graceful_timeout=2, system="Linux")
     supervisor.process = cast(SupervisedProcess, Process())
     supervisor.cancel()
-    assert calls == [
-        ("signal", 1123, signal.SIGINT), ("wait", 2), ("terminate",),
-        ("wait", 2), ("kill",), ("wait", None),
-    ]
+    assert calls == [(123, {"timeout": 2, "system": "Linux"})]
 
 
 def test_internal_runner_requires_ownership_token(monkeypatch, capsys):
@@ -184,6 +218,7 @@ def test_internal_runner_executes_journal_plan_and_emits_commit(monkeypatch, tmp
             "concurrency_tool_levels": [1, 2], "concurrency_chat_levels": [1, 2],
             "concurrency_tool_context": 512, "concurrency_chat_context": 1024,
             "concurrency_chat_soft_exit_floor": 2,
+            "mtp_enabled": False, "mtp_configurations": {},
         },
     )
     stage = LLMEventStage(path, plan, lambda _: None)
@@ -247,6 +282,7 @@ def test_conversation_runner_uses_llm_preflight_and_commits_projection(
             "concurrency_tool_levels": [1, 2], "concurrency_chat_levels": [1, 2],
             "concurrency_tool_context": 512, "concurrency_chat_context": 1024,
             "concurrency_chat_soft_exit_floor": 2,
+            "mtp_enabled": False, "mtp_configurations": {},
         },
     )
     model = {"tag": "fake:model", "short": "fake", "label": "Fake"}
@@ -318,6 +354,7 @@ def test_native_runner_reconstructs_plan_and_streams_rows_to_journal(tmp_path):
             "concurrency_tool_levels": [1, 2], "concurrency_chat_levels": [1, 2],
             "concurrency_tool_context": 512, "concurrency_chat_context": 1024,
             "concurrency_chat_soft_exit_floor": 2,
+            "mtp_enabled": False, "mtp_configurations": {},
         },
     )
     owner = NativeBenchEventStage(path, plan, lambda _: None)
@@ -349,6 +386,44 @@ def test_native_runner_reconstructs_plan_and_streams_rows_to_journal(tmp_path):
     assert result["prefill_entries"][0]["avg_ts"] == 100
 
 
+def test_vllm_bench_runner_reconstructs_plan_and_commits_case(tmp_path):
+    path = tmp_path / "events.sqlite3"
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="vllm", tests=["vllmbench"],
+        stage_order=["vllmbench"], models={
+            "llm": [{"tag": "fake:model", "short": "fake"}],
+            "concurrency": [], "embeddings": [], "images": [],
+        }, effective_config={
+            "runs": 1, "warmup_runs": 0, "cpu_only": False, "force_all": False,
+            "memory_telemetry": False, "run_timeout_seconds": 7,
+            "accuracy_timeout_seconds": 60, "accuracy_token_budget": 256,
+            "max_prompt_tokens": None, "context_lengths": [512],
+            "llamabench_pp": [512], "llamabench_tg": [128], "sample_size": None,
+            "concurrency_tool_levels": [1], "concurrency_chat_levels": [1],
+            "concurrency_tool_context": 512, "concurrency_chat_context": 1024,
+            "concurrency_chat_soft_exit_floor": 1,
+            "mtp_enabled": False, "mtp_configurations": {},
+        },
+    )
+    owner = VllmBenchEventStage(path, plan, lambda _: None)
+    owner.close()
+
+    class Benchmark:
+        def run(self, **kwargs):
+            assert config.LLAMABENCH_PP == [512]
+            model = kwargs["models"][0]
+            kwargs["journal"].record_case(
+                model, "throughput", 512, 128,
+                {"input_len": 512, "output_len": 128, "requests_per_sec": 2.0}, 1,
+            )
+            kwargs["journal"].finish()
+
+    workload_runner.execute_vllmbench_job(
+        path, plan.job_id, engine_factory=lambda _: object(), benchmark_factory=Benchmark,
+    )
+    assert export_vllm_bench(path, plan.job_id)["fake"]["completed_cases"] == 1
+
+
 def test_concurrency_runner_uses_plan_shape_and_commits_final_batch(tmp_path):
     path = tmp_path / "events.sqlite3"
     plan = RunPlan.create(
@@ -365,6 +440,7 @@ def test_concurrency_runner_uses_plan_shape_and_commits_final_batch(tmp_path):
             "concurrency_tool_levels": [1, 2], "concurrency_chat_levels": [1, 4],
             "concurrency_tool_context": 512, "concurrency_chat_context": 2048,
             "concurrency_chat_soft_exit_floor": 4,
+            "mtp_enabled": False, "mtp_configurations": {},
         },
     )
     owner = LLMEventStage(

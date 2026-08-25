@@ -49,7 +49,126 @@ def test_unaliased_export_still_records_verifiable_source_identity():
     assert outbound["run"]["export_identity"]["aliases_applied"] == []
 
 
+def test_outbound_telemetry_omits_raw_and_identity_fields():
+    source = result()
+    source["llm"] = {"model": {"2K": {"memory": {
+        "case_id": "case-1",
+        "windows": [{
+            "name": "measured", "sample_count": 1, "duration_sec": 1,
+            "channels": {"process_rss_gb": {
+                "peak_gb": 4, "mean_gb": 4, "final_gb": 4, "valid_samples": 1,
+                "device_uuid": "GPU-secret",
+            }},
+            "raw_output": "serial=secret path=/private/model.gguf",
+            "samples": [{
+                "timestamp_sec": 0.25, "process_rss_gb": 4,
+                "device_uuid": "GPU-secret", "model_path": "/private/model.gguf",
+            }],
+        }],
+        "summary": {"process_rss_gb": {"peak_gb": 4, "arguments": "--secret"}},
+        "headroom": {"absolute_gb": 8, "fraction": 0.5, "state": "comfortable",
+                     "basis_channel": "process_rss_gb", "private_note": "secret"},
+        "provenance": {
+            "interval_sec": 1, "failed_samples": 0,
+            "channels": {"process_rss_gb": {
+                "source": "psutil", "failed_samples": 2, "serial_number": "secret",
+            }},
+            "private_path": "/private/model.gguf",
+        },
+        "command_output": "forbidden",
+    }, "power": {
+        "status": "recorded", "source": "powermetrics", "scope": "processor_package",
+        "energy_joules": 12, "mean_watts": 10, "peak_watts": 14,
+        "idle_baseline_watts": 4, "case_id": "case-1",
+        "windows": [{
+            "name": "measured", "sample_count": 2, "duration_sec": 1,
+            "mean_watts": 12, "peak_watts": 14, "energy_joules": 12,
+            "samples": [{"timestamp_sec": 0, "watts": 10, "device_uuid": "secret"}],
+            "raw_output": "serial=secret",
+        }],
+        "provenance": {"interval_sec": 0.5, "failed_samples": 0,
+                       "command": "sudo /private/tool"},
+        "efficiency": {"unit": "tokens_per_joule", "work_count": 120,
+                       "per_joule": 10, "model_path": "/private/model"},
+        "serial_number": "secret",
+    }, "temperature": {
+        "status": "recorded", "reason": None, "case_id": "case-1",
+        "windows": [{
+            "name": "measured", "sample_count": 1, "duration_sec": 0,
+            "channels": {"gpu_die_c": {
+                "peak_c": 70, "mean_c": 70, "final_c": 70, "valid_samples": 1,
+                "device_uuid": "secret",
+            }},
+            "samples": [{"timestamp_sec": 0, "gpu_die_c": 70,
+                         "sensor_path": "/sys/private"}],
+            "raw_output": "serial=secret",
+        }],
+        "provenance": {"interval_sec": 0.5, "channels": {"gpu_die_c": {
+            "source": "nvidia-smi", "failed_samples": 0, "path": "/private",
+        }}, "command": "private"},
+        "sensor_serial": "secret",
+    }}}}
+    outbound = prepare_outbound_result(source)["llm"]["model"]["2K"]
+    memory = outbound["memory"]
+    serialized = str(memory)
+    assert memory["case_id"] == "case-1"
+    assert memory["provenance"]["channels"]["process_rss_gb"] == {
+        "source": "psutil", "failed_samples": 2,
+    }
+    assert memory["headroom"]["basis_channel"] == "process_rss_gb"
+    assert memory["windows"][0]["samples"] == [{
+        "timestamp_sec": 0.25, "process_rss_gb": 4,
+    }]
+    for forbidden in ("secret", "private", "arguments", "raw_output", "command_output"):
+        assert forbidden not in serialized.lower()
+    power = outbound["power"]
+    assert power["windows"][0]["samples"] == [{"timestamp_sec": 0, "watts": 10}]
+    assert power["provenance"] == {"interval_sec": 0.5, "failed_samples": 0}
+    assert power["efficiency"] == {
+        "unit": "tokens_per_joule", "work_count": 120, "per_joule": 10,
+    }
+    for forbidden in ("secret", "private", "serial", "command", "raw_output"):
+        assert forbidden not in str(power).lower()
+    temperature = outbound["temperature"]
+    assert temperature["windows"][0]["samples"] == [
+        {"timestamp_sec": 0, "gpu_die_c": 70},
+    ]
+    assert temperature["provenance"] == {
+        "interval_sec": 0.5,
+        "channels": {"gpu_die_c": {"source": "nvidia-smi", "failed_samples": 0}},
+    }
+    for forbidden in ("secret", "private", "serial", "command", "raw_output", "path"):
+        assert forbidden not in str(temperature).lower()
+
+
 @pytest.mark.parametrize(("field", "value"), [("system_alias", ""), ("hardware_alias", "  ")])
 def test_aliases_reject_empty_values(field, value):
     with pytest.raises(ValueError, match="alias"):
         prepare_outbound_result(result(), **{field: value})
+
+
+def test_sustained_timeline_and_analysis_are_allowlisted_without_sensor_paths():
+    source = result()
+    source["sustained"] = {"model": {
+        "context_tokens": 2048, "ambient_temp_c": 18.5,
+        "requests": [{"start_sec": 0, "end_sec": 5, "generated_tokens": 100,
+                      "tokens_per_sec": 20, "prompt": "private"}],
+        "series": [{"timestamp_sec": 0, "duration_sec": 10, "tokens_per_sec": 20,
+                    "gpu_die_c": 70, "sensor_path": "/sys/private"}],
+        "analysis": {"retention_ratio": 0.9, "performance": "mild_degradation",
+                     "private_note": "secret"},
+        "raw_sensor_output": "serial=secret",
+    }}
+    sustained = prepare_outbound_result(source)["sustained"]["model"]
+    assert sustained["requests"] == [{
+        "start_sec": 0, "end_sec": 5, "generated_tokens": 100, "tokens_per_sec": 20,
+    }]
+    assert sustained["series"] == [{
+        "timestamp_sec": 0, "duration_sec": 10, "tokens_per_sec": 20,
+        "gpu_die_c": 70,
+    }]
+    assert sustained["analysis"] == {
+        "retention_ratio": 0.9, "performance": "mild_degradation",
+    }
+    for forbidden in ("private", "secret", "serial", "path", "prompt", "raw"):
+        assert forbidden not in str(sustained).lower()

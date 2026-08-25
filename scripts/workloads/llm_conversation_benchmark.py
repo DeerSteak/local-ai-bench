@@ -4,7 +4,9 @@ context ceiling. See docs/workloads.md's conversation-test section."""
 from pathlib import Path
 
 from scripts.runtime import config
-from scripts.runtime.engines.base import aggregate_generation_measurements, measurement_validation_errors
+from scripts.runtime.engines.base import (
+    TIMING_DECIMALS, aggregate_generation_measurements, measurement_validation_errors,
+)
 from scripts.runtime.shared import Shared
 from scripts.runtime.failure_handling import unexpected_model_failure
 from scripts.runtime.crash_cache import check_crash_cache, load_crash_cache, record_crash
@@ -143,10 +145,15 @@ class LLMConversationBenchmark:
                 Shared.log(f"{label}: model supports {model_max} ctx — num_ctx={num_ctx}, "
                            f"sampling up to {top_checkpoint} ({len(checkpoints)} checkpoints)")
 
+                if journal:
+                    journal.begin_model_load()
                 if not engine.warmup(tag, label, num_ctx, warmup_runs,
                                      crash_cache, LLMConversationBenchmark.CONV_CRASH_CACHE):
                     engine.unload(tag)
                     continue
+
+                if journal:
+                    journal.begin_measured()
 
                 results[short] = {}
                 # label -> list of (ttft, tps, depth_tokens), one entry per run that reached it
@@ -319,11 +326,11 @@ class LLMConversationBenchmark:
                         Shared.warn(f"{label}: {label_ctx} had no valid measurement")
                         continue
                     results[short][label_ctx] = {
-                        "ttft_mean_sec":  round(Shared.mean(ttfts), 3),
-                        "ttft_stdev_sec": round(Shared.stdev(ttfts), 3),
+                        "ttft_mean_sec":  round(Shared.mean(ttfts), TIMING_DECIMALS),
+                        "ttft_stdev_sec": round(Shared.stdev(ttfts), TIMING_DECIMALS),
                         "tps_mean":       round(Shared.mean(tpss), 2),
                         "tps_stdev":      round(Shared.stdev(tpss), 2),
-                        "ttft_runs":      [round(t, 3) for t in ttfts],
+                        "ttft_runs":      [round(t, TIMING_DECIMALS) for t in ttfts],
                         "tps_runs":       [round(t, 2) for t in tpss],
                         "depth_tokens":   round(Shared.mean(depths)),
                         **aggregate,

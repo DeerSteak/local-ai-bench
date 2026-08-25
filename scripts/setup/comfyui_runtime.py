@@ -1,7 +1,6 @@
 """Prepare an installed ComfyUI runtime and its accelerator dependencies."""
 
 import subprocess
-import sys
 from pathlib import Path
 
 from scripts.runtime.comfyui_installation import (
@@ -10,16 +9,41 @@ from scripts.runtime.comfyui_installation import (
 )
 
 
+AMD_ROCM_72_WHEELS = {
+    False: (
+        "torch-2.9.1%2Brocm7.2.1.lw.gitff65f5bc-cp312-cp312-linux_x86_64.whl",
+        "torchvision-0.24.0%2Brocm7.2.1.gitb919bd0c-cp312-cp312-linux_x86_64.whl",
+        "torchaudio-2.9.0%2Brocm7.2.1.gite3c6ee2b-cp312-cp312-linux_x86_64.whl",
+        "triton-3.5.1%2Brocm7.2.1.gita272dfa8-cp312-cp312-linux_x86_64.whl",
+    ),
+    True: (
+        "torch-2.9.1%2Brocm7.2.0.lw.git7e1940d4-cp312-cp312-linux_x86_64.whl",
+        "torchvision-0.24.0%2Brocm7.2.0.gitb919bd0c-cp312-cp312-linux_x86_64.whl",
+        "torchaudio-2.9.0%2Brocm7.2.0.gite3c6ee2b-cp312-cp312-linux_x86_64.whl",
+        "triton-3.5.1%2Brocm7.2.0.gita272dfa8-cp312-cp312-linux_x86_64.whl",
+    ),
+}
+TORCH_BACKEND_PROBE_TIMEOUT_SEC = 120
+
+
 def prepare(comfyui_dir: Path, models_dir: Path, extra_paths: Path, *,
             portable_python: Path, intel_xpu: bool, rocm: bool,
+            rocm_version: tuple[int, int] | None = None, wsl: bool = False,
             issues: list[str], info, warn, fail, ok) -> bool:
     if not comfyui_dir.exists():
         return False
+    python = find_comfyui_python(comfyui_dir)
     requirements = comfyui_dir / "requirements.txt"
+    if not portable_python.exists() and intel_xpu:
+        _ensure_torch_backend(python, "xpu", "XPU", issues, info, fail, ok)
+    if not portable_python.exists() and rocm:
+        _ensure_rocm_torch_backend(
+            python, rocm_version, wsl=wsl, issues=issues,
+            info=info, fail=fail, ok=ok,
+        )
     if portable_python.exists():
         ok("Windows portable build detected — using bundled python_embeded")
     elif requirements.exists():
-        python = find_comfyui_python(comfyui_dir)
         installed = subprocess.run(
             [python, "-m", "pip", "show", "aiohttp"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -42,28 +66,154 @@ def prepare(comfyui_dir: Path, models_dir: Path, extra_paths: Path, *,
     except OSError as exc:
         warn(f"Could not update ComfyUI's extra model paths: {exc}")
         issues.append(f"Add {models_dir} to ComfyUI's extra model paths")
-    if not portable_python.exists() and intel_xpu:
-        _ensure_torch_backend("xpu", "XPU", issues, info, fail, ok)
-    if not portable_python.exists() and rocm:
-        _ensure_torch_backend("rocm6.4", "ROCm", issues, info, fail, ok)
     return True
 
 
-def _ensure_torch_backend(index: str, marker: str, issues: list[str], info, fail, ok) -> None:
-    shown = subprocess.run(
-        [sys.executable, "-m", "pip", "show", "torch"], capture_output=True, text=True,
+def torch_backend_available(python: str, marker: str, *,
+                            run=subprocess.run) -> bool | None:
+    expression = (
+        "import torch; assert torch.version.hip; torch.zeros(1, device='cuda'); "
+        "print(torch.version.hip)" if marker == "ROCm"
+        else "import torch; assert torch.xpu.is_available(); torch.zeros(1, device='xpu'); "
+        "print('xpu')"
     )
-    if shown.returncode == 0 and f"+{marker.lower()}" in shown.stdout.lower():
+    try:
+        result = run(
+            [python, "-c", expression], capture_output=True, text=True,
+            timeout=TORCH_BACKEND_PROBE_TIMEOUT_SEC,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    output = result.stdout.strip().lower() if result.returncode == 0 else ""
+    return bool(output) and output not in {"false", "none"}
+
+
+def _record_probe_timeout(marker: str, available: bool | None, *,
+                          issues: list[str], fail) -> bool:
+    if available is not None:
+        return False
+    message = (
+        f"{marker}-enabled PyTorch GPU probe timed out after "
+        f"{TORCH_BACKEND_PROBE_TIMEOUT_SEC} seconds"
+    )
+    fail(message)
+    issues.append(message)
+    return True
+
+
+def _announce_backend_probe(marker: str, info) -> None:
+    device = (
+        "a HIP GPU allocation through PyTorch's logical 'cuda' device API"
+        if marker == "ROCm" else "a real XPU GPU allocation"
+    )
+    info(
+        f"Testing {marker}-enabled PyTorch with {device} "
+        f"(timeout {TORCH_BACKEND_PROBE_TIMEOUT_SEC}s) ..."
+    )
+
+
+def _ensure_torch_backend(python: str, index: str, marker: str,
+                          issues: list[str], info, fail, ok) -> None:
+    _announce_backend_probe(marker, info)
+    available = torch_backend_available(python, marker)
+    if _record_probe_timeout(marker, available, issues=issues, fail=fail):
+        return
+    if available:
         ok(f"{marker}-enabled PyTorch already installed")
         return
     url = f"https://download.pytorch.org/whl/{index}"
     info(f"Installing {marker}-enabled PyTorch from {url} ...")
     command = [
-        sys.executable, "-m", "pip", "install", "--upgrade", "--index-url", url,
+        python, "-m", "pip", "install", "--upgrade", "--force-reinstall", "--index-url", url,
         "torch", "torchvision", "torchaudio",
     ]
-    if subprocess.run(command).returncode == 0:
+    installed = subprocess.run(command).returncode == 0
+    if installed:
+        _announce_backend_probe(marker, info)
+    available = torch_backend_available(python, marker) if installed else False
+    if _record_probe_timeout(marker, available, issues=issues, fail=fail):
+        return
+    if installed and available:
         ok(f"{marker}-enabled PyTorch installed")
     else:
         fail(f"{marker}-enabled PyTorch install failed")
+        issues.append(" ".join(command))
+
+
+def rocm_torch_install_command(python: str, version: tuple[int, int] | None, *,
+                               wsl: bool) -> list[str]:
+    if version is None or version < (7, 2):
+        return [
+            python, "-m", "pip", "install", "--upgrade", "--force-reinstall",
+            "--index-url", "https://download.pytorch.org/whl/rocm6.4",
+            "torch", "torchvision", "torchaudio",
+        ]
+    release = "7.2" if wsl else "7.2.1"
+    base = f"https://repo.radeon.com/rocm/manylinux/rocm-rel-{release}"
+    return [
+        python, "-m", "pip", "install", "--upgrade", "--force-reinstall",
+        "numpy==1.26.4", "scipy==1.16.3",
+        *(f"{base}/{wheel}" for wheel in AMD_ROCM_72_WHEELS[wsl]),
+    ]
+
+
+def remove_wsl_bundled_hsa_runtime(python: str, *, run=subprocess.run) -> bool:
+    script = (
+        "import pathlib,sysconfig; p=pathlib.Path(sysconfig.get_paths()['purelib'])/"
+        "'torch'/'lib'; [f.unlink() for f in p.glob('libhsa-runtime64.so*')]"
+    )
+    return run([python, "-c", script]).returncode == 0
+
+
+def rocm_python_dependencies_available(python: str, *, run=subprocess.run) -> bool:
+    script = (
+        "from importlib.metadata import version; "
+        "assert version('numpy') == '1.26.4'; assert version('scipy') == '1.16.3'"
+    )
+    return run([python, "-c", script]).returncode == 0
+
+
+def _ensure_rocm_torch_backend(python: str, version: tuple[int, int] | None, *,
+                               wsl: bool, issues: list[str], info, fail, ok) -> None:
+    rocm_72 = bool(version and version >= (7, 2))
+    _announce_backend_probe("ROCm", info)
+    backend_available = torch_backend_available(python, "ROCm")
+    if _record_probe_timeout("ROCm", backend_available, issues=issues, fail=fail):
+        return
+    if backend_available and (not rocm_72 or rocm_python_dependencies_available(python)):
+        ok("ROCm-enabled PyTorch already installed")
+        return
+    if backend_available:
+        command = [
+            python, "-m", "pip", "install", "--upgrade", "--force-reinstall",
+            "numpy==1.26.4", "scipy==1.16.3",
+        ]
+        info("Repairing ROCm PyTorch's NumPy and SciPy versions ...")
+        installed = subprocess.run(command).returncode == 0
+        if installed and rocm_python_dependencies_available(python):
+            ok("ROCm-enabled PyTorch dependencies repaired")
+            return
+        fail("ROCm-enabled PyTorch dependency repair failed")
+        issues.append(" ".join(command))
+        return
+    command = rocm_torch_install_command(python, version, wsl=wsl)
+    source = "AMD's ROCm wheel repository" if rocm_72 \
+        else "PyTorch's ROCm 6.4 index"
+    info(f"Installing ROCm-enabled PyTorch from {source} ...")
+    installed = subprocess.run(command).returncode == 0
+    if installed and wsl:
+        installed = remove_wsl_bundled_hsa_runtime(python)
+    dependencies_available = not rocm_72 or rocm_python_dependencies_available(python)
+    if installed and dependencies_available:
+        _announce_backend_probe("ROCm", info)
+    backend_available = (
+        torch_backend_available(python, "ROCm")
+        if installed and dependencies_available else False
+    )
+    if _record_probe_timeout("ROCm", backend_available, issues=issues, fail=fail):
+        return
+    if installed and dependencies_available and backend_available:
+        ok("ROCm-enabled PyTorch installed")
+    else:
+        fail("ROCm-enabled PyTorch install failed")
         issues.append(" ".join(command))

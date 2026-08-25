@@ -17,16 +17,21 @@ from scripts.runtime import config
 from scripts.runtime.log_redaction import redact_log_text
 
 ROCM_WHEEL_INDEX = "https://wheels.vllm.ai/rocm/"
-NIGHTLY_CU130_INDEX = "https://wheels.vllm.ai/nightly/cu130"
-# Pointed at, never pulled — see docs/setup.md's Strix Halo note.
-STRIX_HALO_TOOLBOX_URL = "https://github.com/kyuz0/amd-strix-halo-vllm-toolboxes"
-
+DGX_CU130_VERSION = "0.27.1"
+DGX_CU130_INDEX = f"https://wheels.vllm.ai/{DGX_CU130_VERSION}/cu130"
+VLLM_XPU_VERSION = "0.27.1"
+VLLM_REPO = "https://github.com/vllm-project/vllm.git"
+TRITON_XPU_VERSION = "3.7.2"
+PYTORCH_XPU_INDEX = "https://download.pytorch.org/whl/xpu"
+VLLM_BENCH_DEPENDENCIES = ("pandas", "matplotlib", "seaborn", "datasets", "scipy", "plotly")
 # vLLM's own floor for the CUDA wheels; below this the kernels aren't built.
 MIN_COMPUTE_CAPABILITY = 7.5
 MIN_ROCM_VERSION = (6, 3)
 
 # gfx targets the prebuilt ROCm wheels ship kernels for; anything else is experimental.
-VLLM_ROCM_WHEEL_TARGETS = ("gfx90a", "gfx942", "gfx950", "gfx1100", "gfx1200", "gfx1201")
+VLLM_ROCM_WHEEL_TARGETS = (
+    "gfx90a", "gfx942", "gfx950", "gfx1100", "gfx1150", "gfx1151", "gfx1200", "gfx1201",
+)
 
 # The ROCm and Metal builds publish CPython 3.12 wheels only; CUDA spans a range.
 CUDA_PYTHON_RANGE = ((3, 10), (3, 13))
@@ -36,7 +41,7 @@ PINNED_PYTHON = (3, 12)
 @dataclass(frozen=True)
 class VllmSupport:
     status: str            # "supported" | "experimental" | "unsupported"
-    method: str | None     # "cuda_wheel" | "rocm_wheel" | "nightly_cu130"
+    method: str | None     # wheel methods or "xpu_source"
     reason: str
     requires_python: tuple[int, int] | None = None
     # Set only when the sole obstacle is the interpreter, so setup knows an offer can clear it.
@@ -63,6 +68,7 @@ def is_dgx_spark(machine: str, gpu_names) -> bool:
 
 def vllm_platform_support(*, os_name: str, machine: str,
                           python_version: tuple[int, int],
+                          is_wsl: bool = False,
                           nvidia_ok: bool = False,
                           rocm_ok: bool = False,
                           intel_gpu: bool = False,
@@ -89,9 +95,9 @@ def vllm_platform_support(*, os_name: str, machine: str,
 
     if nvidia_ok:
         if is_dgx_spark(machine, gpu_names):
-            return VllmSupport("experimental", "nightly_cu130",
+            return VllmSupport("experimental", "cu130_wheel",
                                "DGX Spark (GB10, sm_121) is not covered by stock wheels — "
-                               "the CUDA 13 nightly build is the only working path, and "
+                               "the reviewed CUDA 13 build is the only working path, and "
                                "plain wheels would silently install CPU-only PyTorch",
                                requires_python=PINNED_PYTHON)
         capability = parse_compute_capability(compute_cap)
@@ -112,6 +118,12 @@ def vllm_platform_support(*, os_name: str, machine: str,
                            requires_python=None)
 
     if rocm_ok:
+        if is_wsl:
+            return VllmSupport(
+                "unsupported", None,
+                "vLLM's ROCm wheel requires AMD SMI device discovery, which Radeon WSL2 "
+                "does not expose; the project does not ship AMD's patched Docker workaround",
+            )
         if rocm_version is not None and rocm_version < MIN_ROCM_VERSION:
             version_text = ".".join(str(part) for part in rocm_version)
             return VllmSupport("unsupported", None,
@@ -124,18 +136,25 @@ def vllm_platform_support(*, os_name: str, machine: str,
             return VllmSupport("experimental", "rocm_wheel",
                                f"vLLM's prebuilt ROCm wheels ship no kernels for "
                                f"{', '.join(untargeted)} — they target "
-                               f"{', '.join(VLLM_ROCM_WHEEL_TARGETS)}. A TheRock-based "
-                               f"container is the known-working route ({STRIX_HALO_TOOLBOX_URL}); "
-                               "installing these wheels here may not produce a usable vLLM",
+                               f"{', '.join(VLLM_ROCM_WHEEL_TARGETS)}; installing these wheels "
+                               "here may not produce a usable vLLM",
                                requires_python=PINNED_PYTHON)
         return VllmSupport("supported", "rocm_wheel",
                            "Linux + AMD ROCm has prebuilt wheels, published for CPython 3.12 only",
                            requires_python=PINNED_PYTHON)
 
     if intel_gpu:
-        return VllmSupport("unsupported", None,
-                           "vLLM's Intel XPU backend publishes no wheels and needs a long "
-                           "source build — out of scope for this setup script")
+        if is_wsl:
+            return VllmSupport(
+                "unsupported", None,
+                "Intel XPU vLLM is only shipped for native Linux; no Intel WSL2 "
+                "qualification path is available",
+            )
+        return VllmSupport(
+            "experimental", "xpu_source",
+            "Intel Arc uses vLLM's upstream XPU source build",
+            requires_python=PINNED_PYTHON,
+        )
 
     return VllmSupport("unsupported", None,
                        "no supported GPU detected — vLLM's CPU backend is out of scope for "
@@ -168,10 +187,11 @@ UV_INSTALLER_URL = "https://astral.sh/uv/install.sh"
 
 
 def python_bootstrap_plan(*, python_version: tuple[int, int],
+                          requires_python: tuple[int, int] | None = None,
                           which_fn=shutil.which) -> list[list[str]]:
     """Commands that put a vLLM-compatible interpreter on PATH, empty when one already is.
     Needed on distros whose only system Python is newer than vLLM's wheels — see docs/setup.md."""
-    if resolve_python(None, python_version, which_fn) is not None:
+    if resolve_python(requires_python, python_version, which_fn) is not None:
         return []
     plan = []
     if which_fn("uv") is None:
@@ -216,6 +236,15 @@ def normalize_vllm_version(value) -> str:
     return str(version)
 
 
+def normalize_exact_vllm_version(value) -> str:
+    """Accept a fully pinned stable or wheel-channel development build."""
+    text = str(value or "").strip()
+    try:
+        return str(Version(text))
+    except InvalidVersion as exc:
+        raise ValueError("Enter an exact vLLM wheel version.") from exc
+
+
 def fetch_vllm_versions(*, opener=urllib.request.urlopen) -> list[str]:
     with opener(VLLM_PYPI_URL, timeout=15) as response:
         payload = json.load(response)
@@ -235,34 +264,77 @@ def fetch_vllm_versions(*, opener=urllib.request.urlopen) -> list[str]:
 
 
 def vllm_install_command(method: str, python_exe: str, uv_available: bool,
-                         version: str | None = None) -> list[str]:
+                         version: str | None = None,
+                         index_url: str | None = None) -> list[str]:
     """Argv that installs vLLM into the venv owned by `python_exe`."""
-    package = f"vllm[bench]=={normalize_vllm_version(version)}" if version else VLLM_PACKAGE
+    normalized = normalize_exact_vllm_version(version) if version else None
+    package = f"vllm[bench]=={normalized}" if normalized else VLLM_PACKAGE
     extra = {
         "cuda_wheel": ([package, "--torch-backend=auto"] if uv_available else [package]),
         "rocm_wheel": [package, "--extra-index-url", ROCM_WHEEL_INDEX, "--upgrade"],
-        "nightly_cu130": ["-U", package, "--extra-index-url", NIGHTLY_CU130_INDEX],
+        "cu130_wheel": [
+            "-U", f"vllm[bench]=={normalized or DGX_CU130_VERSION}",
+            "--extra-index-url", index_url or DGX_CU130_INDEX,
+        ],
     }[method]
     if uv_available:
         return ["uv", "pip", "install", "--python", python_exe] + extra
     return [python_exe, "-m", "pip", "install"] + extra
 
 
+@dataclass(frozen=True)
+class VllmSourceInstallStep:
+    command: tuple[str, ...]
+    environment: tuple[tuple[str, str], ...] = ()
+
+
+def vllm_xpu_install_steps(python_exe: str, source_dir: Path,
+                           version: str | None = None) -> tuple[VllmSourceInstallStep, ...]:
+    selected = normalize_vllm_version(version or VLLM_XPU_VERSION)
+    source = str(source_dir)
+    return (
+        VllmSourceInstallStep((
+            "git", "clone", "--branch", f"v{selected}", "--depth", "1",
+            VLLM_REPO, source,
+        )),
+        VllmSourceInstallStep((python_exe, "-m", "pip", "install", "--upgrade", "pip")),
+        VllmSourceInstallStep((
+            python_exe, "-m", "pip", "install", "-v", "-r",
+            str(source_dir / "requirements" / "xpu.txt"),
+        )),
+        VllmSourceInstallStep((
+            python_exe, "-m", "pip", "install", *VLLM_BENCH_DEPENDENCIES,
+        )),
+        VllmSourceInstallStep((
+            python_exe, "-m", "pip", "install", "--no-build-isolation", "--no-deps", "-v",
+            source,
+        ), (("VLLM_TARGET_DEVICE", "xpu"),)),
+        VllmSourceInstallStep((
+            python_exe, "-m", "pip", "uninstall", "-y", "triton", "triton-xpu",
+        )),
+        VllmSourceInstallStep((
+            python_exe, "-m", "pip", "install", "--force-reinstall", "--no-cache-dir",
+            f"triton-xpu=={TRITON_XPU_VERSION}", "--index-url", PYTORCH_XPU_INDEX,
+        )),
+    )
+
+
 def find_vllm_binary(*, platform_name: str, venv_dir: Path | None = None,
-                     which_fn=shutil.which, exists_fn=None) -> str | None:
+                     managed_only: bool = False, which_fn=shutil.which,
+                     exists_fn=None) -> str | None:
     """Locate a `vllm`, system-first — matching the llama.cpp policy."""
-    on_path = which_fn("vllm")
-    if on_path:
-        return on_path
     venv_dir = venv_dir or config.VLLM_VENV
     exists_fn = exists_fn or (lambda path: Path(path).is_file())
     subdir = "Scripts" if platform_name == "Windows" else "bin"
     suffix = ".exe" if platform_name == "Windows" else ""
-    candidates = []
-    candidates.append(Path(venv_dir) / subdir / f"vllm{suffix}")
-    for candidate in candidates:
-        if exists_fn(candidate):
-            return str(candidate)
+    managed = Path(venv_dir) / subdir / f"vllm{suffix}"
+    if managed_only:
+        return str(managed) if exists_fn(managed) else None
+    on_path = which_fn("vllm")
+    if on_path:
+        return on_path
+    if exists_fn(managed):
+        return str(managed)
     return None
 
 
@@ -437,6 +509,82 @@ def build_tools_command(python_exe: str, tools) -> list[str] | None:
     return [python_exe, "-m", "pip", "install", *tools] if tools else None
 
 
+def install_vllm_build_tools(venv_dir: Path, *, log=print,
+                             run=subprocess.run) -> bool:
+    missing = missing_build_tools(venv_dir)
+    if not missing:
+        return True
+    python = Path(venv_dir) / ("Scripts" if os.name == "nt" else "bin") / \
+        ("python.exe" if os.name == "nt" else "python")
+    command = build_tools_command(str(python), missing)
+    log(f"Installing vLLM build tools ({', '.join(missing)}) ...")
+    return command is not None and run(command).returncode == 0
+
+
+def vllm_runtime_probe_code(expected_device_type: str | None = None,
+                            expected_runtime: str | None = None) -> str:
+    statements = [
+        "import torch", "import vllm", "from vllm.platforms import current_platform",
+        "assert current_platform.device_type, 'vLLM could not detect an accelerator'",
+    ]
+    if expected_device_type:
+        statements.append(
+            f"assert current_platform.device_type == {expected_device_type!r}, "
+            "'vLLM detected ' + str(current_platform.device_type)"
+        )
+    if expected_runtime == "cuda":
+        statements.extend([
+            "assert torch.cuda.is_available(), 'PyTorch cannot access CUDA'",
+            "assert torch.version.cuda, 'PyTorch is not a CUDA build'",
+            "assert not torch.version.hip, 'PyTorch is a ROCm build, not CUDA'",
+        ])
+    elif expected_runtime == "rocm":
+        statements.extend([
+            "assert torch.cuda.is_available(), 'PyTorch cannot access ROCm'",
+            "assert torch.version.hip, 'PyTorch is not a ROCm build'",
+        ])
+    if expected_device_type == "xpu":
+        statements.extend([
+            "assert torch.xpu.is_available(), 'PyTorch cannot access Intel XPU'",
+            "import importlib.metadata as metadata",
+            "assert not any(d.metadata['Name'].casefold() == 'triton' "
+            "for d in metadata.distributions()), 'Plain Triton conflicts with Intel XPU Triton'",
+            "import triton",
+            "from triton._C.libtriton import intel",
+            "from torch.utils._triton import has_triton",
+            "assert has_triton(), 'TorchInductor cannot use Intel XPU Triton'",
+        ])
+    return "; ".join(statements)
+
+
+def vllm_runtime_expectations(method: str | None) -> tuple[str | None, str | None]:
+    if method in {"cuda_wheel", "cu130_wheel"}:
+        return "cuda", "cuda"
+    if method == "rocm_wheel":
+        return "cuda", "rocm"
+    if method == "xpu_source":
+        return "xpu", "xpu"
+    return None, None
+
+
+def vllm_runtime_import_error(venv_dir: Path, *, expected_device_type: str | None = None,
+                              expected_runtime: str | None = None,
+                              run=subprocess.run) -> str | None:
+    python = Path(venv_dir) / ("Scripts" if os.name == "nt" else "bin") / \
+        ("python.exe" if os.name == "nt" else "python")
+    try:
+        result = run(
+            [
+                str(python), "-c",
+                vllm_runtime_probe_code(expected_device_type, expected_runtime),
+            ],
+            capture_output=True, text=True, timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return str(exc)
+    return None if result.returncode == 0 else (result.stderr or result.stdout).strip()
+
+
 def vllm_server_reachable(url: str | None = None, timeout: float = 2.0, open_fn=None) -> bool:
     """True if an OpenAI-compatible vLLM server answers at `url`."""
     url = url or config.VLLM_URL
@@ -461,7 +609,9 @@ def find_vllm_server(ports=None, timeout: float = 2.0, open_fn=None) -> str | No
 
 def install_vllm(support: VllmSupport, *, log=print, run=subprocess.run,
                  venv_dir: Path | None = None,
-                 version: str | None = None) -> bool:  # pragma: no cover
+                 version: str | None = None,
+                 index_url: str | None = None,
+                 recreate: bool = False) -> bool:  # pragma: no cover
     """Install vLLM per `support.method`. Real network/venv side effects."""
     if support.method is None:
         return False
@@ -474,14 +624,30 @@ def install_vllm(support: VllmSupport, *, log=print, run=subprocess.run,
         log(f"No {wanted} interpreter found — vLLM's {support.method} wheels require it")
         return False
 
+    if recreate and venv_dir.exists():
+        log(f"Rebuilding incompatible managed vLLM environment at {venv_dir} ...")
+        shutil.rmtree(venv_dir)
     if not venv_dir.exists():
         log(f"Creating vLLM environment at {venv_dir} ...")
         created = run([python_exe, "-m", "venv", str(venv_dir)])
         if created.returncode != 0:
             return False
     venv_python = venv_dir / ("Scripts" if os.name == "nt" else "bin") / "python"
+    if support.method == "xpu_source":
+        source_dir = venv_dir / "src" / "vllm"
+        if source_dir.exists():
+            shutil.rmtree(source_dir)
+        source_dir.parent.mkdir(parents=True, exist_ok=True)
+        log(f"Building vLLM {version or VLLM_XPU_VERSION} for Intel XPU from source ...")
+        for step in vllm_xpu_install_steps(str(venv_python), source_dir, version):
+            env = {**os.environ, **dict(step.environment)}
+            if run(list(step.command), env=env).returncode != 0:
+                return False
+        return install_vllm_build_tools(venv_dir, log=log, run=run)
     command = vllm_install_command(
-        support.method, str(venv_python), bool(shutil.which("uv")), version,
+        support.method, str(venv_python), bool(shutil.which("uv")), version, index_url,
     )
     log(f"Installing vLLM ({support.method}) — this downloads several GB ...")
-    return run(command).returncode == 0
+    return run(command).returncode == 0 and install_vllm_build_tools(
+        venv_dir, log=log, run=run,
+    )

@@ -1,12 +1,15 @@
 import { describe, it, expect } from "vitest";
 import {
-  parseJSON, parseResultsJSON, getRunReliabilityWarning, getLlamaBenchMethodologyWarning,
+  parseJSON, parseResultsJSON, readNamedJSONSource, getRunReliabilityWarning,
+  getLlamaBenchMethodologyWarning,
   getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning,
   getNoRepackMethodologyWarning,
+  getMemoryTelemetryMethodologyWarning,
   sanitizeForFilename, applyEngineLabels, backendLabel, engineLabel, filesForSection, fmt, getCrossEngineWeightsWarning,
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier, getSkipInfo, prepareOrderedBarGroupData,
-  sortBarData, sortRows, deriveTtftUnit, hasValueOrStatus, findMostStrenuousKey,
+  sortBarData, sortRows, deriveTtftUnit, hasValueOrStatus, configsWithValues,
+  statsSkippedColSpan, findMostStrenuousKey,
   measuredCategoryAxisWidth,
   entriesOf, valuesOf, isNotNull,
 } from "./shared";
@@ -66,6 +69,35 @@ describe("parseResultsJSON", () => {
     };
     expect(parseResultsJSON("not json")).toEqual(expected);
     expect(parseResultsJSON('{"given":Infinity}')).toEqual(expected);
+  });
+});
+
+describe("readNamedJSONSource", () => {
+  it("reads and parses each source exactly once", async () => {
+    let reads = 0;
+    const parsed = await readNamedJSONSource({
+      name: "result.json",
+      text: async () => { reads += 1; return '{"profile":{}}'; },
+    });
+    expect(reads).toBe(1);
+    expect(parsed).toEqual({
+      name: "result.json", data: { profile: {} }, error: null,
+      sha256: "ffd1c358b691c508257683c797aeaae82cf366975148bfc3b08a3d45bb61fe19",
+      sourceText: '{"profile":{}}',
+    });
+  });
+
+  it("retains read failures without retrying the source", async () => {
+    let reads = 0;
+    const parsed = await readNamedJSONSource({
+      name: "broken.json",
+      text: async () => { reads += 1; throw new Error("unreadable"); },
+    });
+    expect(reads).toBe(1);
+    expect(parsed).toEqual({
+      name: "broken.json", data: null, error: "Could not read this file.",
+      sha256: null, sourceText: null,
+    });
   });
 });
 
@@ -180,6 +212,28 @@ describe("getNoRepackMethodologyWarning", () => {
   });
 });
 
+describe("getMemoryTelemetryMethodologyWarning", () => {
+  const off = { data: { run: { effective_config: { memory_telemetry: false } } } };
+  const oneSecond = { data: { run: { effective_config: {
+    memory_telemetry: true, memory_telemetry_interval_sec: 1,
+  } } } };
+  const halfSecond = { data: { run: { effective_config: {
+    memory_telemetry: true, memory_telemetry_interval_sec: 0.5,
+  } } } };
+
+  it("allows qualified telemetry on/off comparisons and warns on other intervals", () => {
+    expect(getMemoryTelemetryMethodologyWarning([off, halfSecond])).toBe("");
+    expect(getMemoryTelemetryMethodologyWarning([off, oneSecond])).toContain("incompatible");
+    expect(getMemoryTelemetryMethodologyWarning([oneSecond, halfSecond])).toContain("incompatible");
+  });
+
+  it("allows matching or single-file identities", () => {
+    expect(getMemoryTelemetryMethodologyWarning([off, off])).toBe("");
+    expect(getMemoryTelemetryMethodologyWarning([oneSecond, oneSecond])).toBe("");
+    expect(getMemoryTelemetryMethodologyWarning([oneSecond])).toBe("");
+  });
+});
+
 describe("sanitizeForFilename", () => {
   it("collapses whitespace and special characters to a single hyphen", () => {
     expect(sanitizeForFilename("My Model: v1.0")).toBe("My-Model-v1-0");
@@ -236,6 +290,33 @@ describe("applyEngineLabels", () => {
       data: { run: { effective_config: { llamacpp_no_repack: true } } },
     }];
     expect(applyEngineLabels(files)[0].hostname).toBe("host-a\nllama.cpp -nr 7000");
+  });
+
+  it("distinguishes native MTP results for every compatible engine", () => {
+    const files: ResultsFile[] = [
+      {
+        id: 1, hostname: "host-a", engine: "vllm", engineVersion: "0.27.1",
+        data: { run: { effective_config: { mtp_enabled: false } } },
+      },
+      {
+        id: 2, hostname: "host-a", engine: "vllm", engineVersion: "0.27.1",
+        data: { run: { effective_config: { mtp_enabled: true } } },
+      },
+      {
+        id: 3, hostname: "host-b", engine: "llamacpp", engineVersion: "10488",
+        data: { run: { effective_config: { mtp_enabled: false } } },
+      },
+      {
+        id: 4, hostname: "host-b", engine: "llamacpp", engineVersion: "10488",
+        data: { run: { effective_config: {
+          mtp_enabled: true, llamacpp_no_repack: true,
+        } } },
+      },
+    ];
+    expect(applyEngineLabels(files).map(file => file.hostname)).toEqual([
+      "host-a\nvLLM 0.27.1", "host-a\nvLLM MTP on 0.27.1",
+      "host-b\nllama.cpp 10488", "host-b\nllama.cpp -nr MTP on 10488",
+    ]);
   });
 
   it("omits no-repack from labels for workloads that do not consume it", () => {
@@ -315,11 +396,11 @@ describe("engineLabel", () => {
 describe("measuredCategoryAxisWidth", () => {
   it("uses the widest measured label line plus tick padding", () => {
     const rows: ChartRow[] = [{ system: "CPU\nLong GPU name" }, { system: "RAM" }];
-    expect(measuredCategoryAxisWidth(rows, "system", text => text.length * 5.5)).toBe(83);
+    expect(measuredCategoryAxisWidth(rows, "system", text => text.length * 5.5)).toBe(90);
   });
 
   it("returns tick padding for an empty dataset", () => {
-    expect(measuredCategoryAxisWidth([], "system", () => 100)).toBe(11);
+    expect(measuredCategoryAxisWidth([], "system", () => 100)).toBe(18);
   });
 });
 
@@ -533,6 +614,24 @@ describe("hasValueOrStatus", () => {
   });
   it("is false when no row has either", () => {
     expect(hasValueOrStatus([{ "8K": 10 }], "2K")).toBe(false);
+  });
+});
+
+describe("configsWithValues", () => {
+  const configs = [{ dataKey: "old", label: "Old" }, { dataKey: "current", label: "Current" }];
+
+  it("removes line configs whose rows contain only missing telemetry", () => {
+    expect(configsWithValues(configs, [{ old: null }])).toEqual([]);
+  });
+
+  it("keeps zero as a measured value", () => {
+    expect(configsWithValues(configs, [{ current: 0 }])).toEqual([configs[1]]);
+  });
+});
+
+describe("statsSkippedColSpan", () => {
+  it("adds all four memory and three power columns", () => {
+    expect([7, 5, 9, 6, 5, 8].map(statsSkippedColSpan)).toEqual([14, 12, 16, 13, 12, 15]);
   });
 });
 

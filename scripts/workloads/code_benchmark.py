@@ -267,7 +267,8 @@ class CodeBenchmark:
         return score_question_bank(questions, answers, evaluate)
 
     def run(self, engine, models, questions=None, warmup_runs=config.WARMUP_RUNS, save_fn=None,
-            answers_path: Path | None = None):  # pragma: no cover — orchestrates real engine runs
+            answers_path: Path | None = None,
+            telemetry=None, journal=None):  # pragma: no cover — orchestrates real engine runs
         questions = questions if questions is not None else CodeBenchmark.load_questions()
 
         def _rescore_partial(q, text):
@@ -280,5 +281,6 @@ class CodeBenchmark:
             ask_fn=lambda tag, q: CodeBenchmark._ask(engine, tag, q),
             rescore_partial_fn=_rescore_partial,
             score_fn=CodeBenchmark.score,
-            save_fn=save_fn, answers_path=answers_path, progress_stage="code",
+            save_fn=save_fn, answers_path=answers_path, progress_stage="code", telemetry=telemetry,
+            journal=journal,
         )

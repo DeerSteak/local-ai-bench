@@ -3,6 +3,7 @@ See docs/engines.md#llamacppengine for the full rationale."""
 
 import http.client
 import json
+import os
 import platform
 import re
 import shutil
@@ -19,13 +20,16 @@ import gguf
 import requests
 
 from scripts.runtime import config
-from scripts.runtime.llamacpp_tools import find_llamacpp_tool
+from scripts.runtime.llamacpp_tools import find_llamacpp_tool, probe_llamacpp_backend
 from scripts.runtime.engines.base import ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine
 from scripts.runtime.engines import openai_api
 from scripts.runtime.engines.chat_flow import chat_measurement, run_bounded_chat, validate_chat_budget
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
+from scripts.workloads.model_variants import expanded_variant_catalog
 from scripts.setup.custom_models import custom_model
+from scripts.setup.intel_xpu_install import oneapi_environment
 from scripts.runtime.model_identity import model_tag_slug
+from scripts.runtime.mtp import native_mtp_config
 from scripts.runtime.generation_guard import looks_like_loop
 from scripts.runtime.crash_cache import record_crash
 from scripts.runtime.shared import (
@@ -43,6 +47,12 @@ class LlamaCppEngine(InferenceEngine):
     # Model *load* time (disk read + VRAM placement), not inference time. Matches VllmEngine's
     # LOAD_TIMEOUT — large catalog entries (e.g. 120B split GGUFs) can still be loading at 300s.
     LOAD_TIMEOUT = 900
+    SPAWN_LOG_LINES = 200
+    _GPU_LAYERS_RE = re.compile(r"offloaded\s+(\d+)/(\d+)\s+layers to GPU", re.I)
+    _MODEL_BUFFER_RE = re.compile(
+        r"\bload_tensors:\s+(.+?)\s+model buffer size\s*=\s*([\d.]+)\s*MiB",
+        re.I,
+    )
 
     @staticmethod
     def gpu_split_args(*, include_cache: bool = False, cpu_only: bool = False) -> list[str]:
@@ -62,10 +72,29 @@ class LlamaCppEngine(InferenceEngine):
         self._loaded_num_ctx: int | None = None
         self._loaded_embedding: bool | None = None
         self._loaded_n_parallel: int = 1
+        self._loaded_mtp_config: dict | None = None
+        self._loaded_model_placement: dict = {}
         # Remembered for the lazy spawn in _ensure_model — no tag yet at start()/ensure_running() time.
         self._gpu_visible = True
         self._cpu_only_active = False
+        self._mtp_enabled = False
+        self._process_env: dict[str, str] | None = None
         self._model_lock = threading.RLock()
+
+    @classmethod
+    def parse_model_placement(cls, log_text: str) -> dict:
+        """Parse llama.cpp's actual layer and model-buffer placement."""
+        layer_matches = cls._GPU_LAYERS_RE.findall(log_text or "")
+        buffers = cls._MODEL_BUFFER_RE.findall(log_text or "")
+        placement = {}
+        if layer_matches:
+            gpu_layers, total_layers = layer_matches[-1]
+            placement.update({"gpu_layers": int(gpu_layers), "total_layers": int(total_layers)})
+        cpu_mib = sum(float(size) for backend, size in buffers
+                      if "cpu" in backend.lower() or "host" in backend.lower())
+        if cpu_mib:
+            placement["cpu_model_buffer_gb"] = round(cpu_mib / 1024, 3)
+        return placement
 
     # ── binary resolution ──
 
@@ -82,6 +111,40 @@ class LlamaCppEngine(InferenceEngine):
 
     def model_paths(self, tag: str) -> tuple[Path, ...]:
         return tuple(self._resolve_model_files(tag) or ())
+
+    def model_artifacts_are_local(self) -> bool:
+        return True
+
+    def set_mtp_enabled(self, enabled: bool) -> None:
+        self._mtp_enabled = bool(enabled)
+
+    def _native_mtp_config(self, tag: str, *, embedding: bool = False) -> dict | None:
+        if not self._mtp_enabled or embedding:
+            return None
+        model = next((
+            model for model in expanded_variant_catalog(LLM_MODELS) if model["tag"] == tag
+        ), None)
+        if model is None:
+            raise RuntimeError(f"{tag} has no cataloged native MTP configuration for llama.cpp")
+        config = native_mtp_config(model, self.name)
+        if config is None:
+            raise RuntimeError(f"{tag} does not support native MTP with llama.cpp")
+        return config
+
+    def _mtp_draft_path(self, tag: str, mtp_config: dict | None) -> Path | None:
+        if mtp_config is None or "draft_file" not in mtp_config:
+            return None
+        path = self._models_dir() / self._slug(tag) / Path(mtp_config["draft_file"]).name
+        if not path.is_file():
+            raise RuntimeError(
+                f"{tag} native MTP predictor is missing at {path} — rerun setup to download it"
+            )
+        return path
+
+    def compatibility_metadata(self, tag: str) -> tuple[dict, str | None]:
+        from scripts.setup.model_compatibility import gguf_metadata
+        paths = self.model_paths(tag)
+        return gguf_metadata(paths[0]) if paths else ({}, "Model weight files are incomplete.")
 
     @staticmethod
     def repack_args() -> list[str]:
@@ -102,7 +165,7 @@ class LlamaCppEngine(InferenceEngine):
     @staticmethod
     def _catalog_entry(tag: str) -> dict | None:
         """Look up `tag`'s hf_repo/hf_file in models.py's catalog."""
-        for model in LLM_MODELS + EMBED_MODELS:
+        for model in expanded_variant_catalog(LLM_MODELS) + EMBED_MODELS:
             if model["tag"] == tag:
                 return model
         return None
@@ -223,6 +286,8 @@ class LlamaCppEngine(InferenceEngine):
         self._loaded_num_ctx = None
         self._loaded_embedding = None
         self._loaded_n_parallel = 1
+        self._loaded_mtp_config = None
+        self._loaded_model_placement = {}
 
     def is_connection_crash(self, exc: Exception) -> bool:
         """True for the exception shapes a dead HTTP server surfaces as."""
@@ -253,6 +318,10 @@ class LlamaCppEngine(InferenceEngine):
         paths = self._resolve_model_files(tag)
         if paths is None:
             raise ValueError(f"cannot identify local model artifact for resume: {tag}")
+        mtp_config = self._native_mtp_config(tag)
+        draft_path = self._mtp_draft_path(tag, mtp_config)
+        if draft_path is not None:
+            paths.append(draft_path)
         return tuple(path.resolve() for path in paths)
 
     def resume_runtime_paths(self) -> dict[str, Path]:
@@ -265,14 +334,15 @@ class LlamaCppEngine(InferenceEngine):
         """Every fully-present catalog tag, plus any non-catalog directory —
         see docs/engines.md's custom-tag resolution."""
         installed = []
-        for model in LLM_MODELS + EMBED_MODELS:
+        catalog = expanded_variant_catalog(LLM_MODELS) + EMBED_MODELS
+        for model in catalog:
             paths = self._resolve_model_files(model["tag"])
             if paths is not None:
                 installed.append({"tag": model["tag"], "size": sum(p.stat().st_size for p in paths)})
 
         models_dir = self._models_dir()
         if models_dir.exists():
-            catalog_slugs = {self._slug(model["tag"]) for model in LLM_MODELS + EMBED_MODELS}
+            catalog_slugs = {self._slug(model["tag"]) for model in catalog}
             for entry in sorted(p for p in models_dir.iterdir() if p.is_dir()):
                 if entry.name in catalog_slugs:
                     continue
@@ -285,36 +355,17 @@ class LlamaCppEngine(InferenceEngine):
                     installed.append(item)
         return installed
 
-    @staticmethod
-    def _backend_from_device_listing(output: str) -> str:
-        for line in output.splitlines():
-            device = line.strip().lower()
-            if re.match(r"cuda\d*\s*:", device):
-                return "cuda"
-            if re.match(r"(?:rocm|hip)\d*\s*:", device):
-                return "rocm"
-            if re.match(r"(?:metal|mtl)\d*\s*:", device):
-                return "metal"
-            if re.match(r"(?:sycl|level[- ]?zero)\d*\s*:", device):
-                return "xpu"
-            if re.match(r"vulkan\d*\s*:", device):
-                return "vulkan"
-        return "cpu"
-
     def runtime_backend(self, hardware_backend: str, *, cpu_only: bool = False) -> str:
+        self._process_env = oneapi_environment() if hardware_backend == "xpu" else None
         if cpu_only:
             return "cpu"
         binary = self._binary_path()
         if binary is None:
             return hardware_backend
-        try:
-            completed = subprocess.run(
-                [binary, "--list-devices"], capture_output=True, text=True, timeout=10,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return hardware_backend
-        output = f"{completed.stdout}\n{completed.stderr}"
-        return self._backend_from_device_listing(output) if completed.returncode == 0 else hardware_backend
+        return probe_llamacpp_backend(binary, env=self._process_env) or hardware_backend
+
+    def process_environment(self) -> dict[str, str] | None:
+        return self._process_env
 
     def max_context_length(self, tag: str, default: int = 131072) -> int:
         """Read a model's max context from its GGUF metadata, without loading weights.
@@ -418,11 +469,14 @@ class LlamaCppEngine(InferenceEngine):
                        n_parallel: int = 1, deadline: float | None = None) -> None:
         """Ensure llama-server is serving `tag` at `num_ctx`, respawning on any
         mismatch (model/context/mode/parallel-slots) — llama-server is single-model-per-process."""
-        want = (tag, num_ctx, embedding, n_parallel)
+        mtp_config = self._native_mtp_config(tag, embedding=embedding)
+        draft_path = self._mtp_draft_path(tag, mtp_config)
+        want = (tag, num_ctx, embedding, n_parallel, mtp_config)
 
         def ready():
             have = (self._loaded_tag, self._loaded_num_ctx,
-                    self._loaded_embedding, self._loaded_n_parallel)
+                    self._loaded_embedding, self._loaded_n_parallel,
+                    self._loaded_mtp_config)
             return want == have and self._proc is not None and self._proc.poll() is None
 
         if ready():
@@ -469,13 +523,22 @@ class LlamaCppEngine(InferenceEngine):
                 args += ["-c", str(num_ctx * n_parallel)]
             if embedding:
                 args += ["--embeddings", "--pooling", "mean"]
+            if mtp_config is not None:
+                args += [
+                    "--spec-type", "draft-mtp",
+                    "--spec-draft-n-max", str(mtp_config["num_speculative_tokens"]),
+                ]
+                if draft_path is not None:
+                    args += ["--spec-draft-model", str(draft_path)]
             # Always pinned, even at 1 — see docs/engines.md's "--parallel is always pinned".
             args += ["--parallel", str(n_parallel)]
 
             log_fh = tempfile.NamedTemporaryFile(mode="w", suffix="-llamacpp-server.log", delete=False)
             self._log_path = Path(log_fh.name)
             try:
-                proc = subprocess.Popen(args, stdout=log_fh, stderr=subprocess.STDOUT)
+                proc = subprocess.Popen(
+                    args, stdout=log_fh, stderr=subprocess.STDOUT, env=self._process_env,
+                )
             except FileNotFoundError:
                 log_fh.close()
                 raise RuntimeError(f"'{self.BINARY}' not found in PATH") from None
@@ -505,6 +568,9 @@ class LlamaCppEngine(InferenceEngine):
                     self._loaded_num_ctx = num_ctx
                     self._loaded_embedding = embedding
                     self._loaded_n_parallel = n_parallel
+                    self._loaded_mtp_config = mtp_config
+                    self._loaded_model_placement = self.parse_model_placement(
+                        self.tail_log(self.SPAWN_LOG_LINES))
                     return
                 time.sleep(1)
 
@@ -522,11 +588,12 @@ class LlamaCppEngine(InferenceEngine):
         model_load_sec = time.perf_counter() - operation_start
 
         payload = json.dumps({
+            **self.sampling_payload(),
             "prompt": prompt,
             "n_predict": config.GENERATE_MAX_TOKENS,
-            "temperature": 0.0,
             "stream": True,
             "return_tokens": True,
+            "cache_prompt": False,
         }).encode()
         req = urllib.request.Request(
             f"{config.LLAMACPP_URL}/completion",
@@ -594,15 +661,18 @@ class LlamaCppEngine(InferenceEngine):
             finish_reason=finish_reason,
             model_load_sec=model_load_sec,
             server_tps_implausible=sanitized != tps,
+            gpu_layers=self._loaded_model_placement.get("gpu_layers"),
+            total_layers=self._loaded_model_placement.get("total_layers"),
+            cpu_model_buffer_gb=self._loaded_model_placement.get("cpu_model_buffer_gb"),
         )
 
     def _chat_request(self, tag: str, messages: list, tools: list | None,
                       deadline: float, num_predict: int,
                       check_loop: bool, budget_nudged: bool) -> dict:
         payload = {
+            **self.sampling_payload(),
             "messages": messages,
             "n_predict": num_predict,
-            "temperature": 0.0,
             "stream": True,
             "stream_options": {"include_usage": True},
         }
@@ -697,11 +767,9 @@ class LlamaCppEngine(InferenceEngine):
                         server_prompt_sec = prompt_ms / 1000
                     if prompt_n is not None:
                         prompt_eval_count = prompt_n
-                usage = chunk.get("usage")
-                if usage and usage.get("prompt_tokens") is not None:
-                    prompt_eval_count = usage["prompt_tokens"]
-                if usage and usage.get("completion_tokens") is not None:
-                    tokens = usage["completion_tokens"]
+                tokens, prompt_eval_count = openai_api.streamed_usage(
+                    chunk, tokens, prompt_eval_count,
+                )
 
         total = time.perf_counter() - request_start
         if ttft is None:
@@ -754,7 +822,10 @@ class LlamaCppEngine(InferenceEngine):
         first, second, budget_nudged, model_load_sec = self._chat_with_optional_finalize(
             tag, messages, None, timeout, num_ctx, num_predict, check_loop, token_budget,
         )
-        return chat_measurement(first, second, budget_nudged, model_load_sec)
+        return chat_measurement(
+            first, second, budget_nudged, model_load_sec,
+            model_placement=self._loaded_model_placement,
+        )
 
     def chat_tools(self, tag: str, messages: list, tools: list, timeout: int = 600,
                    num_ctx: int | None = None, num_predict: int = 1024,
@@ -763,7 +834,10 @@ class LlamaCppEngine(InferenceEngine):
         first, second, budget_nudged, model_load_sec = self._chat_with_optional_finalize(
             tag, messages, tools, timeout, num_ctx, num_predict, check_loop, token_budget,
         )
-        return chat_measurement(first, second, budget_nudged, model_load_sec)
+        return chat_measurement(
+            first, second, budget_nudged, model_load_sec,
+            model_placement=self._loaded_model_placement,
+        )
 
     @staticmethod
     def _tool_calls_from_fragments(tool_fragments: dict[int, dict]) -> list[dict]:

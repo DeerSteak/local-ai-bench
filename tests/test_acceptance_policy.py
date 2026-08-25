@@ -5,6 +5,7 @@ import pytest
 
 from scripts.results.acceptance_policy import evaluate_policy, load_policy, validate_policy
 from scripts.results.acceptance_policy_cli import main
+from scripts.results.trial_set import build_trial_set
 
 
 def policy(**rule_changes):
@@ -16,6 +17,16 @@ def policy(**rule_changes):
     rule.update(rule_changes)
     return {"schema_version": 1, "name": "Vendor launch gate",
             "methodology_profile": "neutral-v1", "rules": [rule]}
+
+
+def policy_v2(**rule_changes):
+    candidate = policy(**rule_changes)
+    candidate["schema_version"] = 2
+    candidate["rules"][0].update({
+        "tolerance_pct": 3.0,
+        "evidence_requirement": "single_run",
+    })
+    return candidate
 
 
 def result():
@@ -75,7 +86,7 @@ def test_accuracy_and_image_rules_use_their_real_evidence_shapes():
 
 
 @pytest.mark.parametrize("mutation", [
-    lambda p: p.update(schema_version=2),
+    lambda p: p.update(schema_version=3),
     lambda p: p.update(rules=[]),
     lambda p: p["rules"][0].update(metric="unknown"),
     lambda p: p["rules"][0].update(threshold=float("nan")),
@@ -96,3 +107,63 @@ def test_policy_loader_and_cli_use_deterministic_machine_readable_result(tmp_pat
     assert load_policy(policy_path)["name"] == "Vendor launch gate"
     assert main([str(result_path), str(policy_path)]) == 0
     assert '"decision": "accepted"' in capsys.readouterr().out
+
+
+def test_schema_two_accepts_a_value_inside_practical_tolerance():
+    candidate = result()
+    candidate["llm"]["golden"]["2K"]["tps_mean"] = 48.0
+    evaluation = evaluate_policy(candidate, policy_v2())
+    assert evaluation["decision"] == "accepted"
+    assert evaluation["rules"][0]["status"] == "pass_within_tolerance"
+
+
+def test_reproducible_evidence_requirement_is_inconclusive_for_one_run():
+    candidate = policy_v2()
+    candidate["rules"][0]["evidence_requirement"] = "repeated_trials"
+    evaluation = evaluate_policy(result(), candidate)
+    assert evaluation["decision"] == "inconclusive"
+    assert evaluation["rules"][0]["status"] == "inconclusive"
+
+
+@pytest.mark.parametrize("change", [
+    {"tolerance_pct": -1},
+    {"evidence_requirement": "pretend_significant"},
+])
+def test_schema_two_rejects_invalid_noise_policy_fields(change):
+    candidate = policy_v2()
+    candidate["rules"][0].update(change)
+    with pytest.raises(ValueError):
+        validate_policy(candidate)
+
+
+def test_repeated_trial_policy_uses_candidate_interval():
+    baseline = []
+    candidate = []
+    for index, value in enumerate((50.0, 50.1, 49.9, 50.05, 49.95)):
+        before = result()
+        after = result()
+        before["profile"] = after["profile"] = {"hostname": "system"}
+        before["llm"]["golden"]["2K"]["tps_mean"] = value
+        after["llm"]["golden"]["2K"]["tps_mean"] = value + 5
+        baseline.append(before)
+        candidate.append(after)
+    artifact = build_trial_set(baseline, candidate)
+    trial_policy = policy_v2(threshold=54.0)
+    trial_policy["rules"][0]["evidence_requirement"] = "repeated_trials"
+    evaluation = evaluate_policy(artifact, trial_policy)
+    assert evaluation["decision"] == "accepted"
+    assert evaluation["rules"][0]["status"] == "pass"
+
+
+def test_repeated_trial_policy_is_inconclusive_when_interval_crosses_threshold():
+    artifact = {
+        "schema_version": 1, "compatible": True, "methodology_profile": "neutral-v1",
+        "rows": [{
+            "key": "llm/golden/2K/tps_mean",
+            "candidate": {"mean": 50.0, "interval": [48.0, 52.0],
+                          "trial_count": 5, "drift": "none"},
+        }],
+    }
+    trial_policy = policy_v2(threshold=50.0, tolerance_pct=0)
+    trial_policy["rules"][0]["evidence_requirement"] = "repeated_trials"
+    assert evaluate_policy(artifact, trial_policy)["decision"] == "inconclusive"

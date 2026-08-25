@@ -1,5 +1,9 @@
 # Troubleshooting
 
+## Model preflight findings
+
+`chat_template: absent` means llama.cpp's GGUF has no embedded `tokenizer.chat_template`, or a vLLM snapshot has neither that tokenizer metadata nor a readable top-level `chat_template.jinja`. For llama.cpp this is a quality-risk warning because its runtime may infer formatting; vLLM chat requests require a template, so its mandatory formatting probe will exclude the model if no valid fallback exists. `context_capacity: exceeded` means at least one selected workload requests more tokens than the model or engine declares; reduce the plan with `--max-prompt-tokens` or choose a model with sufficient context. `tool_calls: unsupported` affects only Tool Use and tool concurrency; select a model/parser combination supported by the engine. `weights: incomplete` or `weights: unreadable` cannot be bypassed: reinstall or re-import every declared shard. `formatting_probe: load_or_request_failed`, `raw_markup`, or `empty` means the model did not complete the fixed deterministic round-trip, while `cleanup_failed` means the engine could not prove a cold state afterward; inspect the Run Log, free memory, correct the runtime/model configuration, and retry. Externally managed runtimes must provide a clean-state path or use a locally managed engine for decision-grade measurement.
+
 Start with the exact error and the latest durable result rather than deleting state or rerunning everything. A failed or interrupted run can still contain valid completed cases; preserve the result JSON, event data, and sidecars until their usability has been reviewed.
 
 ## Setup and launch
@@ -24,6 +28,7 @@ Start with the exact error and the latest durable result rather than deleting st
 | Ctrl-C or GUI cancel | Run/stage status and last checkpoint | Wait for cleanup; completed cases remain saved and the active stage becomes interrupted rather than masquerading as complete |
 | Result cannot be compared | Plan/methodology/runtime/model identity warning | Compare only compatible identities or explicitly fork/re-run; never suppress an incompatibility to obtain a chart |
 | Offline mode blocks work | Whether all models/runtimes were installed before launch | Install prerequisites online through reviewed setup, then rerun offline; offline execution intentionally denies non-loopback Python connections |
+| Power telemetry is unavailable | The recorded preflight source, scope, and normalized reason | On macOS the GUI requests permission before launch; for a terminal-only run, run `sudo -v` immediately before starting. On NVIDIA or Linux AMD verify the vendor query works for the benchmark user; on Windows AMD update Adrenalin and confirm its Metrics panel shows GPU power; on Intel verify the RAPL counter is readable. Do not run the whole benchmark as root |
 
 ## Results, reports, and support
 

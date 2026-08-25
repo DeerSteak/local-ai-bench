@@ -74,6 +74,11 @@ describe("getAllImageModels", () => {
     expect(getAllImageModels(files)).toEqual(["sd15", "my-model"]);
   });
 
+  it("keeps legacy SD3.5 results in stable order after current models", () => {
+    const files = [file("a", { "sd35-large": {}, "z-image-turbo": {}, sdxl: {} })];
+    expect(getAllImageModels(files)).toEqual(["sdxl", "z-image-turbo", "sd35-large"]);
+  });
+
   it("unions across files without duplicating a shared model", () => {
     const files = [file("a", { sd15: {} }), file("b", { sd15: {}, sdxl: {} })];
     expect(getAllImageModels(files)).toEqual(["sd15", "sdxl"]);

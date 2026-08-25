@@ -1,9 +1,11 @@
 """Shared constants. CLI-overridable ones (RUN_TIMEOUT, ACC_TIMEOUT, ACC_TOKEN_BUDGET, N_RUNS)
 need `config.NAME` access — `from config import NAME` binds a stale copy before any override applies."""
 
+import os
+import math
 from pathlib import Path
 
-VERSION        = "5.1.1"
+VERSION        = "6.0"
 
 COMFYUI_URL  = "http://localhost:8188"
 
@@ -36,6 +38,12 @@ VLLM_PORT = 8000
 VLLM_URL  = f"http://localhost:{VLLM_PORT}"
 # vLLM preallocates this fraction of VRAM for weights + KV cache.
 VLLM_GPU_MEMORY_UTILIZATION = 0.90
+VLLMBENCH_GPU_MEMORY_UTILIZATION = 0.85
+VLLMBENCH_GB10_GPU_MEMORY_UTILIZATION = 0.10
+VLLM_OFFLOAD_STEP_GB = 2
+VLLM_OFFLOAD_RESERVE_GB = 3
+VLLM_OFFLOAD_HOST_RESERVE_GB = 8
+VLLM_OFFLOAD_MAX_ATTEMPTS = 4
 # Prompts are padded by characters, so real tokenization can overshoot the target.
 # vLLM rejects prompt+max_tokens > max_model_len outright; llama.cpp does not.
 VLLM_CTX_TOLERANCE = 64
@@ -94,6 +102,31 @@ LOOP_CHECK_INTERVAL = 8
 
 SLOW_MODEL_MIN_TPS = 15.0   # tokens/sec below which a model is skipped from the conversation test
 
+TELEMETRY_INTERVAL_SEC = float(os.environ.get("LOCAL_AI_BENCH_MEMORY_INTERVAL_SEC", "0.5"))
+if not math.isfinite(TELEMETRY_INTERVAL_SEC) or TELEMETRY_INTERVAL_SEC <= 0:
+    raise ValueError("LOCAL_AI_BENCH_MEMORY_INTERVAL_SEC must be positive")
+MEMORY_HEADROOM_COMFORTABLE_FRACTION = 0.20
+
+SUSTAINED_DURATION_SEC = 600
+SUSTAINED_WINDOW_SEC = 10
+SUSTAINED_CONTEXT_TOKENS = 2048
+SUSTAINED_MIN_CLASSIFICATION_SEC = 120
+SUSTAINED_INITIAL_WINDOWS = 3
+SUSTAINED_STEADY_WINDOWS = 6
+SUSTAINED_ONSET_CONSECUTIVE_WINDOWS = 3
+SUSTAINED_ONSET_TOLERANCE_FRACTION = 0.05
+SUSTAINED_SIGNIFICANT_RETENTION = 0.85
+SUSTAINED_MILD_RETENTION = 0.95
+SUSTAINED_TEMPERATURE_RISE_C = 5.0
+SUSTAINED_TEMPERATURE_CEILING_BAND_C = 2.0
+SUSTAINED_POWER_DROP_FRACTION = 0.05
+
+# Provisional product-relevance floors; qualification may only raise these above observed noise.
+PRACTICAL_TTFT_THRESHOLD_PCT = 8.0
+PRACTICAL_THROUGHPUT_THRESHOLD_PCT = 3.0
+PRACTICAL_WALL_TIME_THRESHOLD_PCT = 3.0
+PRACTICAL_ACCURACY_THRESHOLD_PCT = 1.0
+
 # llama-bench pp/tg throughput sweep (opt-in `llamabench` test) — see docs/workloads.md#llama-bench.
 # Matches every non-zero size from CONTEXT_LENGTHS (prefill) and LLMConversationBenchmark.CONV_CHECKPOINTS
 # (conversation) so llama-bench numbers can stand in for both as they're phased out.
@@ -110,9 +143,7 @@ LLAMABENCH_TIMEOUT = 1800
 LLAMABENCH_FULL_OFFLOAD_NGL = 999
 
 # `vllm bench` latency/throughput sweep (opt-in `vllmbench` test) — see docs/workloads.md#vllm-bench.
-# Same shapes as LLAMABENCH_PP/TG so both engines sweep the same points; the numbers are
-# still not comparable across engines (different weights and different metric definitions).
-VLLMBENCH_INPUT = [512, 2048, 4096, 8192, 16384, 32768, 49152, 65536, 81920, 98304]
+# Uses LLAMABENCH_PP for input shapes so the shared prompt cap applies identically.
 VLLMBENCH_OUTPUT = [128, 512]
 VLLMBENCH_BATCH_SIZE = 1
 # vllm bench latency defaults to 30 iterations and 10 warmups, far more than this suite needs.
@@ -120,11 +151,13 @@ VLLMBENCH_ITERS = 3
 VLLMBENCH_WARMUP_ITERS = 1
 VLLMBENCH_NUM_PROMPTS = 32
 VLLMBENCH_TIMEOUT = 1800
+VLLM_COLD_IMPORT_TIMEOUT = 300
 
 # llama-batched-bench concurrency sweep (opt-in `llamabenchconc` test) — see docs/workloads.md#llama-bench-concurrency.
 LLAMABENCH_CONC_PP = 4096   # matches CONCURRENCY_TOOL_CONTEXT, so this cross-checks conc_tool at the same depth
 LLAMABENCH_CONC_TG = [128, 512]
 LLAMABENCH_CONC_NPL = [1, 2, 4, 8, 16]
+LLAMABENCH_CONC_GPU_LAYERS = "auto"
 
 # Above this, a self-reported tps is treated as unreliable — see docs/engines.md's "_sanitize_tps".
 MAX_PLAUSIBLE_TPS = 5000.0

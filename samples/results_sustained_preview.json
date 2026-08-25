@@ -1,0 +1,31 @@
+{
+  "version": "6.0-pre5",
+  "engine": "llamacpp",
+  "profile": {"hostname": "DGX Spark Preview", "os": "Linux", "backend": "CUDA", "ram_gb": 128},
+  "llm": {}, "llm_conversation": {}, "embeddings": {}, "images": {},
+  "mcq": {}, "math": {}, "reasoning": {}, "code": {}, "tool": {},
+  "concurrency_tool": {}, "concurrency_chat": {}, "llamabench": {}, "llamabenchconc": {}, "vllmbench": {},
+  "sustained": {
+    "gemma3-12b-q4": {
+      "context_tokens": 2048, "target_duration_sec": 600, "actual_duration_sec": 600.8,
+      "window_sec": 60, "ambient_temp_c": 20.4, "pause_invalidated": false,
+      "series": [
+        {"timestamp_sec": 0, "duration_sec": 60, "tokens_per_sec": 48.9, "gpu_die_c": 58, "power_watts": 91},
+        {"timestamp_sec": 60, "duration_sec": 60, "tokens_per_sec": 48.6, "gpu_die_c": 64, "power_watts": 94},
+        {"timestamp_sec": 120, "duration_sec": 60, "tokens_per_sec": 47.8, "gpu_die_c": 69, "power_watts": 96},
+        {"timestamp_sec": 180, "duration_sec": 60, "tokens_per_sec": 46.1, "gpu_die_c": 73, "power_watts": 95},
+        {"timestamp_sec": 240, "duration_sec": 60, "tokens_per_sec": 44.5, "gpu_die_c": 76, "power_watts": 92},
+        {"timestamp_sec": 300, "duration_sec": 60, "tokens_per_sec": 43.2, "gpu_die_c": 78, "power_watts": 89},
+        {"timestamp_sec": 360, "duration_sec": 60, "tokens_per_sec": 42.6, "gpu_die_c": 79, "power_watts": 87},
+        {"timestamp_sec": 420, "duration_sec": 60, "tokens_per_sec": 42.3, "gpu_die_c": 79, "power_watts": 86},
+        {"timestamp_sec": 480, "duration_sec": 60, "tokens_per_sec": 42.1, "gpu_die_c": 79, "power_watts": 86},
+        {"timestamp_sec": 540, "duration_sec": 60.8, "tokens_per_sec": 42.0, "gpu_die_c": 79, "power_watts": 85}
+      ],
+      "analysis": {"initial_tokens_per_sec": 48.43, "steady_state_tokens_per_sec": 42.78,
+        "retention_ratio": 0.8833, "throttle_onset_sec": 180, "performance": "mild_degradation",
+        "cause": "temperature_and_power_correlated", "duration_sec": 600.8, "window_count": 10,
+        "ordinal_drift": "declining", "related_trial_drift": null}
+    }
+  },
+  "run": {"schema_version": 6, "status": "complete", "effective_config": {"sustained_duration_sec": 600, "ambient_temp_c": 20.4}}
+}

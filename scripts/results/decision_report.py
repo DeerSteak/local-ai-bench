@@ -27,6 +27,10 @@ class ReportModel:
     optimizations: tuple[str, ...]
     acceptance_decision: str
     acceptance: tuple[tuple[str, str, str, str, str], ...]
+    recommendation_verdict: str
+    recommendation_constraints: tuple[tuple[str, str], ...]
+    recommendation_candidates: tuple[tuple[str, str, str, str], ...]
+    workspace_selection: tuple[tuple[str, str, str], ...]
 
 
 def _text(value, fallback="Not recorded") -> str:
@@ -40,7 +44,49 @@ def _sample_counts(result: dict) -> tuple[int, int, int]:
     return int(completed or 0), int(valid or 0), invalid
 
 
-def build_report_model(result: dict, policy: dict | None = None) -> ReportModel:
+def _recommendation_rows(artifact: dict | None) -> tuple[str, tuple, tuple]:
+    if artifact is None:
+        return "Not evaluated", (), ()
+    constraints = tuple(
+        (key.replace("_", " ").title(), _text(value))
+        for key, value in as_dict(artifact.get("constraints")).items() if value is not None
+    )
+    candidates = []
+    candidate_groups = as_dict(artifact.get("candidates"))
+    objective = as_dict(artifact.get("constraints")).get("primary_objective")
+    for group in ("recommended", "tied", "other_eligible"):
+        for item in candidate_groups.get(group) or ():
+            evidence = as_dict(as_dict(item.get("evidence")).get(objective))
+            candidates.append((
+                group.replace("_", " ").title(), _text(item.get("candidate")),
+                f"{_text(evidence.get('value'))} {_text(evidence.get('unit'), '')}".strip(),
+                ", ".join([str(evidence.get("evidence_path")), *(
+                    str(path) for path in evidence.get("raw_evidence_paths") or ()
+                )]),
+            ))
+    for item in candidate_groups.get("eliminated") or ():
+        for reason in item.get("reasons") or ():
+            measurement = as_dict(reason.get("measurement"))
+            detail = f"{reason.get('constraint')} {reason.get('operator')} {reason.get('threshold')}"
+            candidates.append((
+                "Eliminated", _text(item.get("candidate")), detail,
+                ", ".join([str(measurement.get("evidence_path")), *(
+                    str(path) for path in measurement.get("raw_evidence_paths") or ()
+                )]),
+            ))
+    for item in candidate_groups.get("unevaluated") or ():
+        candidates.append((
+            "Unevaluated", _text(item.get("candidate")),
+            ", ".join(str(value) for value in item.get("missing_evidence") or ()),
+            _text(as_dict(item.get("resolution")).get("evidence_path")),
+        ))
+    return str(artifact["verdict"]).replace("_", " ").upper(), constraints, tuple(candidates)
+
+
+def build_report_model(result: dict, policy: dict | None = None,
+                       recommendation: dict | None = None,
+                       recommendation_source: dict | None = None,
+                       workspace_selection: dict | None = None) -> ReportModel:
     if not isinstance(result, dict):
         raise ValueError("result must be a JSON object")
     validate_json_data(result)
@@ -142,12 +188,33 @@ def build_report_model(result: dict, policy: dict | None = None) -> ReportModel:
             item["id"], item["status"], _text(item["actual"]),
             _text(item["threshold"]), str(item["evidence"]),
         ) for item in evaluation["rules"])
+    if recommendation is not None:
+        from scripts.results.recommendation import validate_recommendation_artifact
+
+        validate_recommendation_artifact(
+            recommendation, source_result=recommendation_source or result)
+    recommendation_verdict, recommendation_constraints, recommendation_candidates = \
+        _recommendation_rows(recommendation)
+    selection_rows = ()
+    if workspace_selection is not None:
+        from scripts.results.workspace_selection import validate_workspace_selection
+
+        validate_workspace_selection(workspace_selection)
+        baseline = workspace_selection["baseline_sha256"]
+        selection_rows = tuple((
+            "Baseline" if item["sha256"] == baseline else "Selected",
+            item["name"], item["sha256"],
+        ) for item in workspace_selection["results"])
     return ReportModel(
         title=f"Local AI Bench Decision Report - {hostname}", metadata=metadata,
         readiness=readiness, readiness_detail=readiness_detail,
         coverage=tuple(coverage), performance=tuple(performance), accuracy=tuple(accuracy),
         evidence=tuple(evidence), optimizations=tuple(settings.get("effective_optimizations") or ()),
         acceptance_decision=acceptance_decision, acceptance=acceptance,
+        recommendation_verdict=recommendation_verdict,
+        recommendation_constraints=recommendation_constraints,
+        recommendation_candidates=recommendation_candidates,
+        workspace_selection=selection_rows,
     )
 
 
@@ -185,15 +252,24 @@ th,td{{padding:8px 10px;border-bottom:1px solid #d7dde5;text-align:left}}th{{bac
 <h2>Sample validity</h2>{_html_table(("Workload", "Case", "Valid", "Excluded"), model.evidence)}
 <h2>Effective optimizations</h2>{_html_table(("Recorded setting",), ((value,) for value in model.optimizations))}
 <h2>Acceptance decision: {html.escape(model.acceptance_decision)}</h2>{_html_table(("Rule", "Status", "Actual", "Threshold", "Evidence"), model.acceptance)}
+<h2>Recommendation: {html.escape(model.recommendation_verdict)}</h2>
+{_html_table(("Constraint", "Value"), model.recommendation_constraints)}
+{_html_table(("Group", "Candidate", "Reason or objective", "Evidence"), model.recommendation_candidates)}
+<h2>Workspace selection</h2>{_html_table(("Role", "Result", "SHA-256"), model.workspace_selection)}
 <h2>Interpretation limits</h2><div class="limitations">This report presents measured evidence, not a hidden composite score or a universal recommendation. Compare only compatible methodology, model artifacts, runtimes, cache semantics, and effective settings. Missing or invalid data is not zero. Review raw samples, exclusion reasons, and the verified result bundle before making a purchase, launch, or capacity decision.</div>
 <footer>Generated deterministically from a Local AI Bench result. No external assets, scripts, telemetry, or network resources are embedded.</footer>
 </body></html>"""
 
 
-def write_html_report(result: dict, path: Path, policy: dict | None = None) -> Path:
+def write_html_report(result: dict, path: Path, policy: dict | None = None,
+                      recommendation: dict | None = None,
+                      recommendation_source: dict | None = None,
+                      workspace_selection: dict | None = None) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_html(build_report_model(result, policy)), encoding="utf-8", newline="\n")
+    path.write_text(render_html(build_report_model(
+        result, policy, recommendation, recommendation_source, workspace_selection,
+    )), encoding="utf-8", newline="\n")
     return path
 
 
@@ -202,14 +278,19 @@ def report_output_paths(html_path: Path) -> tuple[Path, Path]:
     return html_path, html_path.with_suffix(".pdf")
 
 
-def write_pdf_report(result: dict, path: Path, policy: dict | None = None) -> Path:
+def write_pdf_report(result: dict, path: Path, policy: dict | None = None,
+                     recommendation: dict | None = None,
+                     recommendation_source: dict | None = None,
+                     workspace_selection: dict | None = None) -> Path:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.lib.units import inch
     from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-    model = build_report_model(result, policy)
+    model = build_report_model(
+        result, policy, recommendation, recommendation_source, workspace_selection,
+    )
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     styles = getSampleStyleSheet()
@@ -258,6 +339,17 @@ def write_pdf_report(result: dict, path: Path, policy: dict | None = None) -> Pa
     add_table(
         f"Acceptance decision: {model.acceptance_decision}",
         ("Rule", "Status", "Actual", "Threshold", "Evidence"), model.acceptance,
+    )
+    add_table(
+        f"Recommendation: {model.recommendation_verdict}",
+        ("Constraint", "Value"), model.recommendation_constraints,
+    )
+    add_table(
+        "Recommendation candidates", ("Group", "Candidate", "Reason or objective", "Evidence"),
+        model.recommendation_candidates,
+    )
+    add_table(
+        "Workspace selection", ("Role", "Result", "SHA-256"), model.workspace_selection,
     )
     story.extend([Spacer(1, 12), Paragraph("Interpretation limits", styles["Heading2"]), Paragraph(
         "This report presents measured evidence, not a hidden composite score or a universal recommendation. "

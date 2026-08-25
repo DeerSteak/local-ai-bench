@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+from pathlib import Path
 from typing import cast
 
 import gguf
@@ -25,6 +26,27 @@ def test_repack_args_follow_the_explicit_runtime_setting(monkeypatch):
     assert LlamaCppEngine.repack_args() == []
     monkeypatch.setattr(config, "LLAMACPP_NO_REPACK", True)
     assert LlamaCppEngine.repack_args() == ["--no-repack"]
+
+
+def test_parse_model_placement_reports_layers_and_cpu_side_model_buffers():
+    log = """0.05.100.001 I load_tensors: offloaded 35/41 layers to GPU
+0.05.101.002 I load_tensors:          CPU_Mapped model buffer size =   272.81 MiB
+0.05.102.003 I load_tensors:        CUDA0 model buffer size =  4385.96 MiB
+0.05.103.004 I load_tensors:    CUDA_Host model buffer size = 14105.96 MiB
+"""
+    assert LlamaCppEngine.parse_model_placement(log) == {
+        "gpu_layers": 35,
+        "total_layers": 41,
+        "cpu_model_buffer_gb": 14.042,
+    }
+
+
+def test_parse_model_placement_uses_last_load_and_tolerates_missing_buffers():
+    log = "load_tensors: offloaded 10/41 layers to GPU\nload_tensors: offloaded 41/41 layers to GPU"
+    assert LlamaCppEngine.parse_model_placement(log) == {
+        "gpu_layers": 41,
+        "total_layers": 41,
+    }
 
 
 def test_binary_path_via_llamacpp_dir(monkeypatch, tmp_path):
@@ -95,6 +117,14 @@ _FAKE_CATALOG = [
      "hf_file": "llama32-3b.Q4_K_M.gguf"},
     {"tag": "split:model", "hf_repo": "org/split-gguf",
      "hf_file": ["split-00001-of-00002.gguf", "split-00002-of-00002.gguf"]},
+    {"tag": "mtp:embedded", "hf_repo": "org/mtp-embedded",
+     "hf_file": "embedded.gguf",
+     "native_mtp": {"llamacpp": {"num_speculative_tokens": 3}}},
+    {"tag": "mtp:separate", "hf_repo": "org/mtp-separate",
+     "hf_file": "model.gguf", "native_mtp": {"llamacpp": {
+         "num_speculative_tokens": 2,
+         "draft_repo": "org/mtp-separate", "draft_file": "MTP/draft.gguf",
+     }}},
 ]
 
 
@@ -183,6 +213,36 @@ def test_model_pulled_true_when_resolvable(fake_catalog):
 
 def test_model_pulled_false_when_not_resolvable(fake_catalog):
     assert LlamaCppEngine().model_pulled("phi4-mini") is False
+
+
+def test_resume_artifacts_include_separate_mtp_predictor_only_when_enabled(fake_catalog):
+    _write_model_file(fake_catalog, "mtp:separate", "model.gguf", b"model")
+    _write_model_file(fake_catalog, "mtp:separate", "draft.gguf", b"draft")
+    engine = LlamaCppEngine()
+    assert [path.name for path in engine.resume_artifact_paths("mtp:separate")] == [
+        "model.gguf",
+    ]
+    engine.set_mtp_enabled(True)
+    assert [path.name for path in engine.resume_artifact_paths("mtp:separate")] == [
+        "model.gguf", "draft.gguf",
+    ]
+
+
+def test_enabled_separate_mtp_requires_downloaded_predictor(fake_catalog):
+    _write_model_file(fake_catalog, "mtp:separate", "model.gguf", b"model")
+    engine = LlamaCppEngine()
+    engine.set_mtp_enabled(True)
+    with pytest.raises(RuntimeError, match="MTP predictor is missing.*rerun setup"):
+        engine.resume_artifact_paths("mtp:separate")
+
+
+def test_enabled_mtp_rejects_unsupported_and_custom_models(fake_catalog):
+    engine = LlamaCppEngine()
+    engine.set_mtp_enabled(True)
+    with pytest.raises(RuntimeError, match="does not support native MTP"):
+        engine._native_mtp_config("phi4-mini")
+    with pytest.raises(RuntimeError, match="no cataloged native MTP configuration"):
+        engine._native_mtp_config("custom")
 
 
 def test_list_installed_models_lists_every_downloaded_catalog_tag(fake_catalog):
@@ -379,6 +439,11 @@ def test_generate_requests_n_predict_from_config_constant(monkeypatch):
     monkeypatch.setattr(LlamaCppEngine, "_urlopen", staticmethod(urlopen))
     LlamaCppEngine().generate("some-tag", "prompt")
     assert captured[0]["n_predict"] == config.GENERATE_MAX_TOKENS
+    assert captured[0]["cache_prompt"] is False
+    from scripts.runtime.sampling import baseline_sampling_payload
+    assert {
+        key: captured[0][key] for key in baseline_sampling_payload("llamacpp")
+    } == baseline_sampling_payload("llamacpp")
 
 
 def test_generate_uses_server_reported_timings(monkeypatch):
@@ -736,6 +801,11 @@ def test_budgeted_chat_two_streams_send_exact_split_and_return_second(monkeypatc
         timeout=60, num_predict=-1, token_budget=10,
     )
     assert [request["payload"]["n_predict"] for request in captured] == [6, 4]
+    from scripts.runtime.sampling import baseline_sampling_payload
+    for request in captured:
+        assert {
+            key: request["payload"][key] for key in baseline_sampling_payload("llamacpp")
+        } == baseline_sampling_payload("llamacpp")
     assert captured[1]["payload"]["messages"][-2:] == [
         {"role": "assistant", "content": "unfinished"},
         {"role": "user", "content": config.ACC_FINALIZE_MESSAGE},
@@ -1076,7 +1146,8 @@ def test_is_connection_crash_false_for_unrelated_error():
     ("Available devices:\n", "cpu"),
 ])
 def test_backend_from_device_listing(listing, expected):
-    assert LlamaCppEngine._backend_from_device_listing(listing) == expected
+    from scripts.runtime.llamacpp_tools import llamacpp_backend_from_device_listing
+    assert llamacpp_backend_from_device_listing(listing) == expected
 
 
 def test_runtime_backend_uses_binary_device_listing_and_cpu_override(monkeypatch):
@@ -1090,6 +1161,29 @@ def test_runtime_backend_uses_binary_device_listing_and_cpu_override(monkeypatch
     engine = LlamaCppEngine()
     assert engine.runtime_backend("rocm") == "vulkan"
     assert engine.runtime_backend("rocm", cpu_only=True) == "cpu"
+
+
+def test_runtime_backend_sources_oneapi_for_xpu_probe_and_processes(monkeypatch):
+    environment = {"PATH": "/opt/intel/oneapi/bin", "LD_LIBRARY_PATH": "/opt/intel/lib"}
+    completed = type("Completed", (), {
+        "stdout": "Available devices:\n  SYCL0: Intel Arc Pro B65",
+        "stderr": "",
+        "returncode": 0,
+    })()
+    calls = []
+    monkeypatch.setattr(LlamaCppEngine, "_binary_path", staticmethod(lambda: "llama-server"))
+    monkeypatch.setattr(llamacpp_module, "oneapi_environment", lambda: environment)
+
+    def run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return completed
+
+    monkeypatch.setattr(llamacpp_module.subprocess, "run", run)
+    engine = LlamaCppEngine()
+
+    assert engine.runtime_backend("xpu") == "xpu"
+    assert engine.process_environment() == environment
+    assert calls[0][1]["env"] == environment
 
 
 def test_ensure_model_fast_path_does_not_probe_health(monkeypatch):
@@ -1157,6 +1251,7 @@ def test_ensure_model_ngl_lets_llama_server_fit_layers(monkeypatch, tmp_path, gp
 
     def fake_popen(args, **kwargs):
         captured_args["args"] = args
+        captured_args["env"] = kwargs.get("env")
         return Proc()
 
     model_path = tmp_path / "model.gguf"
@@ -1166,13 +1261,88 @@ def test_ensure_model_ngl_lets_llama_server_fit_layers(monkeypatch, tmp_path, gp
     monkeypatch.setattr(llamacpp_module.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(llamacpp_module.Shared, "_managed_procs", [])
     engine = LlamaCppEngine()
+    engine._process_env = {"ONEAPI": "ready"}
     monkeypatch.setattr(engine, "available", lambda: True)
+    monkeypatch.setattr(engine, "_fetch_props", lambda: {"model_path": model_path.name})
     engine._gpu_visible = gpu_visible
 
     engine._ensure_model("tag", 2048)
 
     args = captured_args["args"]
     assert args[args.index("-ngl") + 1] == expected_ngl
+    assert captured_args["env"] == {"ONEAPI": "ready"}
+
+
+@pytest.mark.parametrize(("tag", "embedding", "expected_tokens", "has_draft"), [
+    ("mtp:embedded", False, "3", False),
+    ("mtp:separate", False, "2", True),
+    ("mtp:embedded", True, None, False),
+])
+def test_ensure_model_configures_cataloged_llamacpp_mtp(
+        fake_catalog, monkeypatch, tag, embedding, expected_tokens, has_draft):
+    captured_args = {}
+
+    class Proc:
+        returncode = None
+
+        def poll(self):
+            return None
+
+    primary_name = "embedded.gguf" if tag == "mtp:embedded" else "model.gguf"
+    _write_model_file(fake_catalog, tag, primary_name, b"model")
+    if has_draft:
+        _write_model_file(fake_catalog, tag, "draft.gguf", b"draft")
+    monkeypatch.setattr(LlamaCppEngine, "_binary_path", staticmethod(lambda: "llama-server"))
+    def popen(args, **_kwargs):
+        captured_args["args"] = args
+        return Proc()
+
+    monkeypatch.setattr(llamacpp_module.subprocess, "Popen", popen)
+    monkeypatch.setattr(llamacpp_module.Shared, "_managed_procs", [])
+    engine = LlamaCppEngine()
+    engine.set_mtp_enabled(True)
+    monkeypatch.setattr(engine, "available", lambda: True)
+    monkeypatch.setattr(engine, "_fetch_props", lambda: {"model_path": primary_name})
+
+    engine._ensure_model(tag, 2048, embedding=embedding)
+
+    args = captured_args["args"]
+    if expected_tokens is None:
+        assert "--spec-type" not in args
+        assert engine._loaded_mtp_config is None
+    else:
+        assert args[args.index("--spec-type") + 1] == "draft-mtp"
+        assert args[args.index("--spec-draft-n-max") + 1] == expected_tokens
+        assert ("--spec-draft-model" in args) is has_draft
+        if has_draft:
+            assert Path(args[args.index("--spec-draft-model") + 1]).name == "draft.gguf"
+        assert engine._loaded_mtp_config is not None
+
+
+def test_ensure_model_restart_key_distinguishes_mtp_mode(monkeypatch):
+    engine = LlamaCppEngine()
+    engine._loaded_tag = "mtp:embedded"
+    engine._loaded_num_ctx = 2048
+    engine._loaded_embedding = False
+    engine._loaded_n_parallel = 1
+    engine._loaded_mtp_config = {"num_speculative_tokens": 3}
+    engine._proc = cast(subprocess.Popen, type("Proc", (), {"poll": lambda self: None})())
+    engine.set_mtp_enabled(True)
+    monkeypatch.setattr(llamacpp_module, "LLM_MODELS", [_FAKE_CATALOG[-2]])
+    monkeypatch.setattr(engine, "available", lambda: pytest.fail("health probe should not run"))
+    engine._ensure_model("mtp:embedded", 2048)
+
+    engine.set_mtp_enabled(False)
+    monkeypatch.setattr(
+        LlamaCppEngine, "_resolve_model_files",
+        classmethod(lambda cls, tag: [Path("model.gguf")]),
+    )
+    monkeypatch.setattr(
+        engine, "_stop_process",
+        lambda: (_ for _ in ()).throw(RuntimeError("restart required")),
+    )
+    with pytest.raises(RuntimeError, match="restart required"):
+        engine._ensure_model("mtp:embedded", 2048)
 
 
 @pytest.mark.parametrize(("n_parallel", "num_ctx", "expected_ctx_arg"), [
@@ -1202,6 +1372,7 @@ def test_ensure_model_always_pins_parallel_flag(monkeypatch, tmp_path, n_paralle
     monkeypatch.setattr(config, "LLAMACPP_NO_REPACK", True)
     engine = LlamaCppEngine()
     monkeypatch.setattr(engine, "available", lambda: True)
+    monkeypatch.setattr(engine, "_fetch_props", lambda: {"model_path": model_path.name})
 
     engine._ensure_model("tag", num_ctx, n_parallel=n_parallel)
 

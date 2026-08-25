@@ -4,9 +4,22 @@ import pytest
 
 from scripts.setup import setup_selection
 from scripts.setup.setup_selection import (
-    additional_disk_space_needed, save_hf_token, select_models,
+    additional_disk_space_needed, qualification_model_selection, save_hf_token, select_models,
     selected_cleanup_names, toggle_all_models,
 )
+
+
+def test_qualification_model_selection_is_the_smallest_complete_engine_set():
+    llm, images, embeddings = qualification_model_selection("llamacpp")
+    assert [model["tag"] for model in llm] == ["gemma3:1b-it-q4_K_M"]
+    assert [model["short"] for model in images] == ["sd15"]
+    assert [model["tag"] for model in embeddings] == ["nomic-embed-text"]
+    vllm_llm, vllm_images, _ = qualification_model_selection("vllm")
+    assert [model["tag"] for model in vllm_llm] == ["granite4.1:3b-q4_K_M"]
+    assert vllm_llm[0]["vllm_tool_parser"] == "granite4"
+    assert vllm_images == []
+    with pytest.raises(ValueError, match="unknown qualification engine"):
+        qualification_model_selection("invented")
 
 
 def test_toggle_all_models_selects_models_without_enabling_cleanup():
@@ -83,6 +96,18 @@ def test_select_models_accepts_default_catalog_selection(monkeypatch, tmp_path):
     assert embeddings
     assert cleanup == []
     assert vllm_cleanup == []
+
+
+def test_select_models_displays_complete_z_image_pipeline_size(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(setup_selection, "find_non_catalog_model_dirs", lambda _path: [])
+    monkeypatch.setattr(setup_selection, "find_non_catalog_vllm_repos", lambda _path: [])
+    monkeypatch.setattr("builtins.input", lambda _prompt: "")
+
+    select_models(engines=("llamacpp",), vllm_cache_home=tmp_path, cancel=lambda: None)
+
+    z_image_line = next(line for line in capsys.readouterr().out.splitlines()
+                        if "Z-Image Turbo" in line)
+    assert "~20.9 GB" in z_image_line
 
 
 def test_select_models_delegates_cancel(monkeypatch, tmp_path):

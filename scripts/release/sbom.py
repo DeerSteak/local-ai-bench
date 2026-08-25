@@ -5,6 +5,39 @@ import sys
 from pathlib import Path
 
 
+PYTHON_LICENSE_RECORDS: dict[tuple[str, str], tuple[str, str, str | None]] = {
+    ("gguf", "0.19.0"): ("MIT", "https://pypi.org/project/gguf/0.19.0/", None),
+    ("huggingface_hub", "1.24.0"): (
+        "Apache-2.0", "https://pypi.org/project/huggingface-hub/1.24.0/", None,
+    ),
+    ("numpy", "2.4.6"): (
+        "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+        "https://pypi.org/project/numpy/2.4.6/", None,
+    ),
+    ("packaging", "26.2"): (
+        "Apache-2.0 OR BSD-2-Clause", "https://pypi.org/project/packaging/26.2/", None,
+    ),
+    ("psutil", "7.2.2"): (
+        "BSD-3-Clause", "https://pypi.org/project/psutil/7.2.2/", None,
+    ),
+    ("py7zr", "1.1.3"): (
+        "LGPL-2.1-or-later", "https://pypi.org/project/py7zr/1.1.3/",
+        "Preserve LGPL notices and satisfy source and modification obligations when distributed.",
+    ),
+    ("pytest", "9.1.1"): ("MIT", "https://pypi.org/project/pytest/9.1.1/", None),
+    ("reportlab", "5.0.1"): (
+        "BSD-3-Clause", "https://pypi.org/project/reportlab/5.0.1/", None,
+    ),
+    ("requests", "2.34.2"): (
+        "Apache-2.0", "https://pypi.org/project/requests/2.34.2/", None,
+    ),
+    ("tqdm", "4.69.0"): (
+        "MPL-2.0 AND MIT", "https://pypi.org/project/tqdm/4.69.0/",
+        "Preserve notices; distributed modifications to MPL-covered files remain under MPL-2.0.",
+    ),
+}
+
+
 def generate_sbom(repo_root):
     """Build dependency records from committed Python and npm manifests."""
     root = Path(repo_root)
@@ -29,10 +62,17 @@ def _python_packages(path, scope):
             continue
         name = requirement.split("[", 1)[0].split("=", 1)[0].strip()
         version = requirement.split("==", 1)[1] if "==" in requirement else None
-        packages.append({
+        license_record = PYTHON_LICENSE_RECORDS.get((name, version)) if version else None
+        license_id, resolved, review_note = license_record or ("NOASSERTION", None, None)
+        record = {
             "ecosystem": "pypi", "name": name, "version": version,
-            "requirement": requirement, "scope": scope, "license": "NOASSERTION",
-        })
+            "requirement": requirement, "scope": scope, "license": license_id,
+        }
+        if resolved:
+            record["resolved"] = resolved
+        if review_note:
+            record["review_note"] = review_note
+        packages.append(record)
     return packages
 
 

@@ -10,6 +10,7 @@ from scripts.runtime.shared import Shared
 from scripts.runtime.failure_handling import unexpected_model_failure
 from scripts.runtime.crash_cache import check_crash_cache, load_crash_cache
 from scripts.runtime.progress_events import emit_model_finished, emit_progress
+from scripts.runtime.telemetry import add_power_efficiency
 
 
 class EmbeddingBenchmark:
@@ -58,11 +59,14 @@ class EmbeddingBenchmark:
 
         return chunks
 
-    def run(self, engine, models, warmup_runs=config.WARMUP_RUNS, save_fn=None):  # pragma: no cover — orchestrates real engine runs
-        results = {}
+    def run(self, engine, models, warmup_runs=config.WARMUP_RUNS, save_fn=None,
+            telemetry=None, journal=None):  # pragma: no cover — orchestrates real engine runs
+        results = journal.export() if journal else {}
 
         if not engine.ensure_running():
             Shared.err("Inference engine not running — skipping embedding benchmarks")
+            if journal:
+                raise RuntimeError("inference engine unavailable in supervised embedding runner")
             return results
 
         crash_cache = load_crash_cache(EmbeddingBenchmark.EMBED_CRASH_CACHE)
@@ -81,10 +85,20 @@ class EmbeddingBenchmark:
                 break
 
             emit_progress("model", "emb", "running", label, model_id=tag)
+            telemetry_active = False
+            attempt_number = 1
             try:
+                attempt_number = journal.next_attempt(model) if journal else 1
+                if journal and attempt_number is None:
+                    results = journal.export()
+                    continue
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
                     Shared.warn("Download it with: python setup_check.py")
+                    if journal:
+                        journal.record_model_state(model, "skipped", {
+                            "skipped": True, "skip_reason": "model_not_downloaded",
+                        })
                     continue
 
                 Shared.ok(f"Using model: {tag}")
@@ -95,8 +109,13 @@ class EmbeddingBenchmark:
                 )
                 if skip_entry is not None:
                     results[short] = skip_entry
+                    if journal:
+                        journal.record_model_state(model, "skipped", skip_entry)
                     continue
 
+                if telemetry:
+                    telemetry.begin_model_load()
+                    telemetry_active = True
                 Shared.log(f"Warming up {label} ...")
                 for warmup_i in range(warmup_runs):
                     try:
@@ -108,6 +127,8 @@ class EmbeddingBenchmark:
                             engine.wait_for_recovery()
 
                 Shared.log(f"Embedding {len(chunks)} chunks in one call — {config.N_RUNS} runs ...")
+                if telemetry:
+                    telemetry.begin_measured("measured:embedding")
 
                 def _embed_once(run_i):
                     measurement = engine.embed(tag, chunks)
@@ -122,6 +143,24 @@ class EmbeddingBenchmark:
 
                 valid_samples = [sample for sample in samples
                                  if not embedding_validation_errors(sample)]
+                if journal:
+                    memory = telemetry.finish_case() if telemetry_active and telemetry else None
+                    telemetry_active = False
+                    power = getattr(telemetry, "last_power", None) if telemetry else None
+                    power = add_power_efficiency(
+                        power, "embeddings_per_joule", len(chunks) * len(valid_samples),
+                    )
+                    crashed_at = crash_cache.get(tag, {}).get("crashed_at", "an earlier run")
+                    journal.record_batch(
+                        model, samples, status, len(chunks), config.N_RUNS,
+                        attempt_number=attempt_number, memory=memory, power=power,
+                        crash_detail=(
+                            "The engine's runner crashed repeatedly embedding this document "
+                            f"({crashed_at})"
+                        ) if status == "crashed" else None,
+                    )
+                    results = journal.export()
+                    continue
                 rates = [len(chunks) / sample.client_wall_sec for sample in valid_samples]
                 if rates:
                     results[short] = {
@@ -176,9 +215,29 @@ class EmbeddingBenchmark:
                 Shared.err(f"{label}: unexpected error running the embedding benchmark — {exc} — "
                            "skipping remaining work for this model")
                 results.setdefault(short, {}).update(unexpected_model_failure(label, exc))
+                if journal:
+                    journal.record_batch(
+                        model, [], "failed", len(chunks), config.N_RUNS,
+                        attempt_number=attempt_number, failure_result=results[short],
+                    )
+                    results = journal.export()
             finally:
-                if save_fn:
+                if telemetry_active and telemetry:
+                    memory = telemetry.finish_case()
+                    if isinstance(results.get(short), dict):
+                        results[short]["memory"] = memory
+                        if (power := getattr(telemetry, "last_power", None)) is not None:
+                            work = results[short].get("n_chunks", 0) * results[short].get(
+                                "valid_runs", 0,
+                            )
+                            results[short]["power"] = add_power_efficiency(
+                                power, "embeddings_per_joule", work,
+                            )
+                if save_fn and not journal:
                     save_fn(results)
                 emit_model_finished("emb", label, results.get(short), model_id=tag)
 
+        if journal:
+            journal.finish()
+            return journal.export()
         return results

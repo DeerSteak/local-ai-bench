@@ -43,8 +43,10 @@ from scripts.app.benchmark_frontend import (
     run_frontend,
     save_frontend_state,
     toggle_group,
+    validate_gui_options,
 )
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+from scripts.workloads.model_variants import expanded_model_variants
 from scripts.results.run_plan import RunPlan
 
 
@@ -79,7 +81,7 @@ def test_frontend_inventory_classifies_every_public_benchmark_option():
 
 
 def test_frontend_inventory_exposes_the_remaining_configuration_work():
-    assert frontend_option_gaps() == ["--quick"]
+    assert frontend_option_gaps() == []
 
 
 def test_every_exposed_option_is_bound_to_a_concrete_control():
@@ -106,7 +108,7 @@ def test_frontend_gap_gate_can_report_declared_and_unbound_gaps():
 def test_build_command_includes_execution_modes_when_selected():
     options = dict(
         GUI_OPTION_DEFAULTS, offline=True, gpu_split_mode="tensor",
-        retry_crashed_models=True, llamacpp_no_repack=True,
+        retry_crashed_models=True, llamacpp_no_repack=True, mtp="both",
     )
     command = build_benchmark_command(
         "llamacpp", Path("ComfyUI"), ["llm"],
@@ -116,6 +118,116 @@ def test_build_command_includes_execution_modes_when_selected():
     assert "--retry-crashed-models" in command
     assert "--llamacpp-no-repack" in command
     assert command[command.index("--gpu-split-mode") + 1] == "tensor"
+    assert command[command.index("--mtp") + 1] == "both"
+
+
+def test_build_command_explicitly_disables_default_memory_telemetry():
+    options = dict(GUI_OPTION_DEFAULTS, memory_telemetry=False)
+    command = build_benchmark_command(
+        "llamacpp", Path("ComfyUI"), ["llm"],
+        [MenuEntry("model", "Model", "llm", "LLM", True)], gui_options=options,
+    )
+    assert "--no-memory-telemetry" in command
+
+
+def test_variant_model_entries_default_to_only_the_catalog_default():
+    inventory = empty_inventory()
+    inventory["llm"] = expanded_model_variants(LLM_MODELS[0])
+
+    entries = build_model_entries(inventory, ["llm"])
+
+    assert [(entry.variant, entry.checked) for entry in entries] == [
+        ("Q4_K_M", True), ("Q6_K", False), ("Q8_0", False),
+    ]
+    assert all("GB" in entry.label for entry in entries)
+
+
+def test_large_variant_family_starts_entirely_unchecked():
+    inventory = empty_inventory()
+    inventory["llm"] = expanded_model_variants(LLM_MODELS[-1])
+
+    entries = build_model_entries(inventory, ["llm"])
+
+    assert not any(entry.checked for entry in entries)
+
+
+def test_build_command_emits_checked_variant_sweep_and_base_model_selector():
+    inventory = empty_inventory()
+    inventory["llm"] = expanded_model_variants(LLM_MODELS[0])
+    entries = build_model_entries(inventory, ["llm"])
+    entries[1].checked = True
+    entries[2].checked = True
+
+    command = build_benchmark_command("llamacpp", Path("ComfyUI"), ["llm"], entries)
+
+    llm_index = command.index("--llm-models")
+    assert command[llm_index + 1] == "gemma3:1b-it-q4_K_M"
+    assert [
+        command[index + 1] for index, value in enumerate(command)
+        if value == "--model-variant"
+    ] == [
+        "gemma3:1b-it=Q4_K_M", "gemma3:1b-it=Q6_K", "gemma3:1b-it=Q8_0",
+    ]
+
+
+def test_build_command_omits_variant_flag_for_default_only():
+    inventory = empty_inventory()
+    inventory["llm"] = expanded_model_variants(LLM_MODELS[0])
+    entries = build_model_entries(inventory, ["llm"])
+
+    command = build_benchmark_command("llamacpp", Path("ComfyUI"), ["llm"], entries)
+
+    assert "--model-variant" not in command
+
+
+def test_build_command_collapses_variant_sweep_when_vllm_is_selected():
+    inventory = empty_inventory()
+    inventory["llm"] = expanded_model_variants(LLM_MODELS[0])
+    entries = build_model_entries(inventory, ["llm"])
+    for entry in entries:
+        entry.checked = True
+
+    command = build_benchmark_command("llamacpp,vllm", Path("ComfyUI"), ["llm"], entries)
+
+    assert "--model-variant" not in command
+    llm_index = command.index("--llm-models")
+    assert command[llm_index + 1:] == ["gemma3:1b-it-q4_K_M"]
+
+
+def test_vllm_command_uses_default_when_only_nondefault_ggufs_are_listed():
+    inventory = empty_inventory()
+    inventory["llm"] = expanded_model_variants(LLM_MODELS[0])[1:]
+    entries = build_model_entries(inventory, ["llm"])
+    entries[0].checked = True
+
+    command = build_benchmark_command("llamacpp,vllm", Path("ComfyUI"), ["llm"], entries)
+
+    assert command[command.index("--llm-models") + 1:] == ["gemma3:1b-it-q4_K_M"]
+    assert "--model-variant" not in command
+
+
+def test_vllm_state_uses_default_when_only_nondefault_ggufs_are_listed():
+    inventory = empty_inventory()
+    inventory["llm"] = expanded_model_variants(LLM_MODELS[0])[1:]
+    entries = build_model_entries(inventory, ["llm"])
+    entries[0].checked = True
+
+    state = build_frontend_state("llamacpp,vllm", ["llm"], entries)
+
+    assert state["models"]["llm"] == ["gemma3:1b-it-q4_K_M"]
+
+
+def test_power_telemetry_is_exposed_and_requires_shared_memory_sampling():
+    options = dict(GUI_OPTION_DEFAULTS, power_telemetry=True)
+    assert validate_gui_options(options) == []
+    command = build_benchmark_command(
+        "llamacpp", Path("ComfyUI"), ["llm"],
+        [MenuEntry("model", "Model", "llm", "LLM", True)], gui_options=options,
+    )
+    assert "--power-telemetry" in command
+    assert validate_gui_options(dict(
+        options, memory_telemetry=False,
+    )) == ["Power telemetry requires memory telemetry."]
 
 
 def test_frontend_classifies_every_option_for_ui_presentation():
@@ -218,6 +330,15 @@ def test_saved_gui_state_defaults_legacy_missing_offline_to_false(tmp_path):
     assert loaded is not None and loaded["gui_options"]["offline"] is False
 
 
+def test_saved_gui_state_defaults_legacy_missing_memory_telemetry_to_true(tmp_path):
+    path = tmp_path / "state.json"
+    options = dict(GUI_OPTION_DEFAULTS)
+    del options["memory_telemetry"]
+    path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
+    loaded = load_frontend_state(path)
+    assert loaded is not None and loaded["gui_options"]["memory_telemetry"] is True
+
+
 def test_saved_gui_state_defaults_legacy_missing_gpu_split_to_layer(tmp_path):
     path = tmp_path / "state.json"
     options = dict(GUI_OPTION_DEFAULTS)
@@ -225,6 +346,22 @@ def test_saved_gui_state_defaults_legacy_missing_gpu_split_to_layer(tmp_path):
     path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
     loaded = load_frontend_state(path)
     assert loaded is not None and loaded["gui_options"]["gpu_split_mode"] == "layer"
+
+
+def test_saved_gui_state_defaults_legacy_missing_mtp_to_off(tmp_path):
+    path = tmp_path / "state.json"
+    options = dict(GUI_OPTION_DEFAULTS)
+    del options["mtp"]
+    path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
+    loaded = load_frontend_state(path)
+    assert loaded is not None and loaded["gui_options"]["mtp"] == "off"
+
+
+def test_saved_gui_state_rejects_unknown_gpu_split_mode(tmp_path):
+    path = tmp_path / "state.json"
+    options = dict(GUI_OPTION_DEFAULTS, gpu_split_mode="row")
+    path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
+    assert load_frontend_state(path) is None
 
 
 def test_saved_gui_state_defaults_legacy_missing_retry_crashed_to_false(tmp_path):
@@ -258,7 +395,6 @@ def test_saved_gui_state_defaults_legacy_missing_no_repack_to_false(tmp_path):
     json.dumps(saved_state(max_prompt_tokens=0)),
     json.dumps(saved_state(max_prompt_tokens=-1)),
     json.dumps(saved_state(max_prompt_tokens="32768")),
-    json.dumps(saved_state(tg_tokens=[])),
     json.dumps(saved_state(tg_tokens=[128, 128])),
     json.dumps(saved_state(tg_tokens=[0])),
     json.dumps(saved_state(tg_tokens="128")),
@@ -423,8 +559,14 @@ def test_saved_model_selection_restores_exact_installed_values_per_family():
     selected = {entry.value for entry in entries if entry.checked}
     assert selected == {
         LLM_MODELS[-1]["tag"], "custom-folder", EMBED_MODELS[-1]["tag"],
-        IMAGE_MODELS[0]["short"],  # no remembered image remains, so defaults survive
     }
+
+
+def test_frontend_state_preserves_empty_generation_selection(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps(saved_state(tg_tokens=[])), encoding="utf-8")
+    loaded = load_frontend_state(path)
+    assert loaded is not None and loaded["tg_tokens"] == []
 
 
 def test_saved_model_selection_keeps_family_defaults_when_all_values_are_stale():
@@ -765,6 +907,17 @@ def test_missing_catalog_hint_omitted_when_every_catalog_model_installed():
         "embedding": list(EMBED_MODELS), "image": list(IMAGE_MODELS),
     }
     assert missing_catalog_hint(inventory, "Linux") is None
+
+
+def test_missing_catalog_hint_counts_variant_families_without_negative_values():
+    inventory = empty_inventory()
+    inventory["llm"] = expanded_model_variants(LLM_MODELS[0]) * 8
+
+    hint = missing_catalog_hint(inventory, "Linux")
+
+    assert hint is not None
+    assert f"{len(LLM_MODELS) - 1} LLM" in hint
+    assert "-" not in hint.split("LLM", 1)[0]
 
 
 def test_build_command_emits_every_applicable_explicit_selector(tmp_path):
@@ -1375,6 +1528,20 @@ def test_run_frontend_explicit_no_cancels_final_confirmation():
     assert result == 0
     assert called == []
     assert messages[-1] == "Benchmark selection cancelled."
+
+
+def test_run_frontend_launches_vllm_without_qualification_messaging():
+    commands = []
+    messages, output = output_collector()
+    result = run_frontend(
+        input_fn=InputSequence(["", "", "", ""]), output_fn=output,
+        process_runner=lambda command: commands.append(command) or 0,
+        engine_names_fn=lambda: ["vllm"], engine_factory=FakeEngine,
+        inventory_builder=lambda _engine, _path: sample_inventory(),
+    )
+    assert result == 0
+    assert "--ack-experimental-engine" not in commands[0]
+    assert not any("qualification" in message.lower() for message in messages)
 
 
 def test_run_frontend_q_eof_or_interrupt_cancels_without_process():

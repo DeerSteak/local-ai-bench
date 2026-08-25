@@ -163,8 +163,11 @@ class HistoryActions:
                 entry["methodology_profile"], entry["models_with_results"],
             ), tags=("history_even" if index % 2 == 0 else "history_odd",))
             self.item_paths[item_id] = entry["path"]
+        if tree.get_children():
+            tree.focus(tree.get_children()[0])
         self.screen.message.set(
-            f"Showing {len(visible)} of {len(self.entries['all'])} local results.",
+            f"Showing {len(visible)} of {len(self.entries['all'])} local results. "
+            "Keyboard: Shift+Up/Down extends selection; Space toggles a row.",
         )
 
     def refresh(self) -> None:

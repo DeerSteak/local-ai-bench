@@ -5,8 +5,10 @@ import sys
 from pathlib import Path
 
 from scripts.app.benchmark_frontend import frontend_option_gaps
-from scripts.results.catalogs import HARDWARE_CATALOG, model_catalog
+from scripts.results.catalogs import model_catalog
 from scripts.release.sbom import generate_sbom
+from scripts.release.qualification_docs import qualification_doc_gaps
+from scripts.runtime import config
 
 
 REQUIRED_EXTERNAL_GATES = (
@@ -14,6 +16,7 @@ REQUIRED_EXTERNAL_GATES = (
     "clean_machine_lifecycle", "accessibility_and_usability", "legal_approval",
     "independent_security_assessment", "stable_release_approval",
 )
+REQUIRED_TELEMETRY_MODES = ("memory", "power", "temperature", "combined")
 
 
 def evaluate_release_readiness(repo_root, evidence=None):
@@ -24,12 +27,13 @@ def evaluate_release_readiness(repo_root, evidence=None):
         _check("frontend_option_coverage", not frontend_option_gaps(), frontend_option_gaps()),
         _check("model_license_review", False, [
             record["id"] for record in model_catalog()
-            if record["license"]["status"] != "verified"
+            if record.get("distribution") == "bundled"
+            and record["license"]["status"] != "verified"
         ]),
-        _check("hardware_qualification", False, [
-            record["id"] for record in HARDWARE_CATALOG
-            if record["qualification"] != "qualified"
-        ]),
+        _check("hardware_qualification", False,
+               qualification_doc_gaps(repo_root, config.VERSION)),
+        _check("published_qualification_matrix", False,
+               qualification_doc_gaps(repo_root, config.VERSION)),
         _check("dependency_license_review", False, [
             f"{record['ecosystem']}:{record['name']}" for record in sbom["packages"]
             if record["license"] == "NOASSERTION"
@@ -38,6 +42,7 @@ def evaluate_release_readiness(repo_root, evidence=None):
     for check in checks:
         check["passed"] = not check["items"]
     checks += [_external_check(name, evidence.get(name)) for name in REQUIRED_EXTERNAL_GATES]
+    checks.append(_telemetry_qualification_check(evidence.get("telemetry_qualification")))
     return {"schema_version": 1, "ready": all(check["passed"] for check in checks), "checks": checks}
 
 
@@ -57,6 +62,31 @@ def _external_check(name, record):
         "name": name, "passed": bool(valid),
         "items": [] if valid else ["reviewed external evidence required"],
     }
+
+
+def _telemetry_qualification_check(records):
+    failures = []
+    records = records if isinstance(records, dict) else {}
+    for mode in REQUIRED_TELEMETRY_MODES:
+        record = records.get(mode)
+        valid = (
+            isinstance(record, dict) and record.get("status") == "passed"
+            and record.get("protocol") == "paired_observer_v1"
+            and isinstance(record.get("interval_sec"), (int, float))
+            and not isinstance(record.get("interval_sec"), bool) and record["interval_sec"] > 0
+            and isinstance(record.get("trial_pairs"), int)
+            and not isinstance(record.get("trial_pairs"), bool) and record["trial_pairs"] >= 20
+            and isinstance(record.get("sources"), list) and bool(record["sources"])
+            and all(isinstance(item, str) and item.strip() for item in record["sources"])
+            and isinstance(record.get("platform_classes"), list)
+            and bool(record["platform_classes"])
+            and all(isinstance(item, str) and item.strip()
+                    for item in record["platform_classes"])
+            and _external_check(mode, record)["passed"]
+        )
+        if not valid:
+            failures.append(mode)
+    return _check("telemetry_source_qualification", not failures, failures)
 
 
 if __name__ == "__main__":  # pragma: no cover

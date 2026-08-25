@@ -2,12 +2,14 @@ import { describe, it, expect } from "vitest";
 import {
   LLM_MODEL_ORDER, LEGACY_LLM_MODEL_ORDER, LLM_DISPLAY_ORDER,
   LLM_MODEL_LABELS, MODEL_COLORS, MODEL_SIZE_TIER,
-  IMAGE_MODEL_ORDER, IMAGE_MODEL_LABELS, IMAGE_MODEL_COLORS,
+  IMAGE_MODEL_ORDER, LEGACY_IMAGE_MODEL_ORDER, IMAGE_DISPLAY_ORDER,
+  IMAGE_MODEL_LABELS, IMAGE_MODEL_COLORS,
   EMBED_MODEL_ORDER, EMBED_MODEL_LABELS, EMBED_MODEL_COLORS,
   SIZE_TIER_ORDER, RES_ORDER, RES_COLORS, FALLBACK_COLORS,
   FILE_COLORS, CATEGORY_COLORS, CTX_COLORS, IMAGE_BAR_COLORS,
   EMBED_BAR_COLORS, BACKEND_COLORS, ACCURACY_TIMEOUT_BAR_CONFIGS,
   ACCURACY_TESTS, ACCURACY_TEST_LABELS, CTX_ORDER, SPEC_CARD_PREFERRED_CTX,
+  MEMORY_CHANNEL_LABELS, MEMORY_HEADROOM_LABELS,
 } from "./constants";
 import { lookup } from "./utils/shared";
 
@@ -30,12 +32,22 @@ function contrastAgainstWhite(hex: string): number {
 // without also adding it to the others (label, color, size tier) that other
 // code assumes are present for every ordered model.
 describe("model registry consistency", () => {
-  it("contains the complete 12-model LLM catalog in tier order", () => {
+  it("contains every catalog quantization in base-model and tier order", () => {
     expect(LLM_MODEL_ORDER).toEqual([
-      "gemma3-1b", "granite4.1-3b-q4", "qwen3.5-4b-q4",
-      "granite4.1-8b-q4", "qwen3.5-9b-q4", "gemma4-12b-q4",
-      "gemma3-27b-q4", "nemotron-cascade2-30b-a3b", "qwen3.6-35b-a3b",
-      "llama3.3-70b-q4", "qwen3-coder-next-80b-a3b-q4", "nemotron3-super-120b",
+      "gemma3-1b", "gemma3-1b-q6", "gemma3-1b-q8",
+      "granite4.1-3b-q4", "granite4.1-3b-q6", "granite4.1-3b-q8",
+      "qwen3.5-4b-q4", "qwen3.5-4b-q6", "qwen3.5-4b-q8",
+      "granite4.1-8b-q4", "granite4.1-8b-q6", "granite4.1-8b-q8",
+      "qwen3.5-9b-q4", "qwen3.5-9b-q6", "qwen3.5-9b-q8",
+      "gemma4-12b-q4", "gemma4-12b-q6", "gemma4-12b-q8",
+      "gemma4-26b-a4b-q4", "gemma4-26b-a4b-q6", "gemma4-26b-a4b-q8",
+      "qwen3.8-27b-q4", "qwen3.8-27b-q6", "qwen3.8-27b-q8",
+      "nemotron3.5-lightning-30b-a3b", "nemotron3.5-lightning-30b-a3b-q6",
+      "nemotron3.5-lightning-30b-a3b-q8",
+      "llama3.3-70b-q4", "llama3.3-70b-q6", "llama3.3-70b-q8",
+      "qwen3-coder-next-80b-a3b-q4", "qwen3-coder-next-80b-a3b-q6",
+      "qwen3-coder-next-80b-a3b-q8", "nemotron3-super-120b",
+      "nemotron3-super-120b-q6", "nemotron3-super-120b-q8",
     ]);
   });
 
@@ -49,10 +61,25 @@ describe("model registry consistency", () => {
     }
   });
 
+  it("labels every cataloged quantization explicitly", () => {
+    for (const model of LLM_MODEL_ORDER) {
+      expect(lookup(LLM_MODEL_LABELS, model)).toMatch(/ — Q(4_K_M|6_K(?:_XL)?|8_0)$/);
+    }
+  });
+
   it("every image model in IMAGE_MODEL_ORDER has a label and a color", () => {
     for (const model of IMAGE_MODEL_ORDER) {
       expect(lookup(IMAGE_MODEL_LABELS, model), `${model} missing a label`).toBeDefined();
       expect(lookup(IMAGE_MODEL_COLORS, model), `${model} missing a color`).toBeDefined();
+    }
+  });
+
+  it("keeps removed image models renderable after the current catalog", () => {
+    expect(IMAGE_DISPLAY_ORDER).toEqual([...IMAGE_MODEL_ORDER, ...LEGACY_IMAGE_MODEL_ORDER]);
+    expect(LEGACY_IMAGE_MODEL_ORDER).toEqual(["sd35-large"]);
+    for (const model of LEGACY_IMAGE_MODEL_ORDER) {
+      expect(lookup(IMAGE_MODEL_LABELS, model)).toBeDefined();
+      expect(lookup(IMAGE_MODEL_COLORS, model)).toBeDefined();
     }
   });
 
@@ -103,6 +130,17 @@ describe("accuracy registry", () => {
 describe("context registry", () => {
   it("contains the preferred run-card checkpoint", () => {
     expect(CTX_ORDER).toContain(SPEC_CARD_PREFERRED_CTX);
+  });
+});
+
+describe("memory telemetry registry", () => {
+  it("labels every exported memory channel and availability state", () => {
+    expect(Object.keys(MEMORY_CHANNEL_LABELS)).toEqual([
+      "host_ram_used_gb", "process_rss_gb", "accelerator_memory_used_gb",
+    ]);
+    expect(Object.keys(MEMORY_HEADROOM_LABELS)).toEqual([
+      "comfortable", "tight", "exceeded", "unknown", "not_recorded",
+    ]);
   });
 });
 

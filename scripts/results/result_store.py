@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 TERMINAL_STATUSES = {"complete", "partial", "interrupted", "failed"}
 NON_MEASUREMENT_KEYS = {
     "label", "skipped", "skip_reason", "skip_detail", "error", "crashed",
@@ -97,7 +97,7 @@ def source_identity(repo_root: Path) -> dict:
 
 
 def model_identity(models: list[dict]) -> list[dict]:
-    keys = ("tag", "short", "size_gb", "params_b")
+    keys = ("tag", "short", "size_gb", "params_b", "base_model", "variant")
     return [{key: model[key] for key in keys if key in model} for model in models]
 
 

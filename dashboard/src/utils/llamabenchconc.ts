@@ -1,6 +1,8 @@
 // llama-batched-bench: aggregate decode throughput (speed_tg) vs. parallel-sequence count (pl).
 // Levels come from each entry's own pl, not a constants list — fit_npl drops levels per-model.
 import { entriesOf } from "./shared";
+import { memoryFields } from "./memory";
+import { powerFields } from "./power";
 import type { JsonRecord } from "./shared";
 import type { ResultsFile, ChartRow } from "../types";
 
@@ -56,6 +58,8 @@ export function flattenLlamaBenchConcData(files: ResultsFile[]): ChartRow[] {
         speed_tg: entry.speed_tg,
         speed_pp: entry.speed_pp,
         speed: entry.speed,
+        ...memoryFields(entry),
+        ...powerFields(entry),
       }));
     })
   );

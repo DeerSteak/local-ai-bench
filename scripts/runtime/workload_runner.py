@@ -11,36 +11,119 @@ from typing import Any, Callable
 
 from scripts.runtime import config
 from scripts.workloads.concurrency_benchmark import ConcurrencyBenchmark
+from scripts.workloads.embedding_benchmark import EmbeddingBenchmark
+from scripts.workloads.image_benchmark import ImageBenchmark
 from scripts.runtime.engines import get_engine
 from scripts.results.event_store import EventStore
 from scripts.workloads.conversation_selection import conv_skip_entry
 from scripts.results.llm_event_stage import LLMEventStage, export_llm_section
+from scripts.results.accuracy_event_stage import AccuracyEventStage
+from scripts.results.embedding_event_stage import EmbeddingEventStage, embedding_corpus_hash
+from scripts.results.image_event_stage import ImageEventStage
+from scripts.results.local_execution_context import load_local_execution_context
 from scripts.workloads.llm_conversation_benchmark import LLMConversationBenchmark
 from scripts.workloads.llm_prefill_benchmark import LLMPrefillBenchmark
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
-from scripts.workloads.models import LLM_MODELS
+from scripts.workloads.llamabench_concurrency_benchmark import LlamaBenchConcurrencyBenchmark
+from scripts.workloads.sustained_benchmark import SustainedBenchmark
+from scripts.workloads.vllm_benchmark import VllmBenchBenchmark
+from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+from scripts.workloads.model_variants import expanded_variant_catalog
 from scripts.results.native_bench_event_stage import NativeBenchEventStage
+from scripts.results.native_concurrency_event_stage import NativeConcurrencyEventStage
 from scripts.runtime.progress_events import emit_progress, set_progress_engine
 from scripts.runtime.network_policy import apply_offline_mode
 from scripts.runtime.runner_supervisor import RUNNER_EVENT_PREFIX, SUPPORTED_RUNNER_STAGES
 from scripts.runtime.shared import Shared
+from scripts.results.sustained_event_stage import SustainedEventStage
+from scripts.results.vllm_bench_event_stage import VllmBenchEventStage
+from scripts.runtime.telemetry import CaseTelemetry, PowerAvailability, TemperatureAvailability
+from scripts.stage_registry import ACCURACY_TESTS
+from scripts.workloads.accuracy_registry import accuracy_spec, selected_questions
 
 
 _emit_lock = threading.Lock()
 
 
-def configure_runner_engine(engine, hardware_backend: str, cpu_only: bool) -> str:
+def inherited_power_availability(settings: dict, environ=None) -> PowerAvailability:
+    environ = os.environ if environ is None else environ
+    expected_source = settings.get("power_source") or "unsupported"
+    expected_scope = settings.get("power_scope") or "unknown"
+    try:
+        payload = json.loads(environ.get("LOCAL_AI_BENCH_POWER_AVAILABILITY", ""))
+    except (json.JSONDecodeError, TypeError):
+        payload = None
+    if (not isinstance(payload, dict) or payload.get("source") != expected_source
+            or payload.get("scope") != expected_scope):
+        return PowerAvailability(
+            False, expected_source, expected_scope,
+            "parent power source was not inherited by the supervised process",
+        )
+    return PowerAvailability(
+        payload.get("available") is True, expected_source, expected_scope,
+        payload.get("reason") if isinstance(payload.get("reason"), str) else None,
+        payload.get("location") if isinstance(payload.get("location"), str) else None,
+        payload.get("requires_elevation") is True,
+    )
+
+
+def inherited_temperature_availability(settings: dict, environ=None) -> TemperatureAvailability:
+    environ = os.environ if environ is None else environ
+    expected_sources = settings.get("temperature_sources") or {}
+    try:
+        payload = json.loads(environ.get("LOCAL_AI_BENCH_TEMPERATURE_AVAILABILITY", ""))
+    except (json.JSONDecodeError, TypeError):
+        payload = None
+    if not isinstance(payload, dict) or payload.get("sources") != expected_sources:
+        return TemperatureAvailability(
+            False, expected_sources,
+            "parent temperature sources were not inherited by the supervised process",
+        )
+    locations = payload.get("locations")
+    return TemperatureAvailability(
+        payload.get("available") is True, expected_sources,
+        payload.get("reason") if isinstance(payload.get("reason"), str) else None,
+        locations if isinstance(locations, dict) else None,
+    )
+
+
+def create_case_telemetry(settings: dict, environ=None) -> CaseTelemetry | None:
+    if not settings.get("memory_telemetry"):
+        return None
+    kwargs = {}
+    if settings.get("power_telemetry"):
+        kwargs["power_availability"] = inherited_power_availability(settings, environ)
+    if settings.get("temperature_telemetry"):
+        kwargs["temperature_availability"] = inherited_temperature_availability(
+            settings, environ,
+        )
+    return CaseTelemetry(**kwargs).start()
+
+
+def configure_runner_engine(engine, hardware_backend: str, cpu_only: bool,
+                            settings: dict | None = None) -> str:
     """Reapply runtime policy in this child process; parent engine state is not inherited."""
+    resolve_backend = getattr(engine, "runtime_backend", None)
+    runtime_backend = (
+        resolve_backend(hardware_backend, cpu_only=cpu_only)
+        if resolve_backend is not None else ("cpu" if cpu_only else hardware_backend)
+    )
+    if settings and settings.get("sampling_profile"):
+        engine.set_sampling_profile(settings["sampling_profile"])
+    configure_mtp = getattr(engine, "set_mtp_enabled", None)
+    if configure_mtp is not None:
+        configure_mtp(bool(settings and settings.get("mtp_enabled")))
     configure = getattr(engine, "configure_kv_cache", None)
     if configure is None:
         return "auto"
-    runtime_backend = engine.runtime_backend(hardware_backend, cpu_only=cpu_only)
     return configure(runtime_backend)
 
 
 def apply_runner_settings(settings: dict) -> None:
     """Restore mutable CLI-overridden settings inside the supervised child process."""
     config.LLAMACPP_GPU_SPLIT_MODE = settings.get("gpu_split_mode", "layer")
+    if "run_timeout_seconds" in settings:
+        config.RUN_TIMEOUT = settings["run_timeout_seconds"]
 
 
 def emit(kind: str, **details) -> None:
@@ -79,13 +162,13 @@ def execute_llm_job(path, job_id, *, engine_factory=get_engine,
     apply_runner_settings(settings)
     config.N_RUNS = settings["runs"]
     config.RUN_TIMEOUT = settings["run_timeout_seconds"]
-    catalog = {model["tag"]: model for model in LLM_MODELS}
+    catalog = {model["tag"]: model for model in expanded_variant_catalog(LLM_MODELS)}
     models = [
         {**identity, "label": (catalog.get(identity["tag"]) or identity).get("label", identity["tag"])}
         for identity in plan.models["llm"]
     ]
     engine = engine_factory(plan.engine_name)
-    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only, settings)
     Shared._active_engine = engine
 
     def notify(_section):
@@ -97,10 +180,12 @@ def execute_llm_job(path, job_id, *, engine_factory=get_engine,
         emit("event", sequence=sequence, event={"stage": "llm", "committed": True})
 
     journal = None
+    telemetry = None
     try:
+        telemetry = create_case_telemetry(settings)
         if not engine.start(gpu_visible=not plan.cpu_only):
             raise RuntimeError("runner could not prepare the inference engine")
-        journal = LLMEventStage(path, plan, notify, initialize=False)
+        journal = LLMEventStage(path, plan, notify, initialize=False, telemetry=telemetry)
         benchmark_factory().run(
             engine=engine, models=models, context_lengths=settings["context_lengths"],
             warmup_runs=plan.warmup_runs, force_all=plan.force_all, journal=journal,
@@ -108,6 +193,8 @@ def execute_llm_job(path, job_id, *, engine_factory=get_engine,
     finally:
         if journal is not None:
             journal.close()
+        if telemetry is not None:
+            telemetry.stop()
         if engine.available():
             engine.unload_all()
         Shared.shutdown_managed()
@@ -122,13 +209,13 @@ def execute_conversation_job(path, job_id, *, engine_factory=get_engine,
     settings = plan.effective_config
     apply_runner_settings(settings)
     config.RUN_TIMEOUT = settings["run_timeout_seconds"]
-    catalog = {model["tag"]: model for model in LLM_MODELS}
+    catalog = {model["tag"]: model for model in expanded_variant_catalog(LLM_MODELS)}
     models = [
         {**identity, "label": (catalog.get(identity["tag"]) or identity).get("label", identity["tag"])}
         for identity in plan.models["llm"]
     ]
     engine = engine_factory(plan.engine_name)
-    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only, settings)
     Shared._active_engine = engine
 
     def notify(_section):
@@ -140,11 +227,13 @@ def execute_conversation_job(path, job_id, *, engine_factory=get_engine,
         emit("event", sequence=sequence, event={"stage": "conv", "committed": True})
 
     journal = None
+    telemetry = None
     try:
+        telemetry = create_case_telemetry(settings)
         if not engine.start(gpu_visible=not plan.cpu_only):
             raise RuntimeError("runner could not prepare the inference engine")
         journal = LLMEventStage(
-            path, plan, notify, stage_name="conv", initialize=False,
+            path, plan, notify, stage_name="conv", initialize=False, telemetry=telemetry,
         )
         if "llm" in plan.tests:
             llm_results = export_llm_section(path, job_id)
@@ -168,6 +257,8 @@ def execute_conversation_job(path, job_id, *, engine_factory=get_engine,
     finally:
         if journal is not None:
             journal.close()
+        if telemetry is not None:
+            telemetry.stop()
         if engine.available():
             engine.unload_all()
         Shared.shutdown_managed()
@@ -183,13 +274,13 @@ def execute_llamabench_job(path, job_id, *, engine_factory=get_engine,
     apply_runner_settings(settings)
     config.LLAMABENCH_PP = settings["llamabench_pp"]
     config.LLAMABENCH_TG = settings["llamabench_tg"]
-    catalog = {model["tag"]: model for model in LLM_MODELS}
+    catalog = {model["tag"]: model for model in expanded_variant_catalog(LLM_MODELS)}
     models = [
         {**identity, "label": (catalog.get(identity["tag"]) or identity).get("label", identity["tag"])}
         for identity in plan.models["llm"]
     ]
     engine = engine_factory(plan.engine_name)
-    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only, settings)
 
     def notify(_section):
         store = EventStore(path)
@@ -199,7 +290,10 @@ def execute_llamabench_job(path, job_id, *, engine_factory=get_engine,
             store.close()
         emit("event", sequence=sequence, event={"stage": "llamabench", "committed": True})
 
-    journal = NativeBenchEventStage(path, plan, notify, initialize=False)
+    telemetry = create_case_telemetry(settings)
+    journal = NativeBenchEventStage(
+        path, plan, notify, initialize=False, telemetry=telemetry,
+    )
     try:
         benchmark_factory().run(
             engine=engine, models=models, reps=settings["runs"],
@@ -207,6 +301,141 @@ def execute_llamabench_job(path, job_id, *, engine_factory=get_engine,
         )
     finally:
         journal.close()
+        if telemetry is not None:
+            telemetry.stop()
+        Shared.shutdown_managed()
+
+
+def execute_vllmbench_job(path, job_id, *, engine_factory=get_engine,
+                          benchmark_factory: Callable[[], Any] = VllmBenchBenchmark) -> None:
+    plan = load_runner_plan(path, job_id)
+    plan.validate_for_execution()
+    if "vllmbench" not in plan.tests:
+        raise ValueError("runner job does not include the native vLLM bench stage")
+    settings = plan.effective_config
+    apply_runner_settings(settings)
+    config.LLAMABENCH_PP = settings["llamabench_pp"]
+    catalog = {model["tag"]: model for model in expanded_variant_catalog(LLM_MODELS)}
+    models = [
+        {**identity, "label": (catalog.get(identity["tag"]) or identity).get(
+            "label", identity["tag"])}
+        for identity in plan.models["llm"]
+    ]
+    engine = engine_factory(plan.engine_name)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only, settings)
+
+    def notify(_section):
+        store = EventStore(path)
+        try:
+            sequence = store.last_sequence(job_id)
+        finally:
+            store.close()
+        emit("event", sequence=sequence, event={"stage": "vllmbench", "committed": True})
+
+    telemetry = create_case_telemetry(settings)
+    journal = VllmBenchEventStage(path, plan, notify, initialize=False)
+    try:
+        benchmark_factory().run(
+            engine=engine, models=models, telemetry=telemetry, journal=journal,
+        )
+    finally:
+        journal.close()
+        if telemetry is not None:
+            telemetry.stop()
+        Shared.shutdown_managed()
+
+
+def execute_llamabench_concurrency_job(
+        path, job_id, *, engine_factory=get_engine,
+        benchmark_factory: Callable[[], Any] = LlamaBenchConcurrencyBenchmark) -> None:
+    plan = load_runner_plan(path, job_id)
+    plan.validate_for_execution()
+    if "llamabenchconc" not in plan.tests:
+        raise ValueError("runner job does not include native llama-bench concurrency")
+    settings = plan.effective_config
+    apply_runner_settings(settings)
+    catalog = {model["tag"]: model for model in expanded_variant_catalog(LLM_MODELS)}
+    models = [
+        {**identity, "label": (catalog.get(identity["tag"]) or identity).get(
+            "label", identity["tag"])}
+        for identity in plan.models["llm"]
+    ]
+    engine = engine_factory(plan.engine_name)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only, settings)
+
+    def notify(_section):
+        store = EventStore(path)
+        try:
+            sequence = store.last_sequence(job_id)
+        finally:
+            store.close()
+        emit("event", sequence=sequence,
+             event={"stage": "llamabenchconc", "committed": True})
+
+    telemetry = create_case_telemetry(settings)
+    journal = NativeConcurrencyEventStage(
+        path, plan, notify, initialize=False, telemetry=telemetry,
+    )
+    try:
+        benchmark_factory().run(
+            engine=engine, models=models, cpu_only=plan.cpu_only, journal=journal,
+        )
+    finally:
+        journal.close()
+        if telemetry is not None:
+            telemetry.stop()
+        Shared.shutdown_managed()
+
+
+def execute_sustained_job(path, job_id, *, engine_factory=get_engine,
+                          benchmark_factory: Callable[[], Any] = SustainedBenchmark) -> None:
+    plan = load_runner_plan(path, job_id)
+    plan.validate_for_execution()
+    if "sustained" not in plan.tests:
+        raise ValueError("runner job does not include the sustained stage")
+    settings = plan.effective_config
+    apply_runner_settings(settings)
+    config.RUN_TIMEOUT = settings["run_timeout_seconds"]
+    catalog = {model["tag"]: model for model in expanded_variant_catalog(LLM_MODELS)}
+    models = [
+        {**identity, "label": (catalog.get(identity["tag"]) or identity).get(
+            "label", identity["tag"])}
+        for identity in plan.models["llm"]
+    ]
+    engine = engine_factory(plan.engine_name)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only, settings)
+    Shared._active_engine = engine
+
+    def notify(_section):
+        store = EventStore(path)
+        try:
+            sequence = store.last_sequence(job_id)
+        finally:
+            store.close()
+        emit("event", sequence=sequence, event={"stage": "sustained", "committed": True})
+
+    telemetry = None
+    journal = None
+    try:
+        telemetry = create_case_telemetry(settings)
+        if not engine.start(gpu_visible=not plan.cpu_only):
+            raise RuntimeError("runner could not prepare the inference engine")
+        journal = SustainedEventStage(
+            path, plan, notify, initialize=False, telemetry=telemetry,
+        )
+        benchmark_factory().run(
+            engine=engine, models=models, warmup_runs=plan.warmup_runs,
+            duration_sec=settings["sustained_duration_sec"],
+            window_sec=settings["sustained_window_sec"],
+            ambient_temp_c=settings.get("ambient_temp_c"), journal=journal,
+        )
+    finally:
+        if journal is not None:
+            journal.close()
+        if telemetry is not None:
+            telemetry.stop()
+        if engine.available():
+            engine.unload_all()
         Shared.shutdown_managed()
 
 
@@ -228,13 +457,13 @@ def execute_concurrency_job(path, job_id, stage_name, *, engine_factory=get_engi
     cache = (ConcurrencyBenchmark.TOOL_CRASH_CACHE if is_tool
              else ConcurrencyBenchmark.CHAT_CRASH_CACHE)
     label = "Concurrency (Tool)" if is_tool else "Concurrency (Chat)"
-    catalog = {model["tag"]: model for model in LLM_MODELS}
+    catalog = {model["tag"]: model for model in expanded_variant_catalog(LLM_MODELS)}
     models = [
         {**identity, "label": (catalog.get(identity["tag"]) or identity).get("label", identity["tag"])}
         for identity in plan.models["concurrency"]
     ]
     engine = engine_factory(plan.engine_name)
-    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only, settings)
     Shared._active_engine = engine
 
     def notify(_section):
@@ -246,12 +475,14 @@ def execute_concurrency_job(path, job_id, stage_name, *, engine_factory=get_engi
         emit("event", sequence=sequence, event={"stage": stage_name, "committed": True})
 
     journal = None
+    telemetry = None
     try:
+        telemetry = create_case_telemetry(settings)
         if not engine.start(gpu_visible=not plan.cpu_only):
             raise RuntimeError("runner could not prepare the inference engine")
         journal = LLMEventStage(
             path, plan, notify, stage_name=stage_name,
-            model_family="concurrency", initialize=False,
+            model_family="concurrency", initialize=False, telemetry=telemetry,
         )
         benchmark_factory().run(
             engine=engine, models=models, levels=levels,
@@ -262,8 +493,167 @@ def execute_concurrency_job(path, job_id, stage_name, *, engine_factory=get_engi
     finally:
         if journal is not None:
             journal.close()
+        if telemetry is not None:
+            telemetry.stop()
         if engine.available():
             engine.unload_all()
+        Shared.shutdown_managed()
+
+
+def execute_accuracy_job(path, job_id, stage_name, *, engine_factory=get_engine) -> None:
+    plan = load_runner_plan(path, job_id)
+    plan.validate_for_execution()
+    if stage_name not in ACCURACY_TESTS or stage_name not in plan.tests:
+        raise ValueError("runner job does not include the requested accuracy stage")
+    settings = plan.effective_config
+    apply_runner_settings(settings)
+    config.ACC_TIMEOUT = settings["accuracy_timeout_seconds"]
+    config.ACC_TOKEN_BUDGET = settings["accuracy_token_budget"]
+    spec = accuracy_spec(stage_name)
+    questions = selected_questions(stage_name, settings.get("sample_size"))
+    bank_hash = Shared.file_hash(spec.data_path)
+    catalog = {model["tag"]: model for model in expanded_variant_catalog(LLM_MODELS)}
+    models = [
+        {**identity, "label": (catalog.get(identity["tag"]) or identity).get(
+            "label", identity["tag"],
+        )}
+        for identity in plan.models["llm"]
+    ]
+    engine = engine_factory(plan.engine_name)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only, settings)
+    Shared._active_engine = engine
+    def notify(_results, _answers):
+        store = EventStore(path)
+        try:
+            sequence = store.last_sequence(job_id)
+        finally:
+            store.close()
+        emit("event", sequence=sequence, event={"stage": stage_name, "committed": True})
+
+    journal = None
+    telemetry = None
+    try:
+        telemetry = create_case_telemetry(settings)
+        if not engine.start(gpu_visible=not plan.cpu_only):
+            raise RuntimeError("runner could not prepare the inference engine")
+        journal = AccuracyEventStage(
+            path, plan, stage_name, questions, bank_hash, spec.benchmark.score,
+            notify, initialize=False,
+        )
+        spec.benchmark().run(
+            engine=engine, models=models, questions=questions,
+            warmup_runs=plan.warmup_runs, telemetry=telemetry, journal=journal,
+        )
+    finally:
+        if journal is not None:
+            journal.close()
+        if telemetry is not None:
+            telemetry.stop()
+        if engine.available():
+            engine.unload_all()
+        Shared.shutdown_managed()
+
+
+def execute_embedding_job(path, job_id, *, engine_factory=get_engine,
+                          benchmark_factory: Callable[[], Any] = EmbeddingBenchmark) -> None:
+    plan = load_runner_plan(path, job_id)
+    plan.validate_for_execution()
+    if "emb" not in plan.tests:
+        raise ValueError("runner job does not include the embedding stage")
+    settings = plan.effective_config
+    apply_runner_settings(settings)
+    config.N_RUNS = settings["runs"]
+    catalog = {model["tag"]: model for model in EMBED_MODELS}
+    models = [
+        {**identity, "label": (catalog.get(identity["tag"]) or identity).get(
+            "label", identity["tag"],
+        )}
+        for identity in plan.models["embeddings"]
+    ]
+    engine = engine_factory(plan.engine_name)
+    configure_runner_engine(engine, Shared.detect_backend(), plan.cpu_only, settings)
+    Shared._active_engine = engine
+
+    def notify(_section):
+        store = EventStore(path)
+        try:
+            sequence = store.last_sequence(job_id)
+        finally:
+            store.close()
+        emit("event", sequence=sequence, event={"stage": "emb", "committed": True})
+
+    journal = None
+    telemetry = None
+    try:
+        telemetry = create_case_telemetry(settings)
+        if not engine.start(gpu_visible=not plan.cpu_only):
+            raise RuntimeError("runner could not prepare the inference engine")
+        store = EventStore(path)
+        try:
+            corpus_hash = embedding_corpus_hash(store.resume_identity(job_id))
+        finally:
+            store.close()
+        journal = EmbeddingEventStage(
+            path, plan, corpus_hash, notify, initialize=False,
+        )
+        benchmark_factory().run(
+            engine=engine, models=models, warmup_runs=plan.warmup_runs,
+            telemetry=telemetry, journal=journal,
+        )
+    finally:
+        if journal is not None:
+            journal.close()
+        if telemetry is not None:
+            telemetry.stop()
+        if engine.available():
+            engine.unload_all()
+        Shared.shutdown_managed()
+
+
+def execute_image_job(path, job_id, *, benchmark_factory: Callable[[], Any] = ImageBenchmark,
+                      ensure_comfyui=Shared.ensure_comfyui) -> None:
+    plan = load_runner_plan(path, job_id)
+    plan.validate_for_execution()
+    if "img" not in plan.tests:
+        raise ValueError("runner job does not include the image stage")
+    settings = plan.effective_config
+    apply_runner_settings(settings)
+    config.N_RUNS = settings["runs"]
+    catalog = {model["short"]: model for model in IMAGE_MODELS}
+    models = []
+    for identity in plan.models["images"]:
+        model = catalog.get(identity["short"])
+        if model is None:
+            raise ValueError(f"image model is absent from the catalog: {identity['short']}")
+        models.append(model)
+    context = load_local_execution_context(path, job_id)
+
+    def notify(_section):
+        store = EventStore(path)
+        try:
+            sequence = store.last_sequence(job_id)
+        finally:
+            store.close()
+        emit("event", sequence=sequence, event={"stage": "img", "committed": True})
+
+    journal = None
+    telemetry = None
+    try:
+        if not ensure_comfyui(context.comfyui_dir):
+            raise RuntimeError("runner could not prepare ComfyUI")
+        telemetry = create_case_telemetry(settings)
+        journal = ImageEventStage(path, plan, notify, initialize=False)
+        benchmark_factory().run(
+            image_models=models, resolutions=config.IMAGE_RESOLUTIONS,
+            seed=config.IMAGE_SEED, prompt=config.IMAGE_PROMPT,
+            comfyui_dir=context.comfyui_dir, timeout=config.RUN_TIMEOUT * 2,
+            images_dir=context.images_dir, telemetry=telemetry, journal=journal,
+        )
+    finally:
+        if journal is not None:
+            journal.close()
+        if telemetry is not None:
+            telemetry.stop()
         Shared.shutdown_managed()
 
 
@@ -280,7 +670,9 @@ def main(argv=None) -> int:
     plan = load_runner_plan(args.event_store, args.job_id)
     # A runner is its own process, so it does not inherit the parent's progress
     # engine; without this every event falls back to the first engine's rows.
-    set_progress_engine(plan.engine_name)
+    set_progress_engine(
+        plan.effective_config.get("progress_engine_name", plan.engine_name)
+    )
     config.RETRY_CRASHED_MODELS = plan.retry_crashed_models
     if plan.effective_config.get("offline", False):
         apply_offline_mode()
@@ -294,6 +686,18 @@ def main(argv=None) -> int:
             execute_conversation_job(args.event_store, args.job_id)
         elif args.stage == "llamabench":
             execute_llamabench_job(args.event_store, args.job_id)
+        elif args.stage == "llamabenchconc":
+            execute_llamabench_concurrency_job(args.event_store, args.job_id)
+        elif args.stage == "vllmbench":
+            execute_vllmbench_job(args.event_store, args.job_id)
+        elif args.stage == "sustained":
+            execute_sustained_job(args.event_store, args.job_id)
+        elif args.stage in ACCURACY_TESTS:
+            execute_accuracy_job(args.event_store, args.job_id, args.stage)
+        elif args.stage == "emb":
+            execute_embedding_job(args.event_store, args.job_id)
+        elif args.stage == "img":
+            execute_image_job(args.event_store, args.job_id)
         else:
             execute_concurrency_job(args.event_store, args.job_id, args.stage)
     except BaseException as exc:

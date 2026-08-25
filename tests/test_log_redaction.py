@@ -5,7 +5,8 @@ from scripts.runtime.shared import Shared
 
 
 @pytest.mark.parametrize("secret", [
-    "hf_abcdefghijklmnopqrstuvwxyz", "Bearer abcdefghijklmnopqrstuvwxyz",
+    "hf_abcdefghijklmnopqrstuvwxyz", "results_hf_abcdefghijklmnopqrstuvwxyz.json",
+    "Bearer abcdefghijklmnopqrstuvwxyz",
     "https://example.test/?token=sensitive-value", "https://example.test/?access_token=secret&x=1",
     "api_key=abcdefghijklmnopqrstuvwxyz", "password=abcdefghijklmnopqrstuvwxyz",
     "--api-key abcdefghijklmnopqrstuvwxyz", "ghp_abcdefghijklmnopqrstuvwxyz1234",

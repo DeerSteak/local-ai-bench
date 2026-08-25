@@ -1,0 +1,12 @@
+.panel { margin: 24px auto 72px; max-width: 1400px; padding: 28px; color: #172033; background: #fff; border: 1px solid #dbe3ef; border-radius: 14px; box-shadow: 0 8px 28px rgba(20, 35, 60, .08); }
+.eyebrow { color: #193b68; font-size: 22px; font-weight: 850; }
+.panel h2 { margin: 4px 0 0; font-size: 20px; }
+.panel p, .panel footer { color: #5d6b80; }
+.tableWrap { margin: 22px 0; overflow-x: auto; }
+.panel table { width: 100%; border-collapse: collapse; }
+.panel th, .panel td { padding: 13px 14px; border-bottom: 1px solid #e2e8f0; text-align: left; white-space: nowrap; }
+.panel thead th { color: #52627a; background: #f3f6fa; font-size: 12px; text-transform: uppercase; }
+.panel tbody th { color: #193b68; }
+.panel tbody th span { margin-left: 8px; padding: 4px 7px; color: #11633a; background: #dff5e8; border-radius: 999px; font-size: 10px; text-transform: uppercase; }
+.unranked { color: #76530b; background: #fff8df; font-weight: 750; text-transform: capitalize; }
+.panel footer { font-size: 13px; }

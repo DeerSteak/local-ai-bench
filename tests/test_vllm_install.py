@@ -8,7 +8,13 @@ from types import SimpleNamespace
 from scripts.setup.vllm_install import (
     ROCM_WHEEL_INDEX,
     VLLM_ROCM_WHEEL_TARGETS,
-    NIGHTLY_CU130_INDEX,
+    DGX_CU130_INDEX,
+    DGX_CU130_VERSION,
+    PYTORCH_XPU_INDEX,
+    TRITON_XPU_VERSION,
+    VllmSupport,
+    VLLM_REPO,
+    VLLM_XPU_VERSION,
     hf_cache_model_complete,
     hf_cache_model_dir,
     hf_cache_snapshot_dir,
@@ -26,6 +32,7 @@ from scripts.setup.vllm_install import (
     find_vllm_server,
     vllm_server_reachable,
     is_dgx_spark,
+    install_vllm,
     parse_compute_capability,
     redact_launcher_extra_args,
     python_bootstrap_plan,
@@ -35,7 +42,11 @@ from scripts.setup.vllm_install import (
     fetch_vllm_versions,
     normalize_vllm_version,
     vllm_install_command,
+    vllm_runtime_probe_code,
+    vllm_runtime_expectations,
+    vllm_xpu_install_steps,
     vllm_platform_support,
+    vllm_runtime_import_error,
 )
 
 
@@ -136,6 +147,14 @@ def test_bootstrap_plan_is_empty_when_an_in_range_interpreter_exists():
         python_version=(3, 12), which_fn=lambda _name: None) == []
 
 
+def test_rocm_bootstrap_installs_pinned_python_when_only_newer_python_exists():
+    plan = python_bootstrap_plan(
+        python_version=(3, 13), requires_python=(3, 12),
+        which_fn=lambda name: name if name in {"python3.13", "uv"} else None,
+    )
+    assert plan == [["uv", "python", "install", "3.12"]]
+
+
 def test_bootstrap_plan_installs_uv_only_when_it_is_missing():
     without_uv = python_bootstrap_plan(python_version=(3, 14), which_fn=lambda _name: None)
     assert len(without_uv) == 2
@@ -226,7 +245,7 @@ def test_unknown_compute_capability_does_not_block_install():
 
 def test_dgx_spark_uses_the_cuda_13_nightly_path():
     result = support(nvidia_ok=True, machine="aarch64", gpu_names=["NVIDIA GB10"])
-    assert (result.status, result.method) == ("experimental", "nightly_cu130")
+    assert (result.status, result.method) == ("experimental", "cu130_wheel")
     assert result.requires_python == (3, 12)
 
 
@@ -245,12 +264,16 @@ def test_linux_rocm_is_supported_and_pins_python_312():
     assert result.requires_python == (3, 12)
 
 
-def test_strix_halo_gfx1151_is_experimental_not_supported():
-    result = support(rocm_ok=True, rocm_version=(7, 0), rocm_gfx_targets=["gfx1151"])
-    assert result.status == "experimental"
-    assert result.method == "rocm_wheel"  # still installable, but the user is warned
-    assert "gfx1151" in result.reason
-    assert "amd-strix-halo-vllm-toolboxes" in result.reason
+def test_strix_halo_gfx1151_uses_the_official_rocm_wheel_path():
+    result = support(rocm_ok=True, rocm_version=(7, 2), rocm_gfx_targets=["gfx1151"])
+    assert (result.status, result.method) == ("supported", "rocm_wheel")
+    assert result.requires_python == (3, 12)
+
+
+def test_rx_9060_xt_gfx1200_uses_the_official_rocm_wheel_path():
+    result = support(rocm_ok=True, rocm_version=(7, 2), rocm_gfx_targets=["gfx1200"])
+    assert (result.status, result.method) == ("supported", "rocm_wheel")
+    assert result.requires_python == (3, 12)
 
 
 def test_every_wheel_target_stays_supported():
@@ -312,15 +335,31 @@ def test_windows_is_unsupported_even_with_an_nvidia_gpu():
 
 
 def test_wsl2_takes_the_linux_path_since_it_reports_as_linux():
-    result = support(os_name="Linux", nvidia_ok=True, compute_cap="8.9")
+    result = support(os_name="Linux", is_wsl=True, nvidia_ok=True, compute_cap="8.9")
     assert result.status == "supported"
     assert result.method == "cuda_wheel"
 
 
-def test_intel_xpu_is_unsupported():
+def test_radeon_wsl2_is_rejected_before_downloading_vllm():
+    result = support(
+        os_name="Linux", is_wsl=True, rocm_ok=True,
+        rocm_version=(7, 2), rocm_gfx_targets=["gfx1200"],
+    )
+    assert (result.status, result.method) == ("unsupported", None)
+    assert "AMD SMI" in result.reason
+    assert "Docker" in result.reason
+
+
+def test_native_linux_intel_xpu_uses_the_pinned_source_build():
     result = support(intel_gpu=True)
-    assert result.status == "unsupported"
-    assert "XPU" in result.reason
+    assert (result.status, result.method) == ("experimental", "xpu_source")
+    assert result.requires_python == (3, 12)
+
+
+def test_intel_xpu_is_not_offered_under_wsl2():
+    result = support(intel_gpu=True, is_wsl=True)
+    assert (result.status, result.method) == ("unsupported", None)
+    assert "native Linux" in result.reason
 
 
 def test_cpu_only_linux_is_unsupported():
@@ -377,21 +416,186 @@ def test_install_commands_target_the_venv_interpreter():
     )
     assert exact[-1] == "vllm[bench]==0.10.2"
 
+    development = vllm_install_command(
+        "rocm_wheel", "/v/bin/python", uv_available=False,
+        version="0.27.1.dev4+g6e448d0ea.rocm723",
+    )
+    assert "vllm[bench]==0.27.1.dev4+g6e448d0ea.rocm723" in development
+
 
 def test_every_install_method_requests_the_bench_extra():
     """`vllm bench` deps ship only with the extra, and the vllmbench test needs them."""
-    for method in ("cuda_wheel", "rocm_wheel", "nightly_cu130"):
+    for method in ("cuda_wheel", "rocm_wheel", "cu130_wheel"):
         for uv_available in (True, False):
             command = vllm_install_command(method, "/v/bin/python", uv_available=uv_available)
-            assert "vllm[bench]" in command
+            assert any(item.startswith("vllm[bench]") for item in command)
             assert "vllm" not in command
 
 
 def test_rocm_and_nightly_commands_use_their_own_indexes():
     rocm = vllm_install_command("rocm_wheel", "/v/bin/python", uv_available=False)
     assert ROCM_WHEEL_INDEX in rocm
-    nightly = vllm_install_command("nightly_cu130", "/v/bin/python", uv_available=True)
-    assert NIGHTLY_CU130_INDEX in nightly
+    cu130 = vllm_install_command("cu130_wheel", "/v/bin/python", uv_available=True)
+    assert DGX_CU130_INDEX in cu130
+    assert f"vllm[bench]=={DGX_CU130_VERSION}" in cu130
+
+
+def test_xpu_source_steps_pin_upstream_tag_torch_stack_and_bench_extra(tmp_path):
+    source = tmp_path / "vllm-env" / "src" / "vllm"
+    steps = vllm_xpu_install_steps("/v/bin/python", source)
+    assert steps[0].command == (
+        "git", "clone", "--branch", f"v{VLLM_XPU_VERSION}", "--depth", "1",
+        VLLM_REPO, str(source),
+    )
+    assert any(str(source / "requirements" / "xpu.txt") in step.command for step in steps)
+    assert any(f"triton-xpu=={TRITON_XPU_VERSION}" in step.command for step in steps)
+    triton_step = next(
+        step.command for step in steps if f"triton-xpu=={TRITON_XPU_VERSION}" in step.command
+    )
+    assert ("--force-reinstall", "--no-cache-dir") == (
+        triton_step[4], triton_step[5],
+    )
+    assert triton_step[-2:] == ("--index-url", PYTORCH_XPU_INDEX)
+    assert all(package in steps[3].command for package in (
+        "pandas", "matplotlib", "seaborn", "datasets", "scipy", "plotly",
+    ))
+    source_step = next(step for step in steps if "--no-deps" in step.command)
+    assert "--no-deps" in source_step.command
+    assert "-e" not in source_step.command
+    assert dict(source_step.environment) == {"VLLM_TARGET_DEVICE": "xpu"}
+    assert steps.index(source_step) < next(
+        index for index, step in enumerate(steps) if step.command == triton_step
+    )
+    assert steps[-1].command == triton_step
+
+
+def test_xpu_source_steps_accept_an_explicit_stable_version(tmp_path):
+    steps = vllm_xpu_install_steps("python", tmp_path / "source", "0.26.0")
+    assert steps[0].command[3] == "v0.26.0"
+    with pytest.raises(ValueError, match="prereleases"):
+        vllm_xpu_install_steps("python", tmp_path / "source", "0.27.0rc1")
+
+
+def test_nightly_command_accepts_an_immutable_qualification_index():
+    immutable = "https://wheels.vllm.ai/commit/cu130"
+    command = vllm_install_command(
+        "cu130_wheel", "/v/bin/python", uv_available=True,
+        version="0.26.1rc1.dev950+gcba06764d", index_url=immutable,
+    )
+    assert immutable in command
+    assert DGX_CU130_INDEX not in command
+
+
+def test_install_build_tools_uses_the_managed_environment(monkeypatch, tmp_path):
+    from scripts.setup.vllm_install import install_vllm_build_tools
+    monkeypatch.setattr(
+        "scripts.setup.vllm_install.missing_build_tools", lambda _path: ["ninja"],
+    )
+    calls = []
+    result = type("Result", (), {"returncode": 0})()
+    assert install_vllm_build_tools(
+        tmp_path / "vllm-env", run=lambda command: calls.append(command) or result,
+    )
+    assert calls == [[
+        str(tmp_path / "vllm-env" / "bin" / "python"),
+        "-m", "pip", "install", "ninja",
+    ]]
+
+
+def test_install_build_tools_is_idempotent_and_propagates_failure(monkeypatch, tmp_path):
+    from scripts.setup.vllm_install import install_vllm_build_tools
+    monkeypatch.setattr("scripts.setup.vllm_install.missing_build_tools", lambda _path: [])
+    assert install_vllm_build_tools(
+        tmp_path, run=lambda _command: pytest.fail("nothing should be installed"),
+    )
+    monkeypatch.setattr(
+        "scripts.setup.vllm_install.missing_build_tools", lambda _path: ["ninja"],
+    )
+    failed = type("Result", (), {"returncode": 1})()
+    assert not install_vllm_build_tools(tmp_path, run=lambda _command: failed)
+
+
+def test_runtime_import_probe_reports_the_native_dependency_failure(tmp_path):
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(
+            returncode=1, stdout="",
+            stderr="OSError: libmpi_cxx.so.40: cannot open shared object file",
+        )
+
+    error = vllm_runtime_import_error(tmp_path / "vllm-env", run=run)
+    assert error is not None
+    assert "libmpi_cxx.so.40" in error
+    assert calls[0][0] == [
+        str(tmp_path / "vllm-env" / "bin" / "python"),
+        "-c",
+        vllm_runtime_probe_code(),
+    ]
+    assert calls[0][1]["timeout"] == 60
+
+
+def test_runtime_import_probe_accepts_a_loadable_environment(tmp_path):
+    result = SimpleNamespace(returncode=0, stdout="", stderr="")
+    assert vllm_runtime_import_error(tmp_path, run=lambda *_args, **_kwargs: result) is None
+
+
+def test_xpu_runtime_probe_requires_vllm_and_torch_to_select_xpu():
+    code = vllm_runtime_probe_code("xpu", "xpu")
+    assert "current_platform.device_type == 'xpu'" in code
+    assert "torch.xpu.is_available()" in code
+    assert "Plain Triton conflicts with Intel XPU Triton" in code
+    assert "import triton" in code
+    assert "from triton._C.libtriton import intel" in code
+    assert "has_triton()" in code
+
+
+def test_cuda_runtime_probe_rejects_cpu_only_and_rocm_torch_builds():
+    code = vllm_runtime_probe_code("cuda", "cuda")
+    assert "current_platform.device_type == 'cuda'" in code
+    assert "torch.cuda.is_available()" in code
+    assert "torch.version.cuda" in code
+    assert "not torch.version.hip" in code
+
+
+def test_rocm_runtime_probe_requires_hip_backed_torch():
+    code = vllm_runtime_probe_code("cuda", "rocm")
+    assert "torch.cuda.is_available()" in code
+    assert "torch.version.hip" in code
+
+
+def test_install_methods_share_one_hardware_runtime_contract():
+    assert vllm_runtime_expectations("cuda_wheel") == ("cuda", "cuda")
+    assert vllm_runtime_expectations("cu130_wheel") == ("cuda", "cuda")
+    assert vllm_runtime_expectations("rocm_wheel") == ("cuda", "rocm")
+    assert vllm_runtime_expectations("xpu_source") == ("xpu", "xpu")
+    assert vllm_runtime_expectations(None) == (None, None)
+
+
+def test_repair_recreates_an_incompatible_managed_environment(monkeypatch, tmp_path):
+    environment = tmp_path / "vllm-env"
+    environment.mkdir()
+    stale = environment / "stale-runtime"
+    stale.touch()
+    commands = []
+
+    monkeypatch.setattr("scripts.setup.vllm_install.resolve_python", lambda *_args: "/python")
+    monkeypatch.setattr("scripts.setup.vllm_install.shutil.which", lambda _name: None)
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        if command[:3] == ["/python", "-m", "venv"]:
+            (environment / "bin").mkdir(parents=True)
+            (environment / "bin" / "python").touch()
+        return SimpleNamespace(returncode=0)
+
+    assert install_vllm(
+        VllmSupport("supported", "cuda_wheel", "supported"),
+        venv_dir=environment, recreate=True, run=run, log=lambda _message: None,
+    )
+    assert not stale.exists()
+    assert commands[0] == ["/python", "-m", "venv", str(environment)]
 
 
 def test_find_vllm_binary_prefers_a_system_install():
@@ -408,6 +612,19 @@ def test_find_vllm_binary_falls_back_to_the_project_venv():
         exists_fn=lambda path: str(path).endswith("vllm-env/bin/vllm"),
         which_fn=lambda _: None,
     ) == str(venv / "bin" / "vllm")
+
+
+def test_find_vllm_binary_can_require_the_managed_qualification_runtime():
+    venv = Path("/proj/vllm-env")
+    assert find_vllm_binary(
+        platform_name="Linux", venv_dir=venv, managed_only=True,
+        exists_fn=lambda path: path == venv / "bin" / "vllm",
+        which_fn=lambda _: "/usr/bin/vllm",
+    ) == str(venv / "bin" / "vllm")
+    assert find_vllm_binary(
+        platform_name="Linux", venv_dir=venv, managed_only=True,
+        exists_fn=lambda _path: False, which_fn=lambda _: "/usr/bin/vllm",
+    ) is None
 
 
 def test_find_vllm_binary_returns_none_when_nothing_is_installed():

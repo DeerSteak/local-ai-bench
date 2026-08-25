@@ -16,6 +16,37 @@ def test_parse_size_gb_malformed_returns_zero():
     assert hardware.parse_size_gb("who knows") == 0.0
 
 
+def test_nvidia_smi_resolves_the_wsl_driver_location_when_path_omits_it(tmp_path):
+    executable = tmp_path / "nvidia-smi"
+    executable.write_text("driver bridge")
+    assert hardware.nvidia_smi_executable(
+        which_fn=lambda _name: None, wsl_path=executable,
+    ) == str(executable)
+
+
+def test_nvidia_smi_prefers_the_normal_path_discovery(tmp_path):
+    assert hardware.nvidia_smi_executable(
+        which_fn=lambda _name: "/usr/bin/nvidia-smi", wsl_path=tmp_path / "other",
+    ) == "/usr/bin/nvidia-smi"
+
+
+def test_rocm_tool_resolves_opt_install_when_path_omits_it(tmp_path):
+    executable = tmp_path / "rocminfo"
+    executable.write_text("tool", encoding="utf-8")
+    assert hardware.rocm_executable(
+        "rocminfo", which_fn=lambda _name: None, rocm_bin=tmp_path,
+    ) == str(executable)
+
+
+def test_rocm_tool_prefers_path_and_returns_none_when_absent(tmp_path):
+    assert hardware.rocm_executable(
+        "rocminfo", which_fn=lambda _name: "/usr/bin/rocminfo", rocm_bin=tmp_path,
+    ) == "/usr/bin/rocminfo"
+    assert hardware.rocm_executable(
+        "rocminfo", which_fn=lambda _name: None, rocm_bin=tmp_path,
+    ) is None
+
+
 # ── classify_gpu ──
 
 def test_classify_gpu_amd_discrete():
@@ -33,6 +64,15 @@ def test_classify_gpu_amd_integrated():
 def test_classify_gpu_intel_discrete():
     assert hardware.classify_gpu("Intel Arc B580") == "discrete"
     assert hardware.classify_gpu("Intel Arc A770") == "discrete"
+    assert hardware.classify_gpu("Intel Corporation Battlemage G31 [Intel Graphics]") == "discrete"
+    assert hardware.classify_gpu("Intel Corporation Device e222 [8086:e222]") == "discrete"
+
+
+def test_intel_xpu_display_accepts_arc_and_battlemage_but_not_generic_intel():
+    assert hardware.is_intel_xpu_display("Intel Arc Pro B65")
+    assert hardware.is_intel_xpu_display("Intel Corporation Battlemage G31 [Intel Graphics]")
+    assert hardware.is_intel_xpu_display("Intel Corporation Device e222 [8086:e222]")
+    assert not hardware.is_intel_xpu_display("Intel UHD Graphics 770")
 
 
 def test_classify_gpu_intel_integrated():
@@ -316,6 +356,18 @@ def test_image_model_memory_requirement_includes_encoders():
     expected = (checkpoint_gb + encoder_gb) * hardware.MEMORY_OVERHEAD_MULTIPLIER
     assert hardware.image_model_memory_requirement_gb(
         "flux1-dev.safetensors", "flux-dev") == pytest.approx(expected)
+
+
+def test_z_image_memory_requirement_includes_qwen_encoder_and_vae():
+    weights = (hardware.CHECKPOINT_SIZES_GB["z_image_turbo_bf16.safetensors"]
+               + hardware.ENCODER_SIZES_GB["qwen_3_4b.safetensors"]
+               + hardware.ENCODER_SIZES_GB["z_image_ae.safetensors"])
+    assert hardware.image_model_weights_gb(
+        "z_image_turbo_bf16.safetensors", "z-image-turbo",
+    ) == pytest.approx(weights)
+    assert hardware.image_model_memory_requirement_gb(
+        "z_image_turbo_bf16.safetensors", "z-image-turbo",
+    ) == pytest.approx(weights * hardware.MEMORY_OVERHEAD_MULTIPLIER)
 
 
 def test_image_model_fits_none_when_ceiling_unknown():

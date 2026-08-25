@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 
 import pytest
@@ -42,6 +43,7 @@ class FakeTree:
         self.rows = {}
         self.deleted = []
         self.selected: tuple[str, ...] = ()
+        self.focused = ""
 
     def get_children(self):
         return tuple(self.rows)
@@ -57,6 +59,9 @@ class FakeTree:
 
     def selection(self):
         return self.selected
+
+    def focus(self, item):
+        self.focused = item
 
     def index(self, item):
         return self.selected.index(item)
@@ -105,14 +110,16 @@ def test_configuration_state_applies_imported_controls():
     controller.model_vars = {"small": FakeVariable(), "large": FakeVariable(True)}
     controller.cap_var = FakeVariable()
     controller.tg_vars = {64: FakeVariable(), 128: FakeVariable(True)}
-    controller.option_vars = {"runs": FakeVariable(), "offline": FakeVariable()}
+    controller.option_vars = {
+        "runs": FakeVariable(), "offline": FakeVariable(), "gpu_split_mode": FakeVariable(),
+    }
     selected_engines = []
     controller.set_selected_engines = selected_engines.append
 
     controller.apply_control_values({
         "tests": {"llm": True}, "models": {"small": True}, "engine": "llamacpp,vllm",
         "max_prompt_tokens": "8192", "tg_tokens": [128],
-        "options": {"runs": "5", "offline": True},
+        "options": {"runs": "5", "offline": True, "gpu_split_mode": "layer"},
     })
 
     assert {name: var.get() for name, var in controller.test_vars.items()} == {
@@ -126,6 +133,7 @@ def test_configuration_state_applies_imported_controls():
     assert [value for value, var in controller.tg_vars.items() if var.get()] == [128]
     assert controller.option_vars["runs"].get() == "5"
     assert controller.option_vars["offline"].get() is True
+    assert controller.option_vars["gpu_split_mode"].get() == "Layer split (recommended)"
 
 
 def test_configuration_file_action_translates_portable_preset():
@@ -177,7 +185,11 @@ def test_history_controller_filters_and_maps_visible_rows(monkeypatch):
     assert controller.entries["visible"] == visible
     assert controller.item_paths == {"row-0": Path("result.json")}
     assert tree.rows["row-0"]["tags"] == ("history_even",)
-    assert screen.message.get() == "Showing 1 of 1 local results."
+    assert tree.focused == "row-0"
+    assert screen.message.get() == (
+        "Showing 1 of 1 local results. Keyboard: Shift+Up/Down extends selection; "
+        "Space toggles a row."
+    )
 
 
 def test_history_delete_refuses_while_process_is_active(monkeypatch):
@@ -274,7 +286,6 @@ def test_history_process_resume_builds_recovery_launch(monkeypatch, tmp_path):
         root=object(), filedialog=object(),
         messagebox=SimpleNamespace(askyesno=lambda *_args, **_kwargs: True),
         process_active=lambda: False, launch=lambda *args: launches.append(args),
-        fallback_fork=lambda *_args: None,
     )
     monkeypatch.setattr(
         "scripts.app.benchmark_gui_screens.history_process.load_run_plan", lambda _path: plan,
@@ -303,7 +314,7 @@ def test_history_process_resume_builds_recovery_launch(monkeypatch, tmp_path):
 
 def build_history_process_controller(tmp_path, *, stages, destination="fork.json"):
     plan = SimpleNamespace(stage_order=stages, engine_name="llamacpp")
-    launches, fallbacks = [], []
+    launches = []
     controller = HistoryProcessActions(
         root=object(),
         filedialog=SimpleNamespace(
@@ -311,13 +322,12 @@ def build_history_process_controller(tmp_path, *, stages, destination="fork.json
         ),
         messagebox=MessageRecorder(), process_active=lambda: False,
         launch=lambda *args: launches.append(args),
-        fallback_fork=lambda *args: fallbacks.append(args),
     )
-    return controller, plan, launches, fallbacks
+    return controller, plan, launches
 
 
 def test_history_process_fork_launches_recoverable_plan(monkeypatch, tmp_path):
-    controller, plan, launches, fallbacks = build_history_process_controller(
+    controller, plan, launches = build_history_process_controller(
         tmp_path, stages=["llm", "conv"],
     )
     source = tmp_path / "source.json"
@@ -345,30 +355,10 @@ def test_history_process_fork_launches_recoverable_plan(monkeypatch, tmp_path):
         "Forked run is active. The source evidence remains unchanged.",
         ["llm", "conv"], ["llm", "conv"], ["llamacpp"], "Fork could not start",
     )]
-    assert not fallbacks
-
-
-def test_history_process_fork_routes_unsupported_plan_to_frontend(monkeypatch, tmp_path):
-    controller, plan, launches, fallbacks = build_history_process_controller(
-        tmp_path, stages=["img"],
-    )
-    source = tmp_path / "source.json"
-    monkeypatch.setattr(
-        "scripts.app.benchmark_gui_screens.history_process.load_run_plan", lambda _path: plan,
-    )
-    monkeypatch.setattr(
-        "scripts.app.benchmark_gui_screens.history_process.format_recovery_inspection",
-        lambda _report: "inspection",
-    )
-
-    controller.start("fork", source, {"action": "fork"})
-
-    assert fallbacks == [(source, (tmp_path / "fork.json").resolve(), plan)]
-    assert not launches
 
 
 def test_history_process_retry_launches_only_selected_cases(monkeypatch, tmp_path):
-    controller, plan, launches, _fallbacks = build_history_process_controller(
+    controller, plan, launches = build_history_process_controller(
         tmp_path, stages=["llm"],
     )
     result = tmp_path / "result.json"
@@ -444,7 +434,7 @@ def test_llamacpp_update_dispatches_platform_and_release(monkeypatch, platform_n
 
     def capture(name):
         def updater(*_args, release_fetcher, **_kwargs):
-            calls.append((name, release_fetcher()))
+            calls.append((name, release_fetcher(), _kwargs.get("intel_xpu")))
             return name
         return updater
 
@@ -462,7 +452,33 @@ def test_llamacpp_update_dispatches_platform_and_release(monkeypatch, platform_n
 
     expected_platform = {"Darwin": "mac", "Windows": "windows", "Linux": "linux"}[platform_name]
     assert result == expected_platform
-    assert calls == [(expected_platform, "latest" if tag is None else f"tag:{tag}")]
+    expected_xpu = False if platform_name == "Windows" else None
+    assert calls == [(
+        expected_platform, "latest" if tag is None else f"tag:{tag}", expected_xpu,
+    )]
+
+
+def test_windows_intel_llamacpp_update_preserves_sycl_backend(monkeypatch):
+    actions = EngineUpdateActions({}, "xpu")
+    status = SimpleNamespace(engine="llamacpp", managed=True, backend="xpu")
+    calls = []
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.collect_engine_management",
+        lambda *_args: SimpleNamespace(statuses=[status]),
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.platform.system", lambda: "Windows",
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.detect_nvidia_max_cuda_version", lambda: None,
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.update_windows_llamacpp",
+        lambda *_args, **kwargs: calls.append(kwargs) or "updated",
+    )
+
+    assert actions.update_llamacpp_version(None, SimpleNamespace(log=lambda _text: None)) == "updated"
+    assert calls[0]["intel_xpu"] is True
 
 
 def test_configuration_refresh_imported_models_updates_screen_state(monkeypatch):
@@ -583,3 +599,25 @@ def test_run_log_export_writes_current_text(monkeypatch, tmp_path):
 
     assert destination.read_text(encoding="utf-8") == "benchmark output\n"
     assert messages[0][0][0] == "Log exported"
+
+
+def test_run_log_open_folder_detaches_desktop_process(monkeypatch, tmp_path):
+    calls = []
+    controller = RunLogActions.__new__(RunLogActions)
+    controller.option_vars = {"out": SimpleNamespace(get=lambda: str(tmp_path / "result.json"))}
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.run_log_actions.platform.system", lambda: "Linux",
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.run_log_actions.subprocess.Popen",
+        lambda command, **options: calls.append((command, options)),
+    )
+
+    controller.open_results_folder()
+
+    assert calls == [(["xdg-open", str(tmp_path.resolve())], {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "start_new_session": True,
+    })]

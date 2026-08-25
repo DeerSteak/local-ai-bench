@@ -130,6 +130,7 @@ def test_build_command_shape():
         "-b", "2048", "-ub", "512",
         "-ngl", "999", "--split-mode", "layer",
         "--cache-type-k", "q8_0", "--cache-type-v", "q8_0",
+        "--flash-attn", "on",
         "--output-format", "jsonl",
     ]
 
@@ -148,6 +149,14 @@ def test_build_command_cpu_only_ngl():
     )
     assert cmd[cmd.index("-ngl") + 1] == "0"
     assert cmd[cmd.index("--cache-type-k") + 1] == config.LLAMACPP_KV_CACHE_TYPE
+
+
+def test_build_command_accepts_auto_gpu_layers():
+    cmd = LBC.build_command(
+        "llama-batched-bench", Path("/models/x.gguf"), 4096, 512,
+        [128], [1], 2048, 512, "auto",
+    )
+    assert cmd[cmd.index("-ngl") + 1] == "auto"
 
 
 def test_build_command_can_disable_repacking(monkeypatch):
@@ -212,6 +221,23 @@ def test_run_one_parses_jsonl_rows(monkeypatch):
                         _popen_factory(_FakePopen(0, stdout_lines=lines)))
     entries = LBC.run_one("b", Path("/x.gguf"), 4096, 8192, [128], [1, 2], 2048, 512, 999, 60)
     assert [e["pl"] for e in entries] == [1, 2]
+
+
+def test_run_one_passes_runtime_environment_to_process(monkeypatch):
+    captured = {}
+
+    def popen(cmd, stdout, stderr, text, env):
+        captured["env"] = env
+        return _FakePopen(0, stdout_lines=[json.dumps(_row(1)) + "\n"])
+
+    monkeypatch.setattr(
+        "scripts.workloads.llamabench_concurrency_benchmark.subprocess.Popen", popen,
+    )
+    LBC.run_one(
+        "b", Path("/x.gguf"), 4096, 8192, [128], [1], 2048, 512, 999, 60,
+        env={"ONEAPI": "ready"},
+    )
+    assert captured["env"] == {"ONEAPI": "ready"}
 
 
 def test_run_one_reports_progress_per_row(monkeypatch):
@@ -370,6 +396,81 @@ def test_run_records_entries_and_sweep_shape_on_success(fake_engine, monkeypatch
     assert result["m1"]["ctx_size"] == expected_ctx
 
 
+def test_run_uses_only_journal_pending_cells_on_resume(fake_engine, monkeypatch):
+    captured = []
+
+    class Journal:
+        def __init__(self): self.entries = []
+        def export(self):
+            return {"m1": {"entries": list(self.entries), "pp": config.LLAMABENCH_CONC_PP,
+                           "ctx_size": 1, "requested_cases": 4,
+                           "completed_cases": len(self.entries)}}
+        def record_model_plan(self, *args): pass
+        def pending_sweeps(self, *args): return [([256], [2])]
+        def begin_measured(self, _name): pass
+        def discard_case(self): pass
+        def record_entry(self, _model, entry): self.entries.append(entry); return True
+        def record_model_complete(self, _model): pass
+        def finish(self): pass
+
+    def fake_run_one(cls, binary, model_path, ctx_size, pp, tg, npl, *args, **kwargs):
+        captured.append((tg, npl))
+        return [{"pp": pp, "tg": tg[0], "pl": npl[0], "speed_tg": 1.0}]
+
+    monkeypatch.setattr(LBC, "run_one", classmethod(fake_run_one))
+    result = LBC().run(fake_engine, _MODELS, journal=Journal())
+    assert captured == [([256], [2])]
+    assert [(entry["tg"], entry["pl"]) for entry in result["m1"]["entries"]] == [(256, 2)]
+
+
+def test_run_attaches_memory_to_each_delivered_native_case(fake_engine, monkeypatch):
+    class Telemetry:
+        def __init__(self):
+            self.calls = []
+            self.last_power = {"energy_joules": 2}
+        def begin_model_load(self): self.calls.append("load")
+        def begin_measured(self, name): self.calls.append(name)
+        def finish_case(self):
+            self.calls.append("finish")
+            return {"summary": {"process_rss_gb": {"peak_gb": len(self.calls)}}}
+
+    telemetry = Telemetry()
+
+    def fake_run_one(cls, *args, on_entry=None, **kwargs):
+        assert telemetry.calls == ["measured:native-sweep-includes-load"]
+        assert on_entry is not None
+        for row in (_row(1), _row(2)):
+            on_entry(row)
+        return []
+
+    monkeypatch.setattr(LBC, "run_one", classmethod(fake_run_one))
+    result = LBC().run(fake_engine, _MODELS, telemetry=telemetry)
+    assert telemetry.calls == [
+        "measured:native-sweep-includes-load", "finish", "measured:native-sweep",
+        "finish", "measured:native-sweep", "finish",
+    ]
+    assert telemetry.calls.count("finish") == 3
+    assert all("memory" in entry for entry in result["m1"]["entries"])
+    assert all(entry["power"]["efficiency"]["unit"] == "tokens_per_joule"
+               for entry in result["m1"]["entries"])
+
+
+def test_run_discards_failed_native_window(fake_engine, monkeypatch):
+    class Telemetry:
+        def __init__(self): self.calls = []
+        def begin_measured(self, name): self.calls.append(name)
+        def finish_case(self): self.calls.append("finish"); return {}
+
+    def fail(cls, *args, **kwargs):
+        raise subprocess.TimeoutExpired("llama-batched-bench", 1)
+
+    monkeypatch.setattr(LBC, "run_one", classmethod(fail))
+    telemetry = Telemetry()
+    result = LBC().run(fake_engine, _MODELS, telemetry=telemetry)
+    assert result["m1"]["timed_out"] is True
+    assert telemetry.calls == ["measured:native-sweep-includes-load", "finish"]
+
+
 def test_run_sizes_ctx_and_npl_from_the_model_context(fake_engine, monkeypatch):
     monkeypatch.setattr(LlamaCppEngine, "max_context_length", lambda self, tag: 32768)
     captured = {}
@@ -404,14 +505,17 @@ def test_run_clamps_prompt_depth_on_small_context_models(fake_engine, monkeypatc
 
 def test_run_passes_on_progress_to_run_one(fake_engine, monkeypatch):
     captured = {}
+    fake_engine._process_env = {"ONEAPI": "ready"}
 
-    def fake_run_one(cls, *a, on_progress=None, **kw):
+    def fake_run_one(cls, *a, on_progress=None, env=None, **kw):
         captured["on_progress"] = on_progress
+        captured["env"] = env
         return [_row(1)]
 
     monkeypatch.setattr(LBC, "run_one", classmethod(fake_run_one))
     LBC().run(fake_engine, _MODELS)
     assert captured["on_progress"] is Shared.log
+    assert captured["env"] == {"ONEAPI": "ready"}
 
 
 def test_run_calls_save_fn_after_each_model(fake_engine, monkeypatch):
@@ -452,7 +556,7 @@ def test_run_one_model_failure_does_not_stop_the_rest(fake_engine, monkeypatch):
     assert "entries" in result["good"]
 
 
-def test_run_passes_full_offload_ngl_by_default(fake_engine, monkeypatch):
+def test_run_passes_auto_gpu_layers_by_default(fake_engine, monkeypatch):
     captured = {}
 
     def fake_run_one(cls, binary, model_path, ctx_size, pp, tg, npl, batch_size, ubatch_size,
@@ -462,7 +566,7 @@ def test_run_passes_full_offload_ngl_by_default(fake_engine, monkeypatch):
 
     monkeypatch.setattr(LBC, "run_one", classmethod(fake_run_one))
     LBC().run(fake_engine, _MODELS, cpu_only=False)
-    assert captured["ngl"] == config.LLAMABENCH_FULL_OFFLOAD_NGL
+    assert captured["ngl"] == config.LLAMABENCH_CONC_GPU_LAYERS
 
 
 def test_run_passes_zero_ngl_when_cpu_only(fake_engine, monkeypatch):

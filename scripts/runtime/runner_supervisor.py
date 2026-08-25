@@ -10,15 +10,18 @@ import sys
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
 from scripts.runtime import config
+from scripts.runtime.process_tree import stop_process_tree
+from scripts.runtime.telemetry import PowerAvailability, TemperatureAvailability
+from scripts.stage_registry import JOURNAL_STAGES
 
 
 RUNNER_EVENT_PREFIX = "::local-ai-bench-runner::"
-SUPPORTED_RUNNER_STAGES = {"conc_chat", "conc_tool", "conv", "llamabench", "llm"}
+SUPPORTED_RUNNER_STAGES = JOURNAL_STAGES
 
 
 class SupervisedProcess(Protocol):
@@ -44,6 +47,8 @@ class RunnerSpec:
     job_id: str
     stage: str
     event_store: Path
+    power_availability: PowerAvailability | None = None
+    temperature_availability: TemperatureAvailability | None = None
 
     def validate(self) -> None:
         if not self.job_id.startswith("job_"):
@@ -115,6 +120,14 @@ class RunnerSupervisor:
         environment = dict(os.environ)
         environment["LOCAL_AI_BENCH_RUNNER_TOKEN"] = self.ownership_token
         environment["PYTHONIOENCODING"] = "utf-8"
+        if self.spec.power_availability is not None:
+            environment["LOCAL_AI_BENCH_POWER_AVAILABILITY"] = json.dumps(
+                asdict(self.spec.power_availability), separators=(",", ":"),
+            )
+        if self.spec.temperature_availability is not None:
+            environment["LOCAL_AI_BENCH_TEMPERATURE_AVAILABILITY"] = json.dumps(
+                asdict(self.spec.temperature_availability), separators=(",", ":"),
+            )
         options = {
             "cwd": config.SCRIPT_DIR, "stdout": subprocess.PIPE, "stderr": subprocess.STDOUT,
             "text": True, "encoding": "utf-8", "errors": "replace", "bufsize": 1,
@@ -122,6 +135,9 @@ class RunnerSupervisor:
         }
         if self.system == "Windows":
             options["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        elif self.system == "Darwin":
+            # Keep the controlling terminal so a supervised sampler can reuse sudo's tty ticket.
+            options["process_group"] = 0
         else:
             options["start_new_session"] = True
         self.process = self.process_factory(build_runner_command(self.spec), **options)
@@ -173,19 +189,8 @@ class RunnerSupervisor:
             raise
 
     def cancel(self) -> None:
-        if self.process is None or self.process.poll() is not None:
+        if self.process is None:
             return
-        if self.system == "Windows":
-            self.process.send_signal(getattr(signal, "CTRL_BREAK_EVENT", signal.SIGINT))
-        else:
-            os.killpg(os.getpgid(self.process.pid), signal.SIGINT)
-        try:
-            self.process.wait(timeout=self.graceful_timeout)
-            return
-        except subprocess.TimeoutExpired:
-            self.process.terminate()
-        try:
-            self.process.wait(timeout=self.graceful_timeout)
-        except subprocess.TimeoutExpired:
-            self.process.kill()
-            self.process.wait()
+        stop_process_tree(
+            self.process, timeout=self.graceful_timeout, system=self.system,
+        )

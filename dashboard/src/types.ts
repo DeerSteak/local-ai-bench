@@ -18,6 +18,8 @@ export type ChartRow = Record<string, JsonRecord[string]>;
 // A ResultsFile plus the UI-only metadata benchmark_dashboard.tsx attaches on load.
 export interface DisplayFile extends ResultsFile {
   name: string;
+  sourceSha256?: string;
+  sourceText?: string;
   backend: string;
   os: string;
   wsl: boolean;

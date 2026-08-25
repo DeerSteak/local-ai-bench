@@ -71,6 +71,7 @@ def test_run_artifact_paths_cover_run_journal_sidecars_images_and_regrades(tmp_p
         "results_Host_20260101_000000_vllm.events.sqlite3-wal",
         "results_Host_20260101_000000_vllm.events.sqlite3-shm",
         "results_Host_20260101_000000_vllm.events.sqlite3-journal",
+        "results_Host_20260101_000000_vllm.events.sqlite3.local.json",
         "log_Host_20260101_000000_vllm.txt",
         "images_Host_20260101_000000_vllm",
         "regraded_results_Host_20260101_000000_vllm.json",
@@ -86,6 +87,8 @@ def test_delete_run_artifacts_removes_exact_set_and_preserves_neighbors(tmp_path
     result_path.write_text("{}", encoding="utf-8")
     journal = result_path.with_suffix(".events.sqlite3")
     journal.write_bytes(b"sqlite")
+    local_context = Path(f"{journal.resolve()}.local.json")
+    local_context.write_text("{}", encoding="utf-8")
     wal = Path(f"{journal}-wal")
     wal.write_bytes(b"wal")
     shm = Path(f"{journal}-shm")
@@ -105,7 +108,9 @@ def test_delete_run_artifacts_removes_exact_set_and_preserves_neighbors(tmp_path
     removed, failures = delete_run_artifacts(result_path, tmp_path)
 
     assert failures == {}
-    assert set(removed) == {result_path, journal, wal, shm, answer, log, images, regraded}
+    assert set(removed) == {
+        result_path, journal, local_context, wal, shm, answer, log, images, regraded,
+    }
     assert unrelated.is_file()
     assert existing_run_artifacts(result_path, tmp_path) == []
 
@@ -192,18 +197,22 @@ def test_delete_failure_retains_main_result_for_visible_retry(tmp_path, monkeypa
 
 def test_metric_extraction_uses_named_supported_evidence_only():
     metrics = extract_comparable_metrics(result())
-    assert metrics["llm/model/2K/tps_mean"] == 50.0
-    assert metrics["embeddings/embed/chunks_per_sec_mean"] == 100.0
-    assert metrics["images/flux/1024x1024/sec_per_image_mean"] == 8.0
-    assert metrics["mcq/model/accuracy_pct"] == 75.0
+    assert metrics["llm/model/2K/tps_mean"]["value"] == 50.0
+    assert metrics["embeddings/embed/chunks_per_sec_mean"]["value"] == 100.0
+    assert metrics["images/flux/1024x1024/sec_per_image_mean"]["value"] == 8.0
+    assert metrics["mcq/model/accuracy_pct"]["value"] == 75.0
 
 
 def test_comparison_reports_exact_deltas_for_compatible_results():
     comparison = compare_results(result(tps=50.0), result(tps=55.0))
     assert comparison["compatible"] is True
     row = next(item for item in comparison["rows"] if item["metric"] == "llm/model/2K/tps_mean")
-    assert row == {"metric": "llm/model/2K/tps_mean", "baseline": 50.0,
-                   "candidate": 55.0, "delta": 5.0, "percent_change": 10.0}
+    assert row["baseline"] == 50.0
+    assert row["candidate"] == 55.0
+    assert row["delta"] == 5.0
+    assert row["percent_change"] == 10.0
+    assert row["within_run_uncertainty"] == "insufficient"
+    assert row["verdict"] == "repeated_trials_required"
 
 
 def test_comparison_blocks_different_or_unrecorded_methodology_and_keeps_missing_rows():
@@ -217,3 +226,28 @@ def test_comparison_blocks_different_or_unrecorded_methodology_and_keeps_missing
     assert any(row["baseline"] is None for row in comparison["rows"])
     del baseline["run"]["plan"]["effective_config"]["methodology_profile"]
     assert "unrecorded_methodology" in compare_results(baseline, result())["incompatible_fields"]
+
+
+def test_comparison_allows_qualified_memory_telemetry_on_or_off():
+    baseline = result()
+    candidate = result()
+    baseline["run"]["plan"]["effective_config"].update({
+        "memory_telemetry": False, "memory_telemetry_interval_sec": None,
+    })
+    candidate["run"]["plan"]["effective_config"].update({
+        "memory_telemetry": True, "memory_telemetry_interval_sec": 0.5,
+    })
+    assert compare_results(baseline, candidate)["compatible"] is True
+
+
+def test_comparison_blocks_unqualified_memory_interval_against_telemetry_off():
+    baseline = result()
+    candidate = result()
+    baseline["run"]["plan"]["effective_config"].update({
+        "memory_telemetry": False, "memory_telemetry_interval_sec": None,
+    })
+    candidate["run"]["plan"]["effective_config"].update({
+        "memory_telemetry": True, "memory_telemetry_interval_sec": 1.0,
+    })
+    comparison = compare_results(baseline, candidate)
+    assert "effective_config" in comparison["incompatible_fields"]

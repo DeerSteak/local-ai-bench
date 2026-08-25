@@ -1,5 +1,6 @@
 from scripts.results.native_bench_event_stage import (
-    NativeBenchEventStage, export_native_bench_section, group_remaining_sweeps,
+    NativeBenchEventStage, completed_entry_tokens, export_native_bench_section,
+    group_remaining_sweeps,
 )
 from scripts.results.run_plan import RunPlan
 
@@ -25,6 +26,11 @@ def entry(**overrides):
     }
     value.update(overrides)
     return value
+
+
+def test_completed_entry_tokens_counts_prompt_and_generation_for_every_repetition():
+    assert completed_entry_tokens(entry(n_prompt=512, n_gen=128, completed_reps=2)) == 1280
+    assert completed_entry_tokens(entry(n_prompt=0, n_gen=128, completed_reps=2)) == 256
 
 
 def test_remaining_native_sweeps_keep_fresh_run_compact_and_group_partial_recovery():
@@ -86,6 +92,54 @@ def test_native_commit_survives_export_callback_failure(tmp_path):
     finally:
         stage.close()
     assert export_native_bench_section(path, plan.job_id)["model"]["completed_cases"] == 1
+
+
+def test_native_case_memory_survives_projection(tmp_path):
+    memory = {
+        "windows": [{"name": "measured", "sample_count": 1}],
+        "summary": {"process_rss_gb": {"peak_gb": 3}},
+        "headroom": {"absolute_gb": 5, "fraction": 0.5, "state": "comfortable"},
+        "provenance": {"interval_sec": 1, "failed_samples": 0},
+    }
+
+    class Telemetry:
+        def __init__(self):
+            self.calls = []
+            self.last_power = {
+                "status": "recorded", "source": "nvidia-smi", "scope": "accelerator",
+                "energy_joules": 10,
+            }
+
+        def begin_model_load(self):
+            self.calls.append("load")
+
+        def begin_measured(self, subwindow="measured"):
+            self.calls.append(subwindow)
+
+        def finish_case(self, ceiling_gb=None):
+            self.calls.append("finish")
+            return memory
+
+    path = tmp_path / "events.sqlite3"
+    plan = make_plan()
+    telemetry = Telemetry()
+    stage = NativeBenchEventStage(path, plan, lambda _: None, telemetry=telemetry)
+    stage.begin_measured("measured:native-sweep-includes-load")
+    stage.record_entry(MODEL, entry())
+    stage.discard_case()
+    stage.close()
+    projected = export_native_bench_section(path, plan.job_id)["model"]["prefill_entries"][0]
+    assert {key: projected["memory"][key] for key in memory} == memory
+    assert projected["memory"]["case_id"].startswith("case_")
+    assert projected["power"]["energy_joules"] == 10
+    assert projected["power"]["scope"] == "accelerator"
+    assert projected["power"]["case_id"] == projected["memory"]["case_id"]
+    assert projected["power"]["efficiency"]["unit"] == "tokens_per_joule"
+    assert projected["power"]["efficiency"]["work_count"] > 0
+    assert telemetry.calls == [
+        "measured:native-sweep-includes-load", "finish", "measured:native-sweep",
+        "finish",
+    ]
 
 
 def test_native_recovery_omits_completed_rows_and_reuses_model_plan(tmp_path):

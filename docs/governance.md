@@ -31,4 +31,6 @@ Methodology-affecting changes require a new immutable workload/methodology ident
 
 Material architecture and data-ownership decisions are recorded in [Architecture Decisions](architecture-decisions.md). Methodology baselines, compatibility decisions, release approvals, license reviews, security exceptions, and supported-platform promotions use the same durable pattern: identifier, status, date, owner role, context, decision, alternatives, consequences, evidence, follow-up, and superseding record. Records are append-only in meaning; corrections supersede rather than silently rewrite delivered decisions.
 
+Platform and engine support is derived only from the machine-readable qualification records in `scripts/release/qualification.py`. A record identifies the exact platform, architecture, runtime version, backend, suite version, qualification date, and ordinary benchmark result. Incomplete results are not recorded as passing; no reviewer may hand-set a support level or promote an unrecorded configuration through documentation alone.
+
 Restricted planning records may reference these public decisions, but public documentation does not identify or link back to restricted planning files. Embargoed/customer decisions stay in the customer's restricted project and expose only an approved public summary when one is needed.

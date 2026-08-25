@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { modelLabel } from "../utils/shared";
 import {
-  buildPauseSummaries, buildValidityRows, formatPausedDuration, validitySummary,
+  buildPauseSummaries, buildPreflightWarnings, buildValidityRows,
+  formatPausedDuration, validitySummary,
 } from "../utils/validity";
 import type { ResultsFile } from "../types";
 import styles from "./ValidityInspector.module.css";
@@ -14,13 +15,15 @@ export default function ValidityInspector({ files, section }: { files: ResultsFi
   const [dismissedSignal, setDismissedSignal] = useState("");
   const rows = useMemo(() => buildValidityRows(files, section), [files, section]);
   const pauses = useMemo(() => buildPauseSummaries(files), [files]);
+  const preflightWarnings = useMemo(() => buildPreflightWarnings(files), [files]);
   const summary = useMemo(() => validitySummary(rows), [rows]);
-  if (!rows.length && !pauses.length) return null;
+  if (!rows.length && !pauses.length && !preflightWarnings.length) return null;
 
   const filtered = (filter === "all" ? rows : rows.filter(row => row.status === filter));
   const visible = filtered.slice(0, MAX_VISIBLE_ROWS);
-  const attentionSignal = summary.invalid > 0 || pauses.length > 0
-    ? `${summary.invalid}:${pauses.map(pause => `${pause.fileId}:${pause.count}`).join(",")}` : "";
+  const attentionSignal = summary.invalid > 0 || pauses.length > 0 || preflightWarnings.length > 0
+    ? `${summary.invalid}:${pauses.map(pause => `${pause.fileId}:${pause.count}`).join(",")}`
+      + `:${preflightWarnings.length}` : "";
   const open = manualOpen || (attentionSignal !== "" && attentionSignal !== dismissedSignal);
   return (
     <details className={`card ${styles.wrapper}`} open={open}
@@ -39,6 +42,16 @@ export default function ValidityInspector({ files, section }: { files: ResultsFi
         Valid samples contribute to aggregates. Excluded samples do not; their recorded reason remains visible.
         Legacy means the historical file contains an aggregate but no auditable sample payload.
       </div>
+      {preflightWarnings.length > 0 && <div className={styles.preflightList}>
+        {preflightWarnings.map((warning, index) => (
+          <div className={styles.preflightNotice}
+            key={`${warning.fileId}-${warning.model}-${warning.check}-${index}`} role="note">
+            <span className={styles.preflightBadge}>Preflight</span>
+            <strong>{warning.system} · {modelLabel(warning.model)}</strong>
+            <span>{warning.check.replaceAll("_", " ")} — {warning.detail}</span>
+          </div>
+        ))}
+      </div>}
       {pauses.length > 0 && <div className={styles.pauseList}>
         {pauses.map(pause => <div className={styles.pauseNotice} key={pause.fileId} role="note">
           <span className={styles.pauseBadge}>Paused run</span>

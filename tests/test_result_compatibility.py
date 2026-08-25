@@ -18,6 +18,17 @@ def load_fixture(name):
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
 
 
+def test_schema_1_fixture_preserves_legacy_aggregate_only_result():
+    result = load_fixture("results_v4_1_schema1_legacy.json")
+    validate_json_data(result)
+    assert result["run"]["schema_version"] == 1
+    assert result["llm"]["golden"]["2K"] == {
+        "ttft_mean_sec": 0.25,
+        "tps_mean": 50.0,
+        "n_runs": 1,
+    }
+
+
 @pytest.mark.parametrize("name", [
     "results_v4_1_complete.json",
     "results_v4_1_interrupted.json",
@@ -40,6 +51,36 @@ def test_schema_3_fixture_carries_a_reproducible_plan_identity():
     assert plan.plan_id == result["run"]["plan_id"]
     assert plan.models == result["run"]["models"]
     assert plan.effective_config == result["run"]["effective_config"]
+
+
+def test_schema_4_fixture_preserves_pause_evidence_and_measurements():
+    result = load_fixture("results_v4_1_schema4_pause.json")
+    validate_json_data(result)
+    assert result["run"]["schema_version"] == 4
+    assert result["run"]["pause"]["control_transitions"] == [
+        {"state": "paused", "timestamp": "2026-01-04T00:03:00+00:00"},
+        {"state": "running", "timestamp": "2026-01-04T00:04:30+00:00"},
+    ]
+    assert result["llm"]["golden"]["2K"]["tps_mean"] == 50.0
+
+
+def test_schema_5_fixture_retains_memory_and_power_samples_and_run_summaries():
+    result = load_fixture("results_v6_schema5_memory.json")
+    validate_json_data(result)
+    memory = result["llm"]["golden"]["2K"]["memory"]
+    assert result["run"]["schema_version"] == 5
+    assert [window["name"] for window in memory["windows"]] == [
+        "idle", "model_load", "measured",
+    ]
+    assert memory["windows"][2]["samples"][0]["process_rss_gb"] == 5.0
+    assert result["run"]["memory_summary"]["tightest_headroom"]["case_id"] == "golden-memory-case"
+    power = result["llm"]["golden"]["2K"]["power"]
+    assert power["scope"] == "accelerator"
+    assert power["windows"][1]["samples"][-1] == {"timestamp_sec": 3.0, "watts": 14.0}
+    assert power["efficiency"] == {
+        "unit": "tokens_per_joule", "work_count": 120, "per_joule": 10.0,
+    }
+    assert result["run"]["power_summary"]["energy_joules"] == 12.0
 
 
 def test_v4_1_complete_fixture_freezes_coverage_and_measurement_contract():

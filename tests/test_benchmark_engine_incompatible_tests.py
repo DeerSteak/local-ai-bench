@@ -1,4 +1,7 @@
-from scripts.app.benchmark import engine_incompatible_tests, engine_pass_tests, engine_version_applies
+from scripts.app.benchmark import (
+    build_engine_execution_profiles, engine_incompatible_tests, engine_pass_tests,
+    engine_version_applies,
+)
 
 
 def test_llamacpp_pass_drops_vllmbench_only():
@@ -50,3 +53,23 @@ def test_engine_version_applies_only_to_engine_backed_workloads():
     assert engine_version_applies(["vllmbench"])
     assert engine_version_applies(["emb"])
     assert not engine_version_applies(["img"])
+
+
+def test_execution_profiles_are_built_once_for_each_nonempty_engine_pass():
+    llamacpp = object()
+    vllm = object()
+    calls = []
+
+    def build(engine, tests, **kwargs):
+        calls.append((engine, tests, kwargs))
+        return {"engine_support": {"runtime_version": "1.0"}}
+
+    profiles = build_engine_execution_profiles(
+        [{"name": "llamacpp", "engine": llamacpp}, {"name": "vllm", "engine": vllm}],
+        ["img", "llm"], cpu_only=False, hardware_profile={"backend": "cuda"},
+        profile_builder=build,
+    )
+    assert set(profiles) == {"llamacpp", "vllm"}
+    assert calls[0][1] == ["img", "llm"]
+    assert calls[1][1] == ["llm"]
+    assert all(call[2]["hardware_profile"] == {"backend": "cuda"} for call in calls)

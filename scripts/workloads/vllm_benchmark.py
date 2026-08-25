@@ -16,6 +16,7 @@ from scripts.runtime.shared import Shared
 from scripts.runtime.failure_handling import unexpected_model_failure
 from scripts.runtime.progress_events import emit_model_finished, emit_progress
 from scripts.runtime.pause_control import wait_if_paused
+from scripts.runtime.telemetry import add_power_efficiency
 
 
 def vllm_bench_process_options(os_name: str) -> dict:
@@ -76,7 +77,9 @@ class VllmBenchBenchmark:
     @staticmethod
     def bench_command(executable: str, subcommand: str, repo: str, output_json: Path,
                       *, input_len: int, output_len: int, extra: list[str],
-                      kv_cache_dtype: str = "auto") -> list[str]:
+                      kv_cache_dtype: str = "auto",
+                      gpu_memory_utilization: float = config.VLLMBENCH_GPU_MEMORY_UTILIZATION,
+                      ) -> list[str]:
         """`vllm bench <subcommand>` for one size. The launcher is never used: it wraps
         `vllm serve`, and these subcommands load the weights themselves."""
         command = [
@@ -84,6 +87,8 @@ class VllmBenchBenchmark:
             "--model", repo,
             "--input-len", str(input_len),
             "--output-len", str(output_len),
+            "--gpu-memory-utilization", str(gpu_memory_utilization),
+            "--enforce-eager",
         ]
         if kv_cache_dtype != "auto":
             command += ["--kv-cache-dtype", kv_cache_dtype]
@@ -92,11 +97,14 @@ class VllmBenchBenchmark:
     @classmethod
     def build_latency_command(cls, executable: str, repo: str, output_json: Path,
                               input_len: int, output_len: int,
-                              kv_cache_dtype: str = "auto") -> list[str]:
+                              kv_cache_dtype: str = "auto",
+                              gpu_memory_utilization: float = config.VLLMBENCH_GPU_MEMORY_UTILIZATION,
+                              ) -> list[str]:
         return cls.bench_command(
             executable, "latency", repo, output_json,
             input_len=input_len, output_len=output_len,
             kv_cache_dtype=kv_cache_dtype,
+            gpu_memory_utilization=gpu_memory_utilization,
             extra=[
                 "--batch-size", str(config.VLLMBENCH_BATCH_SIZE),
                 "--num-iters", str(config.VLLMBENCH_ITERS),
@@ -107,11 +115,14 @@ class VllmBenchBenchmark:
     @classmethod
     def build_throughput_command(cls, executable: str, repo: str, output_json: Path,
                                  input_len: int, output_len: int,
-                                 kv_cache_dtype: str = "auto") -> list[str]:
+                                 kv_cache_dtype: str = "auto",
+                                 gpu_memory_utilization: float = config.VLLMBENCH_GPU_MEMORY_UTILIZATION,
+                                 ) -> list[str]:
         return cls.bench_command(
             executable, "throughput", repo, output_json,
             input_len=input_len, output_len=output_len,
             kv_cache_dtype=kv_cache_dtype,
+            gpu_memory_utilization=gpu_memory_utilization,
             extra=["--num-prompts", str(config.VLLMBENCH_NUM_PROMPTS)],
         )
 
@@ -208,8 +219,9 @@ class VllmBenchBenchmark:
         except (OSError, json.JSONDecodeError) as exc:
             raise RuntimeError(f"vllm bench wrote no readable JSON: {exc}") from None
 
-    def run(self, engine, models, save_fn=None):  # pragma: no cover — spawns real subprocesses
-        results = {}
+    def run(self, engine, models, save_fn=None, telemetry=None,
+            journal=None):  # pragma: no cover — spawns real subprocesses
+        results = journal.export() if journal else {}
         if not isinstance(engine, VllmEngine):
             Shared.warn(f"vllm bench only supports the vllm engine — skipping for {engine.name}")
             return results
@@ -230,16 +242,23 @@ class VllmBenchBenchmark:
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
+                    if journal:
+                        journal.record_model_state(model, "skipped", {})
                     continue
                 repo = engine._repo(tag)
                 if repo is None:
                     Shared.err(f"{tag}: no vLLM weights in the catalog — skipping")
-                    results[short] = {"error": "no vllm_repo for tag"}
+                    failure = {"error": "no vllm_repo for tag"}
+                    if journal:
+                        journal.record_model_state(model, "failed", failure)
+                        results = journal.export()
+                    else:
+                        results[short] = failure
                     continue
 
                 latency_entries, throughput_entries = [], []
                 sizes = self.sweep_sizes(
-                    config.VLLMBENCH_INPUT, config.VLLMBENCH_OUTPUT,
+                    config.LLAMABENCH_PP, config.VLLMBENCH_OUTPUT,
                     engine.max_context_length(tag),
                 )
                 model_result: VllmBenchModelResult = {
@@ -258,44 +277,103 @@ class VllmBenchBenchmark:
                         ("throughput", self.build_throughput_command,
                          self.parse_throughput_result, throughput_entries),
                     ):
+                        attempt_number = journal.next_attempt(
+                            model, kind, input_len, output_len,
+                        ) if journal else 1
+                        if attempt_number is None:
+                            continue
+                        entry = None
+                        case_memory = None
+                        case_power = None
                         with tempfile.TemporaryDirectory() as workdir:
                             out = Path(workdir) / f"{kind}.json"
                             command = builder(
                                 executable, repo, out, input_len, output_len,
                                 engine.kv_cache_dtype,
+                                gpu_memory_utilization=engine.bench_gpu_memory_utilization(),
                             )
                             try:
+                                if telemetry:
+                                    telemetry.begin_measured(
+                                        f"measured:{kind}:in{input_len}:out{output_len}:includes-load",
+                                    )
                                 payload = self.run_one(
                                     command, out, config.VLLMBENCH_TIMEOUT, env,
                                 )
+                                entry = parser(payload, input_len, output_len)
                             except subprocess.TimeoutExpired:
+                                error_text = f"no result within {config.VLLMBENCH_TIMEOUT}s"
                                 model_result.update(
                                     timed_out=True, timed_out_at=f"{kind} in{input_len}",
-                                    error=f"no result within {config.VLLMBENCH_TIMEOUT}s",
+                                    error=error_text,
                                 )
                                 Shared.err(f"{label}: {kind} timed out at in{input_len}")
+                                if journal:
+                                    journal.record_case(
+                                        model, kind, input_len, output_len, None,
+                                        len(sizes) * 2, "timed_out",
+                                        attempt_number=attempt_number,
+                                        error=error_text,
+                                    )
                                 break
                             except Exception as exc:
                                 model_result["error"] = str(exc)
                                 Shared.err(f"{label}: {kind} failed at in{input_len}: {exc}")
+                                if journal:
+                                    journal.record_case(
+                                        model, kind, input_len, output_len, None,
+                                        len(sizes) * 2, "failed",
+                                        attempt_number=attempt_number, error=str(exc),
+                                    )
                                 break
-                        entry = parser(payload, input_len, output_len)
+                            finally:
+                                if telemetry:
+                                    case_memory = telemetry.finish_case()
+                                    case_power = getattr(telemetry, "last_power", None)
                         if entry is None:
                             Shared.warn(f"{label}: {kind} at in{input_len} reported no usable result")
+                            if journal:
+                                journal.record_case(
+                                    model, kind, input_len, output_len, None,
+                                    len(sizes) * 2, "failed",
+                                    attempt_number=attempt_number,
+                                )
                             continue
+                        if telemetry:
+                            entry["memory"] = case_memory
+                            if case_power is not None:
+                                requests = entry.get("num_requests", entry.get("completed_iters", 0))
+                                work = requests * entry["output_len"]
+                                entry["power"] = add_power_efficiency(
+                                    case_power, "tokens_per_joule", work,
+                                )
                         bucket.append(entry)
                         model_result["completed_cases"] += 1
+                        if journal:
+                            journal.record_case(
+                                model, kind, input_len, output_len, entry,
+                                len(sizes) * 2, attempt_number=attempt_number,
+                            )
+                            results = journal.export()
                         Shared.ok(self.format_entry(kind, entry))
-                        if save_fn:
+                        if save_fn and not journal:
                             save_fn(results)
                     if model_result.get("error") or model_result.get("timed_out"):
                         break
             except Exception as exc:
                 Shared.err(f"{label}: unexpected error running vllm bench — {exc} — "
                            "skipping remaining work for this model")
-                results.setdefault(short, {}).update(unexpected_model_failure(label, exc))
+                failure = unexpected_model_failure(label, exc)
+                if journal:
+                    journal.record_model_state(model, "failed", failure)
+                    results = journal.export()
+                else:
+                    results.setdefault(short, {}).update(failure)
             finally:
-                if save_fn:
+                if save_fn and not journal:
                     save_fn(results)
                 emit_model_finished("vllmbench", label, results.get(short), model_id=tag)
+        if journal:
+            journal.finish()
+            results = journal.export()
         return results

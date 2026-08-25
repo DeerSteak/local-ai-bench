@@ -3,10 +3,25 @@ setup_check.py's picker — see docs/setup.md#memory-fit-estimate."""
 
 import json
 import re
+import shutil
+from pathlib import Path
 
 MEMORY_OVERHEAD_MULTIPLIER = 1.2
 VRAM_RESERVE_GB = 1.0
 RAM_RESERVE_GB  = 8.0
+
+
+def nvidia_smi_executable(*, which_fn=shutil.which,
+                          wsl_path: Path = Path("/usr/lib/wsl/lib/nvidia-smi")) -> str:
+    discovered = which_fn("nvidia-smi")
+    return discovered or (str(wsl_path) if wsl_path.is_file() else "nvidia-smi")
+
+
+def rocm_executable(name: str, *, which_fn=shutil.which,
+                    rocm_bin: Path = Path("/opt/rocm/bin")) -> str | None:
+    discovered = which_fn(name)
+    managed = rocm_bin / name
+    return discovered or (str(managed) if managed.is_file() else None)
 
 
 def detect_wsl(os_name: str, release: str) -> bool:
@@ -32,7 +47,15 @@ def parse_size_gb(s: str) -> float:
 
 # See docs/setup.md#memory-fit-estimate for the classification heuristic and its default-to-integrated failure mode.
 _AMD_DISCRETE_PATTERN = re.compile(r"(?:\bRX(?=\b|\d)|\bPRO\b|\bINSTINCT\b)")
-_INTEL_DISCRETE_PATTERN = re.compile(r"\b[AB]\d{3}\b")
+_INTEL_DISCRETE_PATTERN = re.compile(r"\b[AB]\d{3}\b|\bBATTLEMAGE\b|\bE222\b")
+
+
+def is_intel_xpu_display(name: str) -> bool:
+    """True for Intel Arc marketing names and Linux Battlemage PCI identities."""
+    upper = name.upper()
+    return "INTEL" in upper and (
+        "ARC" in upper or "BATTLEMAGE" in upper or "8086:E222" in upper
+    )
 
 
 def classify_gpu(name: str) -> str:
@@ -96,6 +119,18 @@ def parse_nvidia_vram_gb(value: str | None) -> float | None:
     if not match:
         return None
     return float(match.group(1)) * _VRAM_UNITS_GB[match.group(2).upper()]
+
+
+def parse_xpu_smi_memory_gb(output: str) -> tuple[float, float] | None:
+    """Aggregate used and total Intel device memory from XPU-SMI's summary table."""
+    pairs = re.findall(
+        r"([0-9.]+)\s*MiB\s*/\s*([0-9.]+)\s*MiB", output, re.IGNORECASE,
+    )
+    if not pairs:
+        return None
+    used = sum(float(pair[0]) for pair in pairs) / 1024
+    total = sum(float(pair[1]) for pair in pairs) / 1024
+    return (used, total) if total > 0 else None
 
 
 def parse_nvidia_gpus(nvidia_smi_output: str) -> list[dict]:
@@ -240,7 +275,7 @@ def model_fits(download_size: str, ceiling_gb: float | None) -> bool | None:
 CHECKPOINT_SIZES_GB = {
     "v1-5-pruned-emaonly.safetensors": 4.3,
     "sd_xl_base_1.0.safetensors": 7.0,
-    "sd3.5_large.safetensors":    16.5,
+    "z_image_turbo_bf16.safetensors": 12.4,
     "flux1-dev.safetensors":      23.9,
     "flux2-dev.safetensors":      64.5,
 }
@@ -249,23 +284,28 @@ ENCODER_SIZES_GB = {
     "clip_l.safetensors":                   0.3,
     "clip_g.safetensors":                   1.4,
     "ae.safetensors":                       0.4,
+    "z_image_ae.safetensors":               0.4,
     "flux2-vae.safetensors":                0.4,
     "mistral_3_small_flux2_fp8.safetensors": 18.1,
+    "qwen_3_4b.safetensors":                 8.1,
 }
 
 # Encoder files each image model's "short" name needs alongside its checkpoint. SD1.5/SDXL bundle their own.
 IMAGE_ENCODER_GROUPS = {
-    "sd35-large": ("t5xxl_fp16.safetensors", "clip_l.safetensors", "clip_g.safetensors"),
+    "z-image-turbo": ("qwen_3_4b.safetensors", "z_image_ae.safetensors"),
     "flux-dev":   ("t5xxl_fp16.safetensors", "clip_l.safetensors", "ae.safetensors"),
     "flux2-dev":  ("mistral_3_small_flux2_fp8.safetensors", "flux2-vae.safetensors"),
 }
 
 
-def image_model_memory_requirement_gb(checkpoint: str, short: str) -> float:
-    """Estimated memory footprint: checkpoint plus its IMAGE_ENCODER_GROUPS encoders, times MEMORY_OVERHEAD_MULTIPLIER."""
-    weights_gb = CHECKPOINT_SIZES_GB.get(checkpoint, 0.0) + sum(
+def image_model_weights_gb(checkpoint: str, short: str) -> float:
+    return CHECKPOINT_SIZES_GB.get(checkpoint, 0.0) + sum(
         ENCODER_SIZES_GB[f] for f in IMAGE_ENCODER_GROUPS.get(short, ()))
-    return weights_gb * MEMORY_OVERHEAD_MULTIPLIER
+
+
+def image_model_memory_requirement_gb(checkpoint: str, short: str) -> float:
+    """Estimated model weights plus runtime overhead."""
+    return image_model_weights_gb(checkpoint, short) * MEMORY_OVERHEAD_MULTIPLIER
 
 
 def image_model_fits(checkpoint: str, short: str, ceiling_gb: float | None) -> bool | None:

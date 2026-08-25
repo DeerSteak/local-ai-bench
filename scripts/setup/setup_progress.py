@@ -10,6 +10,7 @@ import tempfile
 
 
 TERMINAL_STATUSES = {"complete", "action_items", "stopped"}
+TERMINAL_CLOSE_DELAY_MS = 1500
 IS_WINDOWS = os.name == "nt"
 WINDOWS_NEW_PROCESS_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
 
@@ -30,18 +31,28 @@ def progress_status_text(status: str) -> str:
     }.get(status, "Downloading and installing components…")
 
 
+def progress_exit_delay_ms(status: str) -> int | None:
+    return TERMINAL_CLOSE_DELAY_MS if status in TERMINAL_STATUSES else None
+
+
 def start_setup_progress() -> tuple[subprocess.Popen, Path]:
     handle, raw_path = tempfile.mkstemp(prefix="local-ai-bench-setup-", suffix=".json")
     os.close(handle)
     path = Path(raw_path)
     path.write_text(json.dumps({"status": "running"}))
-    # Keep Ctrl+C in the installer console from interrupting the Tk helper too.
-    creationflags = WINDOWS_NEW_PROCESS_GROUP if IS_WINDOWS else 0
+    options = {
+        "creationflags": WINDOWS_NEW_PROCESS_GROUP if IS_WINDOWS else 0,
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
+    if not IS_WINDOWS:
+        options["start_new_session"] = True
     try:
         process = subprocess.Popen([
             sys.executable, "-m", "scripts.setup.setup_progress",
             "--status-file", str(path), "--parent-pid", str(os.getpid()),
-        ], creationflags=creationflags)
+        ], **options)
     except OSError:
         path.unlink(missing_ok=True)
         raise
@@ -129,6 +140,9 @@ def run_progress_window(status_file: Path, parent_pid: int) -> None:  # pragma: 
             close_button.configure(state="normal")
             status_file.unlink(missing_ok=True)
             root.lift()
+            delay = progress_exit_delay_ms(status)
+            if delay is not None:
+                root.after(delay, close_window)
             return
         root.after(400, poll)
 

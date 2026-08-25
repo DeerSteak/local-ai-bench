@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { SECTIONS, SECTION_LABELS, FILE_COLORS, ACCURACY_TESTS, ACCURACY_TEST_LABELS } from "../constants";
 import {
   modelLabel, imageModelLabel, embedModelLabel,
@@ -43,18 +44,21 @@ export default function Controls({
   baselineId: string | null, setBaselineId: (id: string | null) => void,
   savingSpecCard: boolean, onSaveSpecCard: () => void,
 }) {
+  const logoInputRef = useRef<HTMLInputElement>(null);
   const cleanSuffix = sanitizeForFilename(filenameSuffix);
   const isConcurrency = section === "concurrency_tool" || section === "concurrency_chat";
   const isLlamaBench = section === "llamabench";
   // Line-only, no tier split — same treatment as the concurrency sections.
   const isLlamaBenchConc = section === "llamabenchconc";
+  const isSustained = section === "sustained";
   return (
     <div className="card" style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
       <div>
         <div className={styles.controlLabel}>Section</div>
         <div style={{ display: "flex", gap: 6 }}>
           {SECTIONS.map(s => (
-            <button key={s} className={`pill ${section === s ? "active" : "inactive"}`} onClick={() => setSection(s)}>
+            <button type="button" key={s} aria-pressed={section === s}
+              className={`pill ${section === s ? "active" : "inactive"}`} onClick={() => setSection(s)}>
               {lookup(SECTION_LABELS, s)}
             </button>
           ))}
@@ -66,7 +70,8 @@ export default function Controls({
           <div className={styles.controlLabel}>Test</div>
           <div style={{ display: "flex", gap: 6 }}>
             {ACCURACY_TESTS.map(t => (
-              <button key={t} className={`pill ${accuracyTest === t ? "active" : "inactive"}`} onClick={() => setAccuracyTest(t)}>
+              <button type="button" key={t} aria-pressed={accuracyTest === t}
+                className={`pill ${accuracyTest === t ? "active" : "inactive"}`} onClick={() => setAccuracyTest(t)}>
                 {lookup(ACCURACY_TEST_LABELS, t)}
               </button>
             ))}
@@ -74,12 +79,13 @@ export default function Controls({
         </div>
       )}
 
-      {section !== "accuracy" && !isConcurrency && !isLlamaBench && !isLlamaBenchConc && (
+      {section !== "accuracy" && !isConcurrency && !isLlamaBench && !isLlamaBenchConc && !isSustained && (
         <div className={styles.dividerGroup}>
           <div className={styles.controlLabel}>Chart Style</div>
           <div style={{ display: "flex", gap: 6 }}>
             {[["bar", "Bar"], ["line", "Line"]].map(([value, label]) => (
-              <button key={value} className={`pill ${chartStyle === value ? "active" : "inactive"}`} onClick={() => setChartStyle(value)}>
+              <button type="button" key={value} aria-pressed={chartStyle === value}
+                className={`pill ${chartStyle === value ? "active" : "inactive"}`} onClick={() => setChartStyle(value)}>
                 {label}
               </button>
             ))}
@@ -87,12 +93,13 @@ export default function Controls({
         </div>
       )}
 
-      {section !== "accuracy" && !isConcurrency && !isLlamaBenchConc && (
+      {section !== "accuracy" && !isConcurrency && !isLlamaBenchConc && !isSustained && (
         <div className={styles.dividerGroup}>
           <div className={styles.controlLabel}>Group By</div>
           <div style={{ display: "flex", gap: 6 }}>
             {[["model", "Model"], ["system", "System"]].map(([value, label]) => (
-              <button key={value} className={`pill ${groupBy === value ? "active" : "inactive"}`} onClick={() => setGroupBy(value)}>
+              <button type="button" key={value} aria-pressed={groupBy === value}
+                className={`pill ${groupBy === value ? "active" : "inactive"}`} onClick={() => setGroupBy(value)}>
                 {label}
               </button>
             ))}
@@ -105,7 +112,8 @@ export default function Controls({
           <div className={styles.controlLabel}>Model Sizes</div>
           <div style={{ display: "flex", gap: 6 }}>
             {[["tiers", "Split"], ["combined", "Combined"]].map(([value, label]) => (
-              <button key={value} className={`pill ${sizeSplit === value ? "active" : "inactive"}`} onClick={() => setSizeSplit(value)}>
+              <button type="button" key={value} aria-pressed={sizeSplit === value}
+                className={`pill ${sizeSplit === value ? "active" : "inactive"}`} onClick={() => setSizeSplit(value)}>
                 {label}
               </button>
             ))}
@@ -117,10 +125,11 @@ export default function Controls({
         <div className={styles.rowBreak} />
       )}
 
-      {files.length > 1 && (
+      {files.length > 1 && !isSustained && (
         <div className={styles.freshRowGroup}>
           <div className={styles.controlLabel}>Compare As</div>
           <select
+            aria-label="Comparison baseline"
             className={styles.baselineSelect}
             value={baselineId ?? ""}
             onChange={event => setBaselineId(event.target.value || null)}
@@ -157,7 +166,7 @@ export default function Controls({
 
       <div className={styles.rowBreak} />
 
-      {(section === "llm" || section === "llm_conversation" || section === "accuracy" || isConcurrency || isLlamaBench || isLlamaBenchConc) && allModels.length > 0 && (
+      {(section === "llm" || section === "llm_conversation" || section === "accuracy" || isConcurrency || isLlamaBench || isLlamaBenchConc || isSustained) && allModels.length > 0 && (
         <div className={styles.freshRowGroup}>
           <div className={styles.controlLabel}>Models</div>
           <div className={styles.filterGroup}>
@@ -243,6 +252,7 @@ export default function Controls({
           <div className={styles.controlLabel}>Chart Width</div>
           <div className={styles.widthRow}>
             <input
+              aria-label="Chart width in pixels"
               type="number"
               defaultValue={chartWidth}
               key={chartWidth}
@@ -258,25 +268,33 @@ export default function Controls({
 
         <div>
           <div className={styles.controlLabel}>Logo</div>
-          <div
-            onDrop={onLogoDrop}
-            onDragOver={onLogoDragOver}
-            onDragLeave={onLogoDragLeave}
-            className={`${styles.logoDropZone} ${logoDragOver ? styles.over : ""}`}
-          >
-            {logoSrc
-              ? <div className={styles.logoPreview}>
-                  <img src={logoSrc} className={styles.logoThumb} />
-                  <button onClick={() => setLogoSrc(null)} className={styles.logoClearBtn}>✕</button>
+          <input ref={logoInputRef} type="file" accept="image/*" hidden onChange={event => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => setLogoSrc(String(reader.result));
+            reader.readAsDataURL(file);
+          }} />
+          {logoSrc
+            ? <div onDrop={onLogoDrop} onDragOver={onLogoDragOver} onDragLeave={onLogoDragLeave}
+                className={`${styles.logoDropZone} ${logoDragOver ? styles.over : ""}`}>
+                <div className={styles.logoPreview}>
+                  <img src={logoSrc} alt="Export logo" className={styles.logoThumb} />
+                  <button type="button" aria-label="Remove export logo"
+                    onClick={() => setLogoSrc(null)} className={styles.logoClearBtn}>✕</button>
                 </div>
-              : <span className={styles.logoPlaceholder}>↓ logo</span>
-            }
-          </div>
+              </div>
+            : <button type="button" onClick={() => logoInputRef.current?.click()}
+                onDrop={onLogoDrop} onDragOver={onLogoDragOver} onDragLeave={onLogoDragLeave}
+                className={`${styles.logoDropZone} ${logoDragOver ? styles.over : ""}`}>
+                <span className={styles.logoPlaceholder}>↓ logo</span>
+              </button>}
         </div>
 
         <div>
           <div className={styles.controlLabel}>Filename Suffix</div>
           <input
+            aria-label="Filename suffix"
             type="text"
             value={filenameSuffix}
             onChange={e => setFilenameSuffix(e.target.value)}

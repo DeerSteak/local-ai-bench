@@ -1,5 +1,7 @@
 import { LLM_DISPLAY_ORDER, CATEGORY_COLORS, FILE_COLORS } from "../constants";
 import { modelLabel, entriesOf } from "./shared";
+import { memoryFields } from "./memory";
+import { powerFields } from "./power";
 import type { BarConfig, ChartRow, ResultsFile } from "../types";
 
 // Return all model keys present in a given accuracy test (mcq/math/code)
@@ -11,6 +13,19 @@ export function getAllAccuracyModels(files: ResultsFile[], testKey: string): str
   const known   = LLM_DISPLAY_ORDER.filter(m => s.has(m));
   const unknown = [...s].filter(m => !LLM_DISPLAY_ORDER.includes(m));
   return [...known, ...unknown];
+}
+
+export function getTemplateWarning(file: ResultsFile, model: string): string {
+  const checks = file.data.preflight?.models?.[model]?.checks;
+  if (!Array.isArray(checks)) return "";
+  const warning = checks.find(check =>
+    check?.name === "chat_template" && check?.severity === "warning"
+  );
+  return warning?.detail ? String(warning.detail) : "";
+}
+
+export function modelHasTemplateWarning(files: ResultsFile[], model: string): boolean {
+  return files.some(file => getTemplateWarning(file, model) !== "");
 }
 
 // Accuracy overall-score bar chart: rows = files/systems, cols = models,
@@ -38,7 +53,7 @@ export function buildAccuracyGroupedBarConfigs(files: ResultsFile[], testKey: st
   const allModels = getAllAccuracyModels(files, testKey).filter(m => enabledModels.has(m));
   return allModels.map((m, i) => ({
     dataKey: m,
-    name: modelLabel(m),
+    name: `${modelLabel(m)}${modelHasTemplateWarning(files, m) ? " ⚠ template" : ""}`,
     fill: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
   }));
 }
@@ -145,6 +160,9 @@ export function flattenAccuracyData(files: ResultsFile[], testKey: string): Char
         budget_nudged_count: s.budget_nudged_count || 0,
         budget_exceeded_count: s.budget_exceeded_count || 0,
         crashed: s.crashed || false,
+        preflight_warning: getTemplateWarning(f, model),
+        ...memoryFields(s),
+        ...powerFields(s),
       };
     })
   );

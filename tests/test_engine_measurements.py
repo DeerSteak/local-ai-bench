@@ -73,6 +73,21 @@ def test_aggregate_adds_median_and_cv_with_two_valid_samples():
     assert result["server_prompt_mean_sec"] == 0.15
 
 
+def test_aggregate_preserves_sub_millisecond_timing_precision():
+    measurement = replace(
+        valid_measurement(), client_ttft_sec=0.0284567, client_wall_sec=0.1284567,
+        decode_sec=0.1, generated_tokens=1, tokens_per_sec=10,
+        server_prompt_sec=0.0234567, model_load_sec=0.0004567,
+    )
+    result = aggregate_generation_measurements([measurement], 1)
+    sample = result["valid_samples"][0]
+    assert sample["client_ttft_sec"] == 0.028457
+    assert sample["client_wall_sec"] == 0.128457
+    assert sample["server_prompt_sec"] == 0.023457
+    assert sample["model_load_sec"] == 0.000457
+    assert result["client_ttft_mean_sec"] == 0.028457
+
+
 # ── prefill throughput ──
 
 def test_prefill_tps_divides_prompt_tokens_by_the_server_reported_prompt_time():
@@ -131,3 +146,20 @@ def test_aggregate_averages_only_the_runs_that_reported_prompt_timing():
     assert aggregate["prefill_tps_runs"] == [4096.0]
     assert aggregate["prefill_tps_mean"] == 4096.0
     assert aggregate["prefill_tps_stdev"] == 0
+
+
+def test_aggregate_records_cpu_offload_only_when_used():
+    assert "cpu_offload_gb" not in aggregate_generation_measurements([valid_measurement()], 1)
+    measurement = replace(valid_measurement(), cpu_offload_gb=8)
+    assert aggregate_generation_measurements([measurement], 1)["cpu_offload_gb"] == 8
+
+
+def test_aggregate_records_llamacpp_model_placement():
+    measurement = replace(
+        valid_measurement(), gpu_layers=35, total_layers=41, cpu_model_buffer_gb=14.042,
+    )
+    assert aggregate_generation_measurements([measurement], 1)["model_placement"] == {
+        "gpu_layers": 35,
+        "total_layers": 41,
+        "cpu_model_buffer_gb": 14.042,
+    }

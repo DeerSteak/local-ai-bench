@@ -7,6 +7,8 @@ from typing import cast
 import pytest
 
 from scripts.runtime import config
+from scripts.results.accuracy_event_stage import AccuracyEventStage
+from scripts.results.run_plan import RunPlan
 from scripts.runtime.engines.base import ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine
 from scripts.workloads.mcq_benchmark import MCQBenchmark
 from scripts.workloads.tool_benchmark import ToolBenchmark
@@ -118,7 +120,7 @@ def _question(qid: str, answer: str) -> dict:
     }
 
 
-def _run(tmp_path, questions, behaviors):
+def _run(tmp_path, questions, behaviors, telemetry=None):
     data_path = tmp_path / "bank.json"
     data_path.write_text(json.dumps(questions))
     engine = FakeEngine(behaviors)
@@ -130,6 +132,7 @@ def _run(tmp_path, questions, behaviors):
         ask_fn=lambda tag, q: MCQBenchmark._ask(engine, tag, q),
         rescore_partial_fn=lambda q, text: MCQBenchmark.parse_answer(text, q["choices"].keys()),
         score_fn=MCQBenchmark.score,
+        telemetry=telemetry,
     )
     return results, engine
 
@@ -155,6 +158,26 @@ def test_normal_run_scores_correctly(tmp_path):
     assert engine.runtime_backend("cuda", cpu_only=True) == "cpu"
 
 
+def test_accuracy_telemetry_retains_question_subwindows(tmp_path):
+    class Telemetry:
+        def __init__(self): self.calls = []
+        def begin_model_load(self): self.calls.append("load")
+        def begin_measured(self, name): self.calls.append(name)
+        def finish_case(self):
+            self.calls.append("finish")
+            return {"windows": [{"name": name} for name in self.calls if name.startswith("measured:")]}
+
+    telemetry = Telemetry()
+    results, _ = _run(
+        tmp_path, [_question("q1", "B"), _question("q2", "A")],
+        {"q1": ("ok", "B"), "q2": ("ok", "A")}, telemetry,
+    )
+    assert telemetry.calls == ["load", "measured:q1", "measured:q2", "finish"]
+    assert [window["name"] for window in results["fake"]["memory"]["windows"]] == [
+        "measured:q1", "measured:q2",
+    ]
+
+
 def test_timeout_with_partial_text_gets_rescored(tmp_path):
     questions = [_question("q1", "B")]
     # Rescored from the partial text rather than treated as blank, and still counted as a timeout.
@@ -165,6 +188,141 @@ def test_timeout_with_partial_text_gets_rescored(tmp_path):
     assert results["fake"]["answered"] == 1       # rescored, not blank
     assert results["fake"]["timed_out_count"] == 1
     assert results["fake"]["timed_out_ids"] == ["q1"]
+
+
+def test_journal_path_commits_each_question_and_projects_timeout_and_telemetry(tmp_path):
+    questions = [_question("q1", "B"), _question("q2", "A")]
+    data_path = tmp_path / "bank.json"
+    data_path.write_text(json.dumps(questions))
+    model = {"tag": "fake:tag", "label": "Fake Model", "short": "fake"}
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="fake", tests=["mcq"],
+        stage_order=["mcq"], models={
+            "llm": [{"tag": model["tag"], "short": model["short"]}],
+            "concurrency": [], "embeddings": [], "images": [],
+        }, effective_config={
+            "runs": 3, "warmup_runs": 1, "cpu_only": False, "force_all": False,
+        },
+    )
+    committed = []
+    journal = AccuracyEventStage(
+        tmp_path / "events.sqlite3", plan, "mcq", questions,
+        Shared.file_hash(data_path), MCQBenchmark.score,
+        lambda results, answers: committed.append((results, answers)),
+    )
+
+    class Telemetry:
+        last_power = {"status": "unavailable"}
+
+        def begin_model_load(self): pass
+        def begin_measured(self, _name): pass
+        def finish_case(self): return {"summary": {"process_rss_gb": {"peak_gb": 4.0}}}
+
+    engine = FakeEngine({
+        "q1": ("ok", "The answer is B"),
+        "q2": ("timeout", "The answer is A"),
+    })
+    try:
+        results = Shared.run_accuracy_benchmark(
+            section_label="MCQ", skip_label="MCQ", question_noun="questions",
+            data_path=data_path, crash_cache_path=tmp_path / "crash.json",
+            models=[model], questions=questions, warmup_runs=1, engine=engine,
+            ask_fn=lambda tag, q: MCQBenchmark._ask(engine, tag, q),
+            rescore_partial_fn=lambda q, text: MCQBenchmark.parse_answer(
+                text, q["choices"].keys(),
+            ),
+            score_fn=MCQBenchmark.score, telemetry=Telemetry(), journal=journal,
+        )
+        answers = journal.export_answers()
+    finally:
+        journal.close()
+
+    assert results["fake"]["correct"] == 2
+    assert results["fake"]["timed_out_ids"] == ["q2"]
+    assert results["fake"]["memory"]["summary"]["process_rss_gb"]["peak_gb"] == 4.0
+    assert results["fake"]["power"] == {"status": "unavailable"}
+    assert [row["raw_response"] for row in answers["fake"]["answers"]] == [
+        "The answer is B", "The answer is A",
+    ]
+    assert len(committed) >= 4
+
+
+@pytest.mark.parametrize("interrupt_at", ["q1", "q2", "q3"])
+def test_journal_resume_reruns_only_the_interrupted_and_later_questions(
+        monkeypatch, tmp_path, interrupt_at):
+    questions = [_question("q1", "B"), _question("q2", "A"), _question("q3", "C")]
+    data_path = tmp_path / "bank.json"
+    data_path.write_text(json.dumps(questions))
+    model = {"tag": "fake:tag", "label": "Fake Model", "short": "fake"}
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="fake", tests=["mcq"],
+        stage_order=["mcq"], models={
+            "llm": [{"tag": model["tag"], "short": model["short"]}],
+            "concurrency": [], "embeddings": [], "images": [],
+        }, effective_config={
+            "runs": 3, "warmup_runs": 1, "cpu_only": False, "force_all": False,
+        },
+    )
+    identity = {
+        "plan_id": plan.plan_id, "artifacts": {}, "runtimes": {}, "methodology": {},
+    }
+    path = tmp_path / "events.sqlite3"
+    first = AccuracyEventStage(
+        path, plan, "mcq", questions, Shared.file_hash(data_path), MCQBenchmark.score,
+        lambda _results, _answers: None, resume_identity=identity,
+    )
+    first_engine = FakeEngine({
+        "q1": (("timeout" if interrupt_at == "q2" else "ok"), "B"),
+        "q2": ("ok", "A"), "q3": ("ok", "C"),
+    })
+    original_chat = first_engine.chat
+
+    def interrupting_chat(tag, messages, **kwargs):
+        if f"[{interrupt_at}]" in messages[-1]["content"]:
+            raise KeyboardInterrupt
+        return original_chat(tag, messages, **kwargs)
+
+    monkeypatch.setattr(first_engine, "chat", interrupting_chat)
+    with pytest.raises(KeyboardInterrupt):
+        Shared.run_accuracy_benchmark(
+            section_label="MCQ", skip_label="MCQ", question_noun="questions",
+            data_path=data_path, crash_cache_path=tmp_path / "crash.json",
+            models=[model], questions=questions, warmup_runs=1, engine=first_engine,
+            ask_fn=lambda tag, q: MCQBenchmark._ask(first_engine, tag, q),
+            rescore_partial_fn=lambda q, text: MCQBenchmark.parse_answer(
+                text, q["choices"].keys(),
+            ), score_fn=MCQBenchmark.score, journal=first,
+        )
+    first.close()
+
+    resumed = AccuracyEventStage(
+        path, plan, "mcq", questions, Shared.file_hash(data_path), MCQBenchmark.score,
+        lambda _results, _answers: None, resume=True, resume_identity=identity,
+    )
+    second_engine = FakeEngine({
+        "q1": ("ok", "B"), "q2": ("ok", "A"), "q3": ("ok", "C"),
+    })
+    try:
+        result = Shared.run_accuracy_benchmark(
+            section_label="MCQ", skip_label="MCQ", question_noun="questions",
+            data_path=data_path, crash_cache_path=tmp_path / "crash.json",
+            models=[model], questions=questions, warmup_runs=1, engine=second_engine,
+            ask_fn=lambda tag, q: MCQBenchmark._ask(second_engine, tag, q),
+            rescore_partial_fn=lambda q, text: MCQBenchmark.parse_answer(
+                text, q["choices"].keys(),
+            ), score_fn=MCQBenchmark.score, journal=resumed,
+        )
+        answers = resumed.export_answers()
+    finally:
+        resumed.close()
+
+    expected_pending = questions[[q["id"] for q in questions].index(interrupt_at):]
+    assert len(second_engine.chat_contexts) == len(expected_pending)
+    assert result["fake"]["correct"] == 3
+    assert "partial" not in result["fake"]
+    if interrupt_at == "q2":
+        assert result["fake"]["timed_out_ids"] == ["q1"]
+        assert answers["fake"]["answers"][0]["raw_response"] == "B"
 
 
 def test_successful_and_exceptional_retries_record_independent_diagnostics(tmp_path):

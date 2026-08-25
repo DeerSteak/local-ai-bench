@@ -7,6 +7,18 @@ import pytest
 from scripts.runtime.engines import openai_api
 
 
+def test_streamed_usage_preserves_prior_counts_until_the_usage_chunk_arrives():
+    assert openai_api.streamed_usage({"choices": []}, 3, 7) == (3, 7)
+    assert openai_api.streamed_usage(
+        {"usage": {"completion_tokens": 5, "prompt_tokens": 11}}, 3, 7,
+    ) == (5, 11)
+
+
+def test_stream_timing_handles_missing_first_token_and_zero_decode_window():
+    assert openai_api.stream_timing(2.5, None, 4) == (2.5, 0, 0, 0)
+    assert openai_api.stream_timing(3.0, 1.0, 4) == (1.0, 2.0, 2.0, 2.0)
+
+
 def _http_error(code: int, body: bytes) -> urllib.error.HTTPError:
     return urllib.error.HTTPError(
         "https://server.test", code, "failed", Message(), io.BytesIO(body),

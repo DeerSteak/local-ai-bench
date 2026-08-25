@@ -29,6 +29,8 @@ EMBED_CATALOG = [
 IMAGE_CATALOG = [
     {"short": "image-one", "label": "Image One", "checkpoint": "one.safetensors"},
     {"short": "image-two", "label": "Image Two", "checkpoint": "two.safetensors"},
+    {"short": "image-three", "label": "Image Three", "checkpoint": "three.safetensors",
+     "checkpoint_folder": "diffusion_models"},
 ]
 
 
@@ -108,6 +110,45 @@ def test_installed_images_use_explicit_comfyui_path(tmp_path):
     assert installed[0]["size"] == 5
 
 
+def test_installed_images_resolve_catalog_checkpoint_folder(tmp_path):
+    diffusion_models = tmp_path / "diffusion_models"
+    diffusion_models.mkdir(parents=True)
+    checkpoint = diffusion_models / "three.safetensors"
+    checkpoint.write_bytes(b"z-image")
+
+    installed = installed_image_models(tmp_path, IMAGE_CATALOG)
+
+    assert [model["short"] for model in installed] == ["image-three"]
+    assert installed[0]["path"] == checkpoint
+    assert installed[0]["size"] == 7
+
+
+def test_installed_image_requires_every_support_asset(tmp_path):
+    model = {
+        "short": "pipeline", "label": "Pipeline", "checkpoint": "model.safetensors",
+        "checkpoint_folder": "diffusion_models",
+        "support_assets": [
+            {"folder": "text_encoders", "name": "encoder.safetensors"},
+            {"folder": "vae", "name": "vae.safetensors"},
+        ],
+    }
+    for folder, name in (
+        ("diffusion_models", "model.safetensors"),
+        ("text_encoders", "encoder.safetensors"),
+    ):
+        path = tmp_path / folder / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"asset")
+
+    assert installed_image_models(tmp_path, [model]) == []
+    vae = tmp_path / "vae" / "vae.safetensors"
+    vae.parent.mkdir(parents=True)
+    vae.write_bytes(b"asset")
+    assert [entry["short"] for entry in installed_image_models(tmp_path, [model])] == [
+        "pipeline",
+    ]
+
+
 def test_installed_images_empty_when_checkpoint_directory_missing(tmp_path):
     assert installed_image_models(tmp_path, IMAGE_CATALOG) == []
 
@@ -182,6 +223,28 @@ def test_find_non_catalog_model_dirs_handles_missing_root(tmp_path):
     assert find_non_catalog_model_dirs(
         tmp_path / "missing", llm_catalog=LLM_CATALOG, embed_catalog=EMBED_CATALOG,
     ) == []
+
+
+def test_catalog_variant_directories_are_never_cleanup_candidates(tmp_path):
+    for name in ("gemma3_1b-it-q6_K", "gemma3_1b-it-q8_0"):
+        directory = tmp_path / name
+        directory.mkdir()
+        (directory / "model.gguf").write_bytes(b"model")
+
+    assert find_non_catalog_model_dirs(tmp_path) == []
+
+
+def test_catalog_variant_directories_cannot_be_deleted_as_cleanup(tmp_path):
+    name = "gemma3_1b-it-q8_0"
+    directory = tmp_path / name
+    directory.mkdir()
+    (directory / "model.gguf").write_bytes(b"model")
+
+    removed, failures = delete_non_catalog_model_dirs(tmp_path, [name])
+
+    assert removed == []
+    assert failures == {name: "not an eligible non-catalog directory"}
+    assert directory.is_dir()
 
 
 def test_delete_non_catalog_model_dirs_removes_only_explicit_safe_names(tmp_path):

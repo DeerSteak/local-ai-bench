@@ -9,6 +9,9 @@
 - [What the charts mean](#what-the-charts-mean)
 - [Stats table](#stats-table)
 - [Multi-file comparison](#multi-file-comparison)
+- [Repeated-trial artifacts](#repeated-trial-artifacts)
+- [Recommendation artifacts](#recommendation-artifacts)
+- [Decision workspace](#decision-workspace)
 - [Exporting](#exporting)
 - [Development](#development)
 
@@ -28,13 +31,17 @@ launch_dashboard.bat --result results\first.json --result results\second.json
 
 Desktop users can instead double-click **Launch Local AI Bench Dashboard** with the platform suffix `.command` on macOS, `.desktop` on Linux, or `.bat` on Windows. The launcher keeps the terminal open while the local dashboard server is running; closing or interrupting that server ends the dashboard session.
 
-Requires Node.js/npm. On first run, installs npm dependencies. Every run rebuilds the app, then starts a local server on port 3000 and opens the browser automatically.
+Requires Node.js/npm and the project `bench-env`. On first run, installs npm dependencies. Every run rebuilds the app, then starts the authenticated loopback-only workspace server on port 3000 and opens the browser automatically.
 
 ## Loading results
 
-Drag one or more `results_*.json` files onto the drop zone in the top-right corner, click to open a file picker, or pass one or more repeatable `--result` arguments to the launcher. The benchmark GUI's **Result History** tab uses the same launcher when **Open in Dashboard** is selected. Up to six files can be loaded at once. Launcher-selected files are copied temporarily into the local dashboard build; a normal server stop removes them and the next build clears anything left by a forcibly closed terminal. The browser is never given general filesystem access. Dropping a single file when fewer than six are loaded adds it to the current set; dropping multiple at once replaces all. Sample files for testing are in `samples/`. Files must contain strict JSON; an invalid file displays an import error below the drop zone rather than failing silently.
+Drag one or more `results_*.json` files onto the drop zone in the top-right corner, click to open a file picker, or pass one or more repeatable `--result` arguments to the launcher. The drop zone, workspace imports, logo picker, filters, and export actions participate in normal keyboard traversal, use native keyboard activation, and show a high-contrast focus ring. The benchmark GUI's **Result History** tab uses the same launcher when **Open in Dashboard** is selected. Up to six files can be loaded at once. Launcher-selected files are copied temporarily into the local dashboard build; a normal server stop removes them and the next build clears anything left by a forcibly closed terminal. The browser is never given general filesystem access. Dropping a single file when fewer than six are loaded adds it to the current set; dropping multiple at once replaces all. Sample files for testing are in `samples/`. Files must contain strict JSON; an invalid file displays an import error below the drop zone rather than failing silently.
 
 New results record whether the run completed, remained in progress, was interrupted, or failed. Incomplete files show a warning beside their machine metadata while all valid completed measurements remain available; older files without run metadata load without a warning. Multi-file comparisons also warn when one result used llama.cpp layer splitting and another used tensor parallelism; older files are treated as the historical layer default.
+
+A repeated-trial artifact produced by `python -m scripts.results.trial_set_cli` can be loaded by itself through the same drop zone. It switches the dashboard to the trial-set audit view; trial artifacts cannot be mixed with ordinary result files in one load.
+
+A recommendation artifact produced by `python -m scripts.results.recommendation_cli` can likewise be loaded by itself. The static dashboard renders the authoritative Python verdict and its constraints, evidence paths, and five visually distinct candidate groups: recommended, tied, other eligible, eliminated, and unevaluated. It does not evaluate constraints or calculate a browser-side score.
 
 ## Sections
 
@@ -42,6 +49,7 @@ New results record whether the run completed, remained in progress, was interrup
 |---|---|
 | LLM | Two charts per model — Tokens/sec and TTFT — across context lengths (512 / 2K / 8K / 32K / 64K), single-shot cold-prefill test |
 | LLM Conversation | Same two charts per model, but from the multi-turn conversation test, across whichever of 0 / 2K / 4K / 8K / 16K / 32K / 48K / 64K / 80K / 96K its plan reached (capped by the model's real context ceiling) |
+| Sustained Load | Opt-in — one aligned timeline per system/model with throughput on the left axis and available temperature and power overlays on separate right axes, plus retention, degradation class, suspected cause, onset, and ambient summary |
 | Concurrency (Tool) | Three line charts per model — Per-Request Tokens/sec, Aggregate Tokens/sec, and TTFT — at 1 / 2 / 4 / 6 / 8 / 12 / 16 simultaneous short-context requests |
 | Concurrency (Chat) | The same three charts at 1 / 2 / 4 / 8 / 16 / 24 / 32 simultaneous long-context requests. See [Concurrency](workloads.md#concurrency) for how the two workloads differ |
 | Accuracy | A **Test** sub-picker for MCQ / Math / Reasoning / Code / Tool Use (mirrors `ACCURACY_TESTS` in `dashboard/src/constants.ts`). Per test: one Overall accuracy-per-model chart, one Accuracy-by-Category breakdown chart per model, and — when provided by the bank — an Accuracy-by-Difficulty chart. An Accuracy Incidents chart appears for timeouts, likely loops, or exhausted token budgets. See [Accuracy](workloads.md#accuracy) |
@@ -50,13 +58,15 @@ New results record whether the run completed, remained in progress, was interrup
 | llama-bench | Opt-in — two line charts per model: Decode Throughput across prefilled prompt depths, with one line per tg size and system; and Prompt Processing Throughput across pp sizes, with one line per system. See [Workloads](workloads.md#llama-bench) |
 | llama-bench Concurrency | Opt-in — aggregate decode throughput from `llama-batched-bench`, charted across parallel sequence counts with one chart per model and tg size. See [Workloads](workloads.md#llama-bench-concurrency) |
 
-The **Models** filter and **Machine** labels are shared between the LLM, LLM Conversation, Concurrency, Accuracy, llama-bench, and llama-bench Concurrency sections, so switching between them keeps the same models/files selected.
+The **Models** filter and **Machine** labels are shared between the LLM, LLM Conversation, Sustained Load, Concurrency, Accuracy, llama-bench, and llama-bench Concurrency sections, so switching between them keeps the same models/files selected. Sortable raw-table headers are keyboard-focusable buttons; Enter or Space changes their sort, and assistive technology receives the active ascending or descending state.
 
 ## Chart Style and Group By
 
 **Chart Style** (Bar / Line) applies to the LLM, LLM Conversation, Embeddings, and Images sections — it picks the chart type. Both native llama.cpp sections are line-only because their horizontal axes are ordered numeric sweeps. **Group By** (Model / System) applies to LLM, LLM Conversation, Embeddings, Images, and llama-bench, and flips which entity becomes the chart group; llama-bench Concurrency stays grouped by model. In by-model LLM bar charts, each system remains one chart category with native group spacing, while its context bars follow the numeric checkpoint order from `CTX_ORDER` rather than lexicographic label order. Group By → System omits models for which every loaded file contains only a `no_llm_data` placeholder, while retaining a model attempted by at least one system. It also reveals a **Model Sizes** toggle (Split by tier vs. Combined) for the LLM/LLM Conversation and llama-bench sections, since a single combined chart with every model tier at once is unreadable.
 
 Both pills are hidden on **Accuracy**, HTTP **Concurrency**, and **llama-bench Concurrency**, while only Chart Style is hidden on **llama-bench**. Accuracy charts are always bar charts grouped by model. The concurrency and native llama.cpp charts are always line charts, with concurrency level or pp depth on the horizontal axis. llama-bench's pp-size ordering is derived from each entry's own `n_prompt` or `n_depth` rather than a fixed list like `CTX_ORDER`, since the sweep is a `config.py` constant that can change across versions; pp sizes are binary-K depths and render as plain "2K"/"32K" labels rather than raw token counts.
+
+Sustained Load is also line-only and hides Group By because each card is already one system/model soak. Baseline-percent mode is unavailable for this section: transforming timestamps and sensor values into percentages would destroy the physical alignment and units. Missing temperature or power simply omits that line; throughput and retention remain visible.
 
 A checkpoint past a slow-model cutoff (see [Concurrency](workloads.md#concurrency) and the LLM Conversation early-exit above) renders as a "Skipped (X Too Slow)" label instead of a bar, driven entirely by each checkpoint's position in `CTX_ORDER` — this is why the dashboard already handles the cutoff firing at any depth, not just the first one, with no special-casing per depth. Adding a new checkpoint to the suite's own checkpoint list only requires adding it to `CTX_ORDER` too; the rest follows automatically.
 
@@ -66,7 +76,7 @@ The same position lookup drives the `crashed`, `timed_out`, and `slow_tps` casca
 
 **LLM → Tokens/sec.** Decode throughput (tokens generated per second) for the single-shot test, at each context length. Higher is better. This is generation speed *after* the prompt has already been processed — it answers "once the model starts responding, how fast does text come out?"
 
-**LLM → TTFT.** Time to process the single-shot prompt before the first token comes back — a genuine cold prefill, since every run sends fresh, never-before-seen prompt content. Lower is better. This answers "if I paste a large document and hit send, how long do I wait before anything happens?" TTFT rises sharply with context length here, since the model has to run every one of those tokens through the network with nothing cached.
+**LLM → TTFT.** Time to process the single-shot prompt before the first token comes back — a genuine cold prefill, since request-level cache bypass forces the stable prompt to be fully processed on every run. Lower is better. This answers "if I paste a large document and hit send, how long do I wait before anything happens?" TTFT rises sharply with context length here, since the model has to run every one of those tokens through the network with nothing cached.
 
 **LLM Conversation → Tokens/sec.** The same decode-throughput metric, but measured mid-conversation instead of after a single cold prompt. Generally close to the single-shot number for the same model — decode speed doesn't depend much on how the context got filled.
 
@@ -94,7 +104,7 @@ A model's sweep can stop before reaching the highest configured level — a note
 
 Each loaded file's header row carries a `v<version>` badge showing the suite version that produced it, read from the results file's own top-level `version` field. Files written before that field existed simply omit the badge. The dashboard's own version — parsed from `config.py`'s `VERSION` at build time, so it is never a separately maintained copy — appears once beside the "Results Explorer" eyebrow. Comparing files whose badges disagree is supported, but a schema difference between versions is worth keeping in mind when a section renders unevenly.
 
-The backend badge identifies the inference backend actually exposed by the selected engine build. This can differ from the machine's physical GPU family—for example, the standard Windows llama.cpp package reports Vulkan on AMD and Intel hardware, and on NVIDIA hardware without a driver new enough for any of the prebuilt CUDA builds. The raw results retain that physical classification separately as `profile.hardware_backend`.
+The backend badge identifies the inference backend actually exposed by the selected engine build. This can differ from the machine's physical GPU family—for example, the standard Windows llama.cpp package reports Vulkan on AMD hardware and on NVIDIA hardware without a driver new enough for any prebuilt CUDA build, while Intel Arc uses its SYCL package and reports XPU. The raw results retain the physical classification separately as `profile.hardware_backend`.
 
 **llama-bench → Decode Throughput.** `llama-bench`'s generation `avg_ts` after prefilling the KV cache to each configured pp depth, with one series per tg length. Higher is better. This isolates generation speed from prompt processing and shows how decode throughput changes as context grows.
 
@@ -112,11 +122,42 @@ Below the charts, every section also renders a sortable raw-numbers table (one r
 
 Performance sections with sample evidence also render a collapsible **Decision-grade sample review**. It lists every available sample, whether it contributed to the aggregate, and any exclusion reason such as `implausible_server_tps`; the filter isolates valid, excluded, or legacy evidence. Historical files that contain only means and run counts are labeled **legacy aggregate-only** rather than being presented as if their raw samples were recoverable. Native llama-bench internal repetitions appear when `ts_runs` or `samples_ts` is present. When schema-4 pause evidence exists, this review opens automatically and shows each affected system's pause count and total derived paused duration; an unfinished or malformed final interval is labeled unavailable rather than treated as zero time.
 
+Schema-5 memory results add a tightest-headroom indicator to each run card, host/process/accelerator peak and headroom columns to LLM raw tables, and a per-model peak process-RSS chart. Older files and telemetry-off schema-5 files show **Not recorded** rather than numeric zero. Process RSS and accelerator occupancy remain separate quantities; the dashboard does not merge them into a cross-platform memory score.
+
+Schema-5 power results add measured joules, workload efficiency, and explicit power scope to raw tables; tokens-per-joule charts to LLM views; and same-scope total energy plus idle baseline to each run card. Unavailable sources show their normalized reason, older files show **Not recorded**, and mixed processor-package/accelerator/CPU-package/whole-system scopes are never plotted on one axis or summed into one run total.
+
 ## Multi-file comparison
 
-Each file is assigned a colour (blue → orange → green → purple → red → teal). All charts use that colour to identify the host, making results from different machines directly comparable. Engine-backed chart identities render as three lines—hostname, backend, then the engine identifier and version such as `llamacpp 10362` for either an official package or a build from that official source release, `llamacpp 2026.08.11-a1b2c3d` for a non-release source build, or `vllm 0.10.2`—so results made before and after an engine update remain distinguishable without parenthetical labels; a llama.cpp run with weight repacking disabled inserts `-nr` after the engine name on workloads that consume the setting. Image charts omit runtime labels because ComfyUI runs independently. A current result whose runtime could not be identified is labeled `version unavailable`, while a historical file without the `engine_version` field is labeled `version not recorded`; the dashboard never invents a version for either case. When compared llama.cpp files disagree on weight-repacking mode, affected workload sections also show a methodology warning; Images, standard llama-bench, and vllm bench omit both `-nr` methodology cues because they do not consume the setting. Labels remain overridable per file in the header. The **Models** filter shows or hides individual models.
+Each file is assigned a colour (blue → orange → green → purple → red → teal). All charts use that colour to identify the host, making results from different machines directly comparable. Engine-backed chart identities render as three lines—hostname, backend, then the engine identifier and version such as `llamacpp 10362` for either an official package or a build from that official source release, `llamacpp 2026.08.11-a1b2c3d` for a non-release source build, or `vllm 0.10.2`—so results made before and after an engine update remain distinguishable without parenthetical labels; a llama.cpp run with weight repacking disabled inserts `-nr` after the engine name on workloads that consume the setting, and native-MTP results under either engine add `MTP on`. Image charts omit runtime labels because ComfyUI runs independently. A current result whose runtime could not be identified is labeled `version unavailable`, while a historical file without the `engine_version` field is labeled `version not recorded`; the dashboard never invents a version for either case. When compared llama.cpp files disagree on weight-repacking mode, affected workload sections also show a methodology warning; Images, standard llama-bench, and vllm bench omit both `-nr` methodology cues because they do not consume the setting. Labels remain overridable per file in the header. The **Models** filter shows or hides individual models.
 
 With two or more files loaded, **Compare As** can designate one file as the baseline. Charts then show each matching metric as a percentage of that result, with the baseline at 100%; cells absent or zero in the baseline remain absent rather than producing an invented ratio. Raw-number tables remain absolute so the underlying measurements are always available.
+
+## Repeated-trial artifacts
+
+The repeated-trial view shows each common metric's baseline and candidate mean, median, between-trial standard deviation, drift status, 95% change interval and method, practical threshold, pairing mode, trial counts, and verdict. Improved, regressed, unchanged, and inconclusive remain visually distinct. Missing intervals render as inconclusive rather than zero, and monotonic drift remains visible beside the affected distribution.
+
+## Recommendation artifacts
+
+Recommendation schema 1 is a derived artifact with `artifact_type: "recommendation"`. Load the clearly labeled synthetic [recommendation_example.json](../samples/recommendation_example.json) by itself to inspect a recommended, eliminated, and unevaluated candidate derived from [results_recommendation_synthetic.json](../samples/results_recommendation_synthetic.json). Empty outcome groups are hidden; eliminated entries show the failed hard constraint and collapsible evidence references, while unevaluated entries name missing evidence and never use failure styling. The artifact's verdict is always recommended, tied, or insufficient evidence. With ordinary results loaded, **Attach recommendation** validates the same authoritative artifact against the selected evidence and renders it in the decision workspace.
+
+Variant-comparison schema 1 is a derived artifact with `artifact_type: "variant_comparison"` and must also be loaded by itself. The [variant_comparison_example.json](../samples/variant_comparison_example.json) sample shows quality, throughput, peak-memory, and energy deltas against a named reference quantization. Quality deltas use percentage points, the other metrics use percent change, and unavailable measurements render as not recorded. `unchanged` and `inconclusive` quality verdicts receive explicit non-ranking treatment rather than being ordered by their point estimates. In ordinary result files, each selected quantization remains a separate model series and every catalog variant label includes its quantization; custom-model labels are unchanged. The derived artifact is the consolidated tradeoff view, while the ordinary charts and tables retain the underlying absolute measurements.
+
+## Decision workspace
+
+With ordinary result files loaded, **Selection JSON** writes one path-free `workspace_selection` artifact containing each result filename and exact SHA-256 identity, the selected baseline, active section, model filters, label overrides, acceptance policy, and authoritative recommendation. **Import selection** restores that state only after the exact recorded result files are loaded. This state is the portable contract between the dashboard view and Python exports; replacing or changing a selected result causes import or export to fail instead of silently producing an artifact from different evidence.
+
+The current command-line export boundary accepts the saved selection plus the original result files in any order. It resolves them by digest, uses the recorded baseline (or the first selected result when no baseline is set), and records the full selection identity in generated reports and deterministic multi-result bundles:
+
+```bash
+bench-env/bin/python -m scripts.results.workspace_export_cli workspace_selection.json \
+  --result results/first.json --result results/second.json \
+  --html results/decision.html --pdf results/decision.pdf \
+  --bundle results/decision.labworkspace
+```
+
+Paste or edit a versioned acceptance policy in place and choose **Apply decision inputs** to update its authoritative Python evaluation against the recorded baseline. A recommendation artifact can be attached beside the charts and raw samples; its precomputed Python verdict is validated against the selected evidence and is never recalculated into a browser-side score. Both inputs persist in exported selection state and restore through **Import selection**.
+
+The selection and workspace bundle contain no source directory paths. **HTML report**, **PDF report**, and **Bundle** send only the visible selection and its loaded result text to the per-launch loopback server, then download the generated artifact in the browser. The server binds to `127.0.0.1`, requires a random bearer token plus matching loopback Host and Origin, accepts only fixed evaluation/export endpoints and formats, caps request size, exposes no command or arbitrary output path, and stops with the launcher. The standalone dashboard remains fully local and uses the same build and chart utilities.
 
 ## Exporting
 

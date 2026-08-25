@@ -5,6 +5,14 @@ import type { ChartRow, LineConfig, ResultsFile } from "../types";
 // The one sanctioned `any` in the dashboard — see AGENTS.md's TypeScript section.
 // Reference `JsonRecord`/`JsonRecord[string]` instead of writing `any` directly.
 export type JsonRecord = Record<string, any>;
+export type NamedTextSource = { name: string, text: () => Promise<string> };
+export type ParsedNamedSource = {
+  name: string;
+  data: JsonRecord | null;
+  error: string | null;
+  sha256: string | null;
+  sourceText: string | null;
+};
 
 // Object.entries on an `any`-typed value can infer T as `unknown` rather than
 // a usable type (a TS overload-resolution quirk) — this pins the value type.
@@ -31,6 +39,25 @@ export function parseResultsJSON(text: string): { data: JsonRecord | null, error
     return {
       data: null,
       error: "Invalid JSON. Non-finite values such as Infinity are not supported.",
+    };
+  }
+}
+
+export async function sha256Text(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, "0")).join("");
+}
+
+export async function readNamedJSONSource(source: NamedTextSource): Promise<ParsedNamedSource> {
+  try {
+    const text = await source.text();
+    return {
+      name: source.name, ...parseResultsJSON(text), sha256: await sha256Text(text), sourceText: text,
+    };
+  } catch {
+    return {
+      name: source.name, data: null, error: "Could not read this file.",
+      sha256: null, sourceText: null,
     };
   }
 }
@@ -93,6 +120,18 @@ export function getNoRepackMethodologyWarning(files: ResultsFile[], section?: st
     : "";
 }
 
+export function getMemoryTelemetryMethodologyWarning(files: ResultsFile[]): string {
+  if (files.length < 2) return "";
+  const intervals = new Set(files.map(file => {
+    const config = file.data?.run?.effective_config;
+    return config?.memory_telemetry === true
+      ? config.memory_telemetry_interval_sec ?? "unknown" : 0.5;
+  }));
+  return intervals.size > 1
+    ? "Loaded files use incompatible memory sampling intervals."
+    : "";
+}
+
 // Cross-engine comparison compares different weight files, not just different
 // runtimes: llama.cpp measures Q4_K_M GGUFs, vLLM measures 4-bit AWQ/GPTQ/W4A16
 // safetensors of the same base model. Matching bit width is as close as they get.
@@ -134,8 +173,23 @@ export function engineLabel(engine: string | null | undefined): string {
   return labels[key] || String(engine || "");
 }
 
+export function engineRunLabel(file: ResultsFile, section?: string): string {
+  const displayEngine = engineLabel(file.engine);
+  const labels = [displayEngine];
+  if (file.engine === "llamacpp"
+      && !["llamabench", "vllmbench"].includes(section || "")
+      && file.data?.run?.effective_config?.llamacpp_no_repack === true) {
+    labels.push("-nr");
+  }
+  if (["llamacpp", "vllm"].includes(file.engine || "")
+      && file.data?.run?.effective_config?.mtp_enabled === true) {
+    labels.push("MTP on");
+  }
+  return labels.filter(Boolean).join(" ");
+}
+
 export function measuredCategoryAxisWidth(
-  rows: ChartRow[], key: string, measure: (text: string) => number, tickSpace = 11,
+  rows: ChartRow[], key: string, measure: (text: string) => number, tickSpace = 18,
 ): number {
   const lines = rows.flatMap(row => String(row[key] ?? "").split("\n"));
   return Math.ceil(Math.max(0, ...lines.map(measure))) + tickSpace;
@@ -145,11 +199,7 @@ export function measuredCategoryAxisWidth(
 export function applyEngineLabels<T extends ResultsFile>(files: T[], section?: string): T[] {
   const multiEngine = new Set(files.map(f => f.engine).filter(Boolean)).size > 1;
   return files.map(f => {
-    const noRepack = f.engine === "llamacpp"
-      && !["llamabench", "vllmbench"].includes(section || "")
-      && f.data?.run?.effective_config?.llamacpp_no_repack === true;
-    const displayEngine = engineLabel(f.engine);
-    const engine = noRepack ? `${displayEngine} -nr` : displayEngine;
+    const engine = engineRunLabel(f, section);
     const identity = (runtime: string) => {
   const runtimeLabel = [backendLabel(f.backend), runtime].filter(Boolean).join(" / ");
       return [f.hostname, runtimeLabel].filter(Boolean).join("\n");
@@ -320,6 +370,14 @@ export function deriveTtftUnit(values: number[]): { ttftUnit: string, ttftYLabel
 // skip-status placeholder (`_status_<key>`) to render instead.
 export function hasValueOrStatus(rows: ChartRow[], key: string): boolean {
   return rows.some(r => r[key] != null || r[`_status_${key}`] != null);
+}
+
+export function configsWithValues<T extends { dataKey: string }>(configs: T[], rows: ChartRow[]): T[] {
+  return configs.filter(config => rows.some(row => row[config.dataKey] != null));
+}
+
+export function statsSkippedColSpan(nonTelemetryColumns: number): number {
+  return nonTelemetryColumns + 7;
 }
 
 // Return the key from `keys` whose maximum value across all rows is highest

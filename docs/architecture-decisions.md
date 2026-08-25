@@ -16,6 +16,15 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 
 ## Active decisions
 
+### AD-020 — Keep the dashboard as the unified decision workspace
+
+- Status: accepted
+- Requirement: one selection must drive charts, compatibility warnings, policy, recommendation, report, and bundle output without duplicating chart logic or adding an online dependency.
+- Decision: extend the existing React dashboard into the workspace and exchange one digest-bound `workspace_selection` artifact with Python report and bundle functions. The artifact records selected result names and SHA-256 identities, baseline, view filters, policy, and authoritative recommendation without private source paths. The standalone launcher remains supported and stages local files for the same dashboard build.
+- Rejected alternative: reimplement charts in Tk or embed a platform-specific webview. Both create a second rendering path; the webview also adds a cross-platform runtime and shutdown boundary before solving shared state.
+- Qualification boundary: automated tests cover selection validation, export provenance, standalone loading, and offline assets. Human Slice D qualification still verifies Windows, macOS, and Linux launch, accessibility, packaging size, clean shutdown, and file handoff.
+- Evidence: `scripts/results/workspace_selection.py`, `dashboard/src/utils/workspace.ts`, and their contract tests.
+
 ### AD-001 — Preserve 4.1 application version during the reliability program
 
 - Status: accepted
@@ -35,7 +44,7 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 
 - Status: accepted
 - Requirement: crash-safe resume ultimately needs transactions, but two indefinitely writable stores would create reconciliation failures.
-- Decision: `ResultStore` and atomic JSON remain authoritative for unmigrated workloads. SQLite is authoritative only for the bounded single-shot, conversation, native llama-bench, and HTTP concurrency slices whose events reproduce their JSON sections; those slices no longer mutate the same live measurement state through JSON.
+- Decision: `ResultStore` and atomic JSON remain authoritative for unmigrated workloads. SQLite is authoritative only for the bounded single-shot, conversation, native llama-bench, HTTP concurrency, and five accuracy slices whose events reproduce their JSON sections; those slices no longer mutate the same live measurement state through JSON.
 - Rejected alternative: a shadow SQLite journal beside mutable result JSON.
 - Deletion gate: after every supported workload uses the transactional store, remove live JSON mutation and retain JSON only as deterministic export.
 
@@ -99,7 +108,7 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 
 - Status: accepted
 - Requirement: prove the event path on a real workload while retaining 4.1 result compatibility and per-model durability.
-- Decision: single-shot and conversation cases/attempts/samples commit to the sibling SQLite journal; JSON checkpoints and stage return values rebuild from stage-scoped events. Conversation commits each sampled checkpoint before further growth. Ephemeral in-memory values may guide an active loop but cannot checkpoint independently. Other workload sections remain JSON-owned until their bounded migration.
+- Decision: every workload commits its durable cases/attempts/samples to the sibling SQLite journal; JSON checkpoints, accuracy answer sidecars, and stage return values rebuild from stage-scoped events. Conversation commits each sampled checkpoint before further growth, each accuracy question commits its graded value and diagnostics before the next question, each embedding model commits its complete input batch without persisting vectors, and each image resolution commits after its repetitions and representative artifact save attempt. Native sweeps commit streamed rows or completed offline cases while preserving their model-retaining command shape. Image content uses the content-addressed store while private execution paths remain in an owner-only job-bound local sidecar. Ephemeral in-memory values may guide an active loop but cannot checkpoint independently.
 - Compatibility: schema-3 golden LLM fields are asserted value-for-value; conversation retains its depth and timing fields, partial checkpoints, selection rules, retry, and cache behavior; current additive validity diagnostics remain allowed.
 - Deletion gate: after all workloads migrate, remove runtime JSON ownership and export the whole result from journal projections.
 
@@ -107,7 +116,7 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 
 - Status: accepted
 - Requirement: a runner crash must not kill the coordinator, but premature activation could regress a working migrated workload.
-- Decision: the supervisor accepts only a fixed internal runner entrypoint and authenticated strict events, owns a process group, monitors monotonic heartbeat arrival, and escalates cleanup within bounds. The activated entrypoint reconstructs and executes only registered journal-owned stages; single-shot, conversation, native llama-bench, and both HTTP concurrency stages are supported.
+- Decision: the supervisor accepts only a fixed internal runner entrypoint and authenticated strict events, owns a process group, monitors monotonic heartbeat arrival, and escalates cleanup within bounds. The activated entrypoint reconstructs and executes only registered journal-owned stages; every current workload, including all native stages, is supported.
 - Rejected alternative: arbitrary subprocess commands or switching live execution before parity/crash tests.
 - Activation gate: satisfied by fake-runner hang/crash/cancel/disk tests, schema-3 single-shot parity, and conversation stage-isolation/preflight tests.
 
@@ -131,8 +140,8 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 
 - Status: accepted
 - Requirement: stopped work must preserve valid evidence without implying that aggregate-only workloads can resume cases they never journaled.
-- Decision: exact-identity journal plans may resume remaining work; eligible measured context/level cases may be retried explicitly within one stage; a full-plan fork always creates a distinct run/job/output and retains source provenance. Journal job state terminalizes with every run outcome and reopens explicitly for recovery, including finalization after all stage evidence committed. Plans containing JSON-owned legacy stages replay through normal orchestration under an exact source-plan guard rather than claiming in-place case resume.
-- Compatibility and data ownership: resume/retry update the original result only after the inspector gate and retain terminal/attempt history; fork never mutates source evidence. Native llama-bench resumes the remaining sweep because unstarted rows have no selectable case identity.
+- Decision: exact-identity journal plans may resume remaining work; eligible case-addressable measurements may be retried explicitly within one stage; a full-plan fork always creates a distinct run/job/output and retains source provenance. Journal job state terminalizes with every run outcome and reopens explicitly for recovery, including finalization after all stage evidence committed. Native model-retaining sweeps resume through grouped commands containing only unfinished matrix cells rather than claiming arbitrary-row execution.
+- Compatibility and data ownership: resume/retry update the original result only after the inspector gate and retain terminal/attempt history; fork never mutates source evidence. Native llama-bench and batched concurrency resume their remaining sweep because the model-retaining commands cannot select an arbitrary row.
 - Evidence: inspector, executor, event-stage, GUI command/presentation, exact-plan, overwrite, source-preservation, and interruption tests.
 
 ### AD-016 — Pause cooperatively at measurement boundaries
@@ -161,6 +170,30 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 - Rejected alternative: broad module merging or introducing generic UI controllers, repositories, lifecycle interfaces, or dependency injection. Those changes would increase coupling or abstraction count without removing a user-visible failure mode.
 - Follow-up: runner closures and mutable result JSON remain governed by the deletion ledger below. Revisit the GUI module only when a cohesive reusable component or a testability need justifies a boundary, not at an arbitrary line-count threshold.
 - Evidence: static module/import inspection, exact duplicate-body inspection, orchestration failure-path tests, and the full Python suite.
+
+### AD-019 — Predeclare Version 6 telemetry meaning and screening
+
+- Status: accepted
+- Requirement: telemetry sources must not acquire incompatible meanings or be approved after observing favorable results.
+- Decision: use the schema map, vocabulary, qualification set, observer bounds, and threshold derivation frozen in `docs/version-6-foundation.md`; schema 5 is additive and missing telemetry remains not recorded.
+- Methodology: the foundation screen may reject intrusive sampling but cannot approve default-on use; milestone 3 independent trials decide comparability for every source, interval, and combined sampler.
+- Privacy: persist only normalized allowlisted measurements and provenance through the outbound metadata policy; raw sensor output and private identity are excluded.
+- Evidence: Apple unified-memory and native-Windows discrete-NVIDIA sources passed the predeclared 20-pair screens at 1.0, 0.5, and 0.25 seconds. Milestone 3 re-qualified the selected 0.5-second source on WSL discrete NVIDIA through llama.cpp and vLLM with fixed cold prompts; the same evidence derives the 8% TTFT, 3% throughput, and 3% wall-time practical thresholds. Detailed records are indexed under `docs/qualification/`.
+- Decision: retain three measured requests per loaded model for within-run dispersion; regression verdicts continue to use independent invocations. On the WSL qualification series, three separate one-request invocations would cost 2.57–2.89 times one three-request invocation, while averaging three reduced between-invocation dispersion across every measured metric.
+- Decision: enable 0.5-second memory telemetry by default in Version 6 and treat telemetry-on/off performance as comparable when all other methodology settings match. The fixed-prompt Milestone 3 series passed through both engines on discrete NVIDIA and on Apple unified memory; other intervals remain identity-bearing.
+- Version 6.0-pre4 extension: keep power opt-in until source-specific repeated-trial qualification, collect it on the existing memory timeline, and make interval/source/scope identity-bearing in run-plan schema 4. Use a persistent non-interactive `powermetrics` reader on macOS; supervised children inherit the parent's transient source selection rather than discovering a potentially different scope. Never run the benchmark as root or persist executable paths and raw sensor output.
+- Version 6.0-pre9 extension: run-plan schema 5 makes the resolved cross-engine sampler profile identity-bearing. Managed vLLM ignores repository generation defaults, and historical schemas remain readable without acquiring the new identity.
+- Version 6.0-pre9 extension: run-plan schema 6 makes each native MTP model's engine-specific speculative depth and predictor mode identity-bearing. Historical schemas remain readable without acquiring the new identity.
+- Scope rule: processor-package, accelerator, CPU-package, and whole-system energy are distinct claims. Mixed scopes have no aggregate run total or shared dashboard axis, and Apple `powermetrics` estimates remain within-device evidence because the tool warns against cross-device comparison.
+
+### AD-020 — Expand quantization variants into existing model execution units
+
+- Status: accepted
+- Requirement: quantization sweeps must keep evidence, recovery, acquisition, and result keys separate without creating a second workload runner or changing ordinary single-variant runs.
+- Decision: every one of the twelve catalog LLM families declares one stable `base_model` and a validated Q4_K_M/preferred-Q6/Q8_0 `variants` list from its existing GGUF repository. Selection expands each chosen variant into the existing model shape with a unique `tag` and `short`, plus explicit `base_model` and `variant` identity; workloads then execute those records sequentially through their existing stage and case boundaries. The Q6 preference is Q6_K_XL, then Q6_K_M, then Q6_K. The Q4_K_M default repeats the legacy top-level tag, artifact, and size so an ordinary run retains its prior meaning. CLI selectors use repeatable `BASE=VARIANT` pairs, and a sweep remains llama.cpp-only.
+- Rejected alternative: a parallel quantization sweep runner or a quantization field that leaves multiple artifacts sharing one tag, either of which would duplicate lifecycle logic or pool evidence incorrectly.
+- Compatibility and data ownership: run-plan schema 7 allowlists `base_model` and `variant`; schemas 1 through 6 retain their original identity. Older results map a known legacy tag to its catalog base/default variant only for presentation and never acquire new evidence identity. With llama.cpp alone, Setup and benchmark GUIs expose a family parent plus variant children; selecting vLLM collapses every family to its documented default, and custom or cross-repository models remain flat because no family relationship is inferred. Variant selection is resolved before download, preflight, estimation, or execution, and the event journal remains the sole recovery authority.
+- Evidence and deletion gate: catalog validation, identity separation, selector, estimate, acquisition, event-stage, recommendation, compatibility, and dashboard tests must pass before a real sweep. Native vLLM formats remain out of scope until a separately committed methodology defines cross-format comparability.
 
 ## Migration and deletion ledger
 

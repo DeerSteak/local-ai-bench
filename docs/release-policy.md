@@ -2,7 +2,7 @@
 
 Release source moves from `develop` through a versioned release branch into the stable `main` branch. See the [Contributor Workflow](contributor-workflow.md) for branch roles, pull requests, merge direction, tagging, hotfix handling, and repository protection.
 
-Local AI Bench 4.1 is a preview engineering build. A setup or runtime code path is not by itself a commercial support claim. No platform is labeled stable-supported until the qualification evidence below exists for the exact operating-system, architecture, accelerator/backend, runtime, and installer combination.
+Local AI Bench 6.0 is a preview engineering build. A setup or runtime code path is not by itself a commercial support claim. No platform is labeled stable-supported until the qualification evidence below exists for the exact operating-system, architecture, accelerator/backend, runtime, and installer combination.
 
 ## Platform matrix
 
@@ -24,13 +24,15 @@ Each stable-supported matrix row must name exact tested versions and hardware ra
 
 For each candidate configuration, perform clean install, first launch, setup cancellation and retry, system-runtime reuse, managed-runtime install, default run, custom run, interruption at multiple stages, partial-result recovery, report/bundle creation, offline packet capture, repair, upgrade, rollback, uninstall, and orphan-process inspection. Run representative complete benchmarks independently multiple times and evaluate valid coverage and variability against the declared methodology. Record exact hardware, firmware, OS, drivers, runtime digests, installer digest, model artifacts, environment, failures, support intervention, and evidence links.
 
-The current matrix is the required test design, not completed evidence. Individual rows become stable-supported only through a release decision referencing their completed qualification records.
+The generated matrices in [Engines](engines.md#qualification-matrix) and [Setup](setup.md#qualification-matrix) are the published authority. `scripts/release/qualification.py` stores exact qualification evidence and derives supported, experimental, or unverified status; the generated sections must never be edited by hand. An entry is supported only when its ordinary benchmark result contains complete measured evidence for every required smallest-model workload and its suite version is no more than one minor release old. Clean install, repair, upgrade, rollback, uninstall, packaging, and offline readiness remain separate release gates. Stale evidence is experimental, and absent or incomplete evidence is unverified.
+
+The [qualification launcher](qualification.md) runs the shipped setup and benchmark paths and requires populated evidence from every compatible workload using the smallest model that supports the engine's complete required workload set. This proves breadth of functional operation without running the full catalog; model-specific compatibility, comparative performance, full-bank accuracy, and production-duration soak claims require their own broader evidence.
 
 ## Stable-release criteria
 
 A stable release requires all automated Python/dashboard tests; current golden compatibility and methodology review; no unexplained behavioral difference from the qualification baseline; completed supported-row hardware records; signed installers/checksums/provenance; SBOM and reviewed notices; dependency, secret, static, artifact, and vulnerability scans; offline evidence; clean install/repair/upgrade/rollback/uninstall evidence; complete option-coverage and accessibility review; current documentation and migration notes; support/incident contacts; and no unresolved high-severity issue without explicit time-bounded acceptance.
 
-`python -m scripts.release.release_readiness [EVIDENCE.json]` emits a machine-readable preflight and exits nonzero while any required gate remains unresolved. Local checks cover front-end option coverage, model licenses, dependency licenses, and target-hardware qualification. Signed installers, release security scans, offline platform qualification, clean-machine lifecycle, accessibility/usability, legal approval, independent security assessment, and final stable-release approval remain failed unless the optional evidence object supplies `status: "passed"`, a non-empty `approved_by`, `approved_at`, and one or more evidence references for each named gate. The command validates presence and shape, not the truth of an approval; release reviewers must inspect the referenced evidence.
+`python -m scripts.release.release_readiness [EVIDENCE.json]` emits a machine-readable preflight and exits nonzero while any required gate remains unresolved. Local checks cover front-end option coverage, model licenses, dependency licenses, target-hardware qualification, and exact agreement between the generated support matrix and qualification evidence; a manually introduced supported claim therefore fails readiness. Signed installers, release security scans, offline platform qualification, clean-machine lifecycle, accessibility/usability, legal approval, independent security assessment, and final stable-release approval remain failed unless the optional evidence object supplies `status: "passed"`, a non-empty `approved_by`, `approved_at`, and one or more evidence references for each named gate. A separate `telemetry_qualification` object must contain `memory`, `power`, `temperature`, and `combined` records using `paired_observer_v1`, at least 20 trial pairs, a positive interval, non-empty source and platform-class lists, approval metadata, and evidence references. The command validates presence and shape, not the truth of an approval; release reviewers must inspect the referenced evidence.
 
 The [release artifact manifest](release-artifacts.md) records deterministic SHA-256 checksums and source provenance for explicit packaged files. Stable verification still requires real protected signing credentials and independent pipeline evidence.
 
@@ -48,7 +50,9 @@ Hooks are not cloned with a repository, so enable the hook once per working copy
 git config core.hooksPath .githooks
 ```
 
-To register a new mirror, add a `VersionTarget` to `TARGETS` in [`scripts/release/version_sync.py`](../scripts/release/version_sync.py) with a regex capturing prefix, version, and trailing whitespace as groups 1–3.
+Mirrors include the README title and the doc sentences that state the application version in prose (`docs/telemetry.md`, `docs/security-and-privacy.md`, `docs/maintenance.md`, `docs/release-policy.md`, `docs/product-requirements.md`). Each doc mirror is registered as an explicitly anchored prefix/suffix pair rather than a bare version match, because the docs also carry frozen non-application versions — the 4.1 methodology baseline, the result/run-plan schema axes, `result-compatibility-v4.1.md`, workload-pack and API contract versions — which must never be rewritten by a release bump. Registering a mirror is therefore a deliberate act: a new doc sentence that names the application version is not synced until it is added.
+
+To register a new mirror, add a `VersionTarget` to `TARGETS` in [`scripts/release/version_sync.py`](../scripts/release/version_sync.py) with a regex capturing prefix, version, and trailing text as groups 1–3, or use the `_prose(path, prefix, suffix, description)` helper (a leading `^` in the prefix anchors it to the start of a line). Several targets may share one file.
 
 ## Pyright hook
 

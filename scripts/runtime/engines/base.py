@@ -8,6 +8,8 @@ import math
 import statistics
 from pathlib import Path
 
+TIMING_DECIMALS = 6
+
 
 @dataclass(frozen=True)
 class GenerationMeasurement:
@@ -22,6 +24,10 @@ class GenerationMeasurement:
     finish_reason: str | None = None
     model_load_sec: float = 0
     server_tps_implausible: bool = False
+    cpu_offload_gb: int = 0
+    gpu_layers: int | None = None
+    total_layers: int | None = None
+    cpu_model_buffer_gb: float | None = None
 
 
 @dataclass(frozen=True)
@@ -113,11 +119,11 @@ def aggregate_generation_measurements(samples: list[GenerationMeasurement],
         "invalid_runs": invalid,
         "valid_samples": [
             {
-                "client_ttft_sec": round(sample.client_ttft_sec, 3),
-                "server_prompt_sec": round(sample.server_prompt_sec, 3)
+                "client_ttft_sec": round(sample.client_ttft_sec, TIMING_DECIMALS),
+                "server_prompt_sec": round(sample.server_prompt_sec, TIMING_DECIMALS)
                 if sample.server_prompt_sec is not None else None,
-                "client_wall_sec": round(sample.client_wall_sec, 3),
-                "decode_sec": round(sample.decode_sec, 3),
+                "client_wall_sec": round(sample.client_wall_sec, TIMING_DECIMALS),
+                "decode_sec": round(sample.decode_sec, TIMING_DECIMALS),
                 "generated_tokens": sample.generated_tokens,
                 "tokens_per_sec": round(sample.tokens_per_sec, 2),
                 "prompt_tokens": sample.prompt_tokens,
@@ -126,29 +132,44 @@ def aggregate_generation_measurements(samples: list[GenerationMeasurement],
                         sample.prompt_tokens, sample.server_prompt_sec)) is not None else None
                 ),
                 "finish_reason": sample.finish_reason,
-                "model_load_sec": round(sample.model_load_sec, 3),
+                "model_load_sec": round(sample.model_load_sec, TIMING_DECIMALS),
             }
             for sample in valid
         ],
     }
+    cpu_offload_gb = max((sample.cpu_offload_gb for sample in valid), default=0)
+    if cpu_offload_gb:
+        result["cpu_offload_gb"] = cpu_offload_gb
+        result["model_placement"] = {"cpu_offload_gb": cpu_offload_gb}
+    placements = [sample for sample in valid if sample.gpu_layers is not None]
+    if placements:
+        placement = placements[-1]
+        result["model_placement"] = {
+            "gpu_layers": placement.gpu_layers,
+            "total_layers": placement.total_layers,
+            "cpu_model_buffer_gb": placement.cpu_model_buffer_gb,
+        }
     if not valid:
         return result
     ttfts = [sample.client_ttft_sec for sample in valid]
     tps_values = [sample.tokens_per_sec for sample in valid]
     result.update({
-        "client_ttft_mean_sec": round(statistics.mean(ttfts), 3),
-        "client_ttft_stdev_sec": round(statistics.stdev(ttfts), 3) if len(ttfts) >= 2 else 0,
-        "client_ttft_runs_sec": [round(value, 3) for value in ttfts],
+        "client_ttft_mean_sec": round(statistics.mean(ttfts), TIMING_DECIMALS),
+        "client_ttft_stdev_sec": round(statistics.stdev(ttfts), TIMING_DECIMALS)
+        if len(ttfts) >= 2 else 0,
+        "client_ttft_runs_sec": [round(value, TIMING_DECIMALS) for value in ttfts],
         "server_prompt_runs_sec": [
-            round(sample.server_prompt_sec, 3) for sample in valid
+            round(sample.server_prompt_sec, TIMING_DECIMALS) for sample in valid
             if sample.server_prompt_sec is not None
         ],
-        "client_wall_runs_sec": [round(sample.client_wall_sec, 3) for sample in valid],
+        "client_wall_runs_sec": [round(sample.client_wall_sec, TIMING_DECIMALS)
+                                 for sample in valid],
     })
     server_times = [sample.server_prompt_sec for sample in valid
                     if sample.server_prompt_sec is not None]
     if server_times:
-        result["server_prompt_mean_sec"] = round(statistics.mean(server_times), 3)
+        result["server_prompt_mean_sec"] = round(
+            statistics.mean(server_times), TIMING_DECIMALS)
     prefill_rates = [rate for sample in valid
                      if (rate := prefill_tokens_per_sec(
                          sample.prompt_tokens, sample.server_prompt_sec)) is not None]
@@ -161,7 +182,7 @@ def aggregate_generation_measurements(samples: list[GenerationMeasurement],
         })
     if len(valid) >= 2:
         result.update({
-            "client_ttft_median_sec": round(statistics.median(ttfts), 3),
+            "client_ttft_median_sec": round(statistics.median(ttfts), TIMING_DECIMALS),
             "client_ttft_cv": round(statistics.stdev(ttfts) / statistics.mean(ttfts), 4)
             if statistics.mean(ttfts) else 0,
             "tps_median": round(statistics.median(tps_values), 2),
@@ -173,6 +194,15 @@ def aggregate_generation_measurements(samples: list[GenerationMeasurement],
 
 class InferenceEngine(ABC):
     name: str  # e.g. "llamacpp"
+
+    def set_sampling_profile(self, profile: dict) -> None:
+        from scripts.runtime.sampling import sampling_profile_payload
+        sampling_profile_payload(self.name, profile)
+        self._sampling_profile = profile
+
+    def sampling_payload(self) -> dict:
+        from scripts.runtime.sampling import sampling_profile_payload
+        return sampling_profile_payload(self.name, getattr(self, "_sampling_profile", None))
 
     # ── server / process lifecycle ──
 
@@ -237,6 +267,20 @@ class InferenceEngine(ABC):
     @abstractmethod
     def model_pulled(self, tag: str) -> bool:
         """True if `tag` is installed locally."""
+
+    def model_paths(self, tag: str) -> tuple[Path, ...]:
+        """Local weight files used to verify artifact completeness."""
+        return ()
+
+    def model_artifacts_are_local(self) -> bool:
+        return False
+
+    def compatibility_metadata(self, tag: str) -> tuple[dict, str | None]:
+        """Normalized model metadata for read-only compatibility checks."""
+        return {}, "This engine does not expose local model metadata."
+
+    def can_reset_model_state(self) -> bool:
+        return True
 
     @abstractmethod
     def list_installed_models(self) -> list[dict]:

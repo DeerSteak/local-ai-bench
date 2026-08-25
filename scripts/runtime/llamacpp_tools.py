@@ -1,7 +1,9 @@
 """Shared llama.cpp tool discovery for setup and benchmark execution."""
 
 import platform
+import re
 import shutil
+import subprocess
 from pathlib import Path
 
 from scripts.runtime import config
@@ -10,6 +12,66 @@ from scripts.setup.setup_config import configured_llamacpp_tool, load_setup_conf
 
 # The WSL-Ubuntu CUDA toolkit installs here and never puts itself on PATH.
 CUDA_BIN_DIRS = ("/usr/local/cuda/bin",)
+LLAMACPP_TOOL_NAMES = ("llama-server", "llama-bench", "llama-batched-bench")
+
+
+def llamacpp_backend_from_device_listing(output: str) -> str:
+    for line in output.splitlines():
+        device = line.strip().lower()
+        for pattern, backend in (
+            (r"cuda\d*\s*:", "cuda"), (r"(?:rocm|hip)\d*\s*:", "rocm"),
+            (r"(?:metal|mtl)\d*\s*:", "metal"),
+            (r"(?:sycl|level[- ]?zero)\d*\s*:", "xpu"), (r"vulkan\d*\s*:", "vulkan"),
+        ):
+            if re.match(pattern, device):
+                return backend
+    return "cpu"
+
+
+def probe_llamacpp_backend(binary: str | Path, *, env=None, run=None) -> str | None:
+    run = run or subprocess.run
+    try:
+        completed = run(
+            [str(binary), "--list-devices"], capture_output=True, text=True, timeout=10,
+            env=env,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode:
+        return None
+    return llamacpp_backend_from_device_listing(f"{completed.stdout}\n{completed.stderr}")
+
+
+def llamacpp_backend_mismatch(binary: str | Path | None, installed_backend: str | None,
+                              required_backend: str | None) -> bool:
+    return bool(binary and required_backend and installed_backend != required_backend)
+
+
+def llamacpp_backend_error(binary: str | Path | None, required_backend: str | None, *,
+                           env=None, run=None, probe=probe_llamacpp_backend,
+                           context: str = "llama.cpp") -> str | None:
+    if binary is None or required_backend is None:
+        return None
+    installed = probe(binary, env=env, run=run)
+    if not llamacpp_backend_mismatch(binary, installed, required_backend):
+        return None
+    return (
+        f"{context} requires {required_backend}, but installed llama.cpp exposes "
+        f"{installed or 'no backend'}"
+    )
+
+
+def managed_llamacpp_tools(vendored_dir: Path, platform_name: str) -> dict[str, str]:
+    exe_suffix = ".exe" if platform_name == "Windows" else ""
+    server_name = f"{LLAMACPP_TOOL_NAMES[0]}{exe_suffix}"
+    for server in sorted(Path(vendored_dir).rglob(server_name)):
+        tools = {
+            name: server.parent / f"{name}{exe_suffix}"
+            for name in LLAMACPP_TOOL_NAMES
+        }
+        if all(path.is_file() for path in tools.values()):
+            return {name: str(path) for name, path in tools.items()}
+    return {}
 
 
 def find_nvcc(*, which_fn=shutil.which, exists_fn=None) -> str | None:
@@ -40,10 +102,10 @@ def find_llamacpp_tool(base_name: str, *, vendored_dir: Path | None = None,
     vendored_dir = Path(vendored_dir) if vendored_dir is not None else config.LLAMACPP_DIR
     which_fn = which_fn or shutil.which
     exe_name = f"{base_name}.exe" if platform_name == "Windows" else base_name
-    if platform_name == "Darwin" and vendored_dir.exists():
-        managed = next((path for path in vendored_dir.rglob(exe_name) if path.is_file()), None)
-        if managed is not None:
-            return str(managed)
+    managed_tools = managed_llamacpp_tools(vendored_dir, platform_name) \
+        if vendored_dir.exists() else {}
+    if base_name in managed_tools:
+        return managed_tools[base_name]
     found = which_fn(base_name)
     if found:
         return found

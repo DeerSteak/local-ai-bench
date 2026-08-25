@@ -5,6 +5,10 @@ from pathlib import Path
 import pytest
 
 from scripts.results.run_plan import IDENTITY_SCHEME, PLAN_SCHEMA_VERSION, RunPlan, load_run_plan
+from scripts.results.result_store import model_identity
+from scripts.runtime.sampling import baseline_sampling_profile
+from scripts.workloads.models import LLM_MODELS
+from scripts.workloads.model_variants import select_model_variants
 
 
 def make_plan(**overrides):
@@ -94,23 +98,181 @@ def test_measurement_affecting_changes_produce_a_new_plan_identity(change):
     assert changed.plan_id != base.plan_id
 
 
+def test_quantization_variants_have_distinct_model_and_plan_identity():
+    base = make_plan()
+    models = base.models
+    models["llm"] = [
+        {"tag": "model:q4", "short": "model-q4", "base_model": "model", "variant": "Q4_K_M"},
+        {"tag": "model:q8", "short": "model-q8", "base_model": "model", "variant": "Q8_0"},
+    ]
+
+    plan = make_plan(models=models)
+
+    q4, q8 = plan.models["llm"]
+    assert plan.model_id("llm", q4) != plan.model_id("llm", q8)
+    assert make_plan(models={**models, "llm": [q4]}).plan_id \
+        != make_plan(models={**models, "llm": [q8]}).plan_id
+
+
+def test_quantization_identity_requires_current_schema_and_both_fields():
+    models = make_plan().models
+    models["llm"][0].update(base_model="model", variant="Q4_K_M")
+    with pytest.raises(ValueError, match="schema 7"):
+        make_plan(models=models, schema_version=6)
+
+    models["llm"][0].pop("variant")
+    with pytest.raises(ValueError, match="requires base_model and variant"):
+        make_plan(models=models)
+
+
 def test_methodology_profile_is_identity_bearing_and_validated():
     config = complete_plan().effective_config
     config.update({
-        "methodology_profile": "neutral-v1",
+        "methodology_profile": "neutral-v2",
         "effective_optimizations": ["llamacpp:flash_attention=on"],
+        "sampling_profile": baseline_sampling_profile("llamacpp"),
     })
     plan = make_plan(effective_config=config)
     methodology = plan.execution_identity["methodology"]
     assert methodology == {
-        "profile": "neutral-v1",
+        "profile": "neutral-v2",
         "effective_optimizations": ["llamacpp:flash_attention=on"],
+        "sampling": baseline_sampling_profile("llamacpp"),
     }
     changed = dict(config, effective_optimizations=["llamacpp:flash_attention=off"])
     assert make_plan(effective_config=changed).plan_id != plan.plan_id
     invalid = dict(config, methodology_profile="vendor-fast")
     with pytest.raises(ValueError, match="methodology_profile"):
         make_plan(effective_config=invalid).validate_for_execution()
+
+    missing = dict(config)
+    del missing["sampling_profile"]
+    with pytest.raises(ValueError, match="sampling_profile"):
+        make_plan(effective_config=missing).validate_for_execution()
+
+
+def test_sustained_plan_requires_the_deterministic_sampling_baseline():
+    config = complete_plan().effective_config
+    sampling = baseline_sampling_profile("llamacpp")
+    sampling["semantic_controls"]["temperature"] = 0.9
+    config.update({
+        "methodology_profile": "neutral-v2",
+        "effective_optimizations": ["llamacpp:flash_attention=on"],
+        "sampling_profile": sampling,
+        "memory_telemetry": True,
+        "memory_telemetry_interval_sec": 0.5,
+        "temperature_telemetry": True,
+        "temperature_telemetry_interval_sec": 0.5,
+        "temperature_sources": {"gpu_die_c": "nvidia-smi"},
+        "sustained_duration_sec": 600,
+        "sustained_window_sec": 10,
+        "sustained_context_tokens": 2048,
+        "ambient_temp_c": None,
+    })
+
+    with pytest.raises(ValueError, match="sampling_profile"):
+        make_plan(
+            tests=["sustained"], stage_order=["sustained"], effective_config=config,
+        ).validate_for_execution()
+
+
+def test_mtp_configuration_is_structured_methodology_and_identity_bearing():
+    config = complete_plan().effective_config
+    config.update({
+        "mtp_enabled": True,
+        "mtp_configurations": {
+            "model:4b": {"num_speculative_tokens": 3, "predictor": "embedded"},
+        },
+        "methodology_profile": "neutral-v2",
+        "effective_optimizations": ["llamacpp:native_mtp=on"],
+        "sampling_profile": baseline_sampling_profile("llamacpp"),
+    })
+    plan = make_plan(effective_config=config)
+    plan.validate_for_execution()
+    assert plan.execution_identity["methodology"]["native_mtp"] == {
+        "model:4b": {"num_speculative_tokens": 3, "predictor": "embedded"},
+    }
+    changed = dict(config, mtp_configurations={
+        "model:4b": {"num_speculative_tokens": 1, "predictor": "embedded"},
+    })
+    assert make_plan(effective_config=changed).plan_id != plan.plan_id
+
+
+def test_vllm_mtp_configuration_accepts_engine_method_identity():
+    settings = complete_plan().effective_config
+    settings.update({
+        "mtp_enabled": True,
+        "mtp_configurations": {"model:4b": {
+            "num_speculative_tokens": 2,
+            "predictor": "embedded",
+            "method": "qwen3_5_mtp",
+        }},
+        "methodology_profile": "neutral-v2",
+        "effective_optimizations": ["vllm:native_mtp=on"],
+        "sampling_profile": baseline_sampling_profile("vllm"),
+    })
+    plan = make_plan(engine_name="vllm", effective_config=settings)
+
+    plan.validate_for_execution()
+    assert plan.execution_identity["methodology"]["native_mtp"] == {
+        "model:4b": {
+            "num_speculative_tokens": 2,
+            "predictor": "embedded",
+            "method": "qwen3_5_mtp",
+        },
+    }
+
+
+@pytest.mark.parametrize("configurations", [
+    None,
+    {"model:4b": {"num_speculative_tokens": True, "predictor": "embedded"}},
+    {"model:4b": {"num_speculative_tokens": 0, "predictor": "embedded"}},
+    {"model:4b": {"num_speculative_tokens": 1, "predictor": "external"}},
+    {"model:4b": {"num_speculative_tokens": 1}},
+    {"model:4b": {
+        "num_speculative_tokens": 1, "predictor": "embedded", "method": "",
+    }},
+])
+def test_current_plan_rejects_missing_or_malformed_mtp_configuration(configurations):
+    settings = complete_plan().effective_config
+    settings["mtp_configurations"] = configurations
+    with pytest.raises(ValueError, match="mtp_configurations"):
+        make_plan(effective_config=settings).validate_for_execution()
+
+
+def test_llamacpp_mtp_configuration_rejects_vllm_method_identity():
+    settings = complete_plan().effective_config
+    settings.update({
+        "mtp_enabled": True,
+        "mtp_configurations": {"model:4b": {
+            "num_speculative_tokens": 1,
+            "predictor": "embedded",
+            "method": "qwen3_5_mtp",
+        }},
+    })
+    with pytest.raises(ValueError, match="mtp_configurations"):
+        make_plan(effective_config=settings).validate_for_execution()
+
+
+def test_current_plan_rejects_mtp_mode_configuration_mismatch():
+    settings = complete_plan().effective_config
+    settings["mtp_enabled"] = False
+    settings["mtp_configurations"] = {
+        "model:4b": {"num_speculative_tokens": 1, "predictor": "embedded"},
+    }
+    with pytest.raises(ValueError, match="inconsistent"):
+        make_plan(effective_config=settings).validate_for_execution()
+
+
+def test_schema_4_neutral_v1_plan_remains_readable_without_sampling_identity():
+    config = complete_plan().effective_config
+    config.update({
+        "methodology_profile": "neutral-v1",
+        "effective_optimizations": ["llamacpp:flash_attention=on"],
+    })
+    plan = make_plan(effective_config=config, schema_version=4)
+    plan.validate_for_execution()
+    assert "sampling" not in plan.execution_identity["methodology"]
 
 
 def test_offline_mode_is_identity_bearing_without_changing_legacy_plans():
@@ -134,6 +296,117 @@ def test_retry_crashed_models_is_recorded_and_legacy_defaults_false():
     assert retrying.plan_id != make_plan(
         effective_config=dict(settings, retry_crashed_models=False),
     ).plan_id
+
+
+def test_memory_telemetry_settings_are_optional_identity_bearing_inputs():
+    legacy = complete_plan()
+    off_config = dict(
+        legacy.effective_config, memory_telemetry=False,
+        memory_telemetry_interval_sec=None,
+    )
+    on_config = dict(
+        legacy.effective_config, memory_telemetry=True,
+        memory_telemetry_interval_sec=1.0,
+    )
+    off = make_plan(effective_config=off_config)
+    on = make_plan(effective_config=on_config)
+    legacy.validate_for_execution()
+    off.validate_for_execution()
+    on.validate_for_execution()
+    assert len({legacy.plan_id, off.plan_id, on.plan_id}) == 3
+
+
+@pytest.mark.parametrize(("enabled", "interval"), [
+    (True, None), (True, 0), (True, True), (False, 1.0),
+])
+def test_memory_telemetry_settings_reject_invalid_combinations(enabled, interval):
+    config = dict(
+        complete_plan().effective_config,
+        memory_telemetry=enabled,
+        memory_telemetry_interval_sec=interval,
+    )
+    with pytest.raises(ValueError, match="memory[_ ]telemetry"):
+        make_plan(effective_config=config).validate_for_execution()
+
+
+def test_power_telemetry_is_identity_bearing_and_records_source_scope_and_interval():
+    config = dict(
+        complete_plan().effective_config,
+        memory_telemetry=True, memory_telemetry_interval_sec=0.5,
+        power_telemetry=True, power_telemetry_interval_sec=0.5,
+        power_source="powermetrics", power_scope="processor_package",
+    )
+    plan = make_plan(effective_config=config)
+    plan.validate_for_execution()
+    assert plan.execution_identity["telemetry"] == {"power": {
+        "interval_sec": 0.5, "source": "powermetrics", "scope": "processor_package",
+    }}
+    changed = make_plan(effective_config=dict(config, power_scope="whole_system"))
+    assert changed.plan_id != plan.plan_id
+
+
+@pytest.mark.parametrize("changes", [
+    {"memory_telemetry": False},
+    {"power_telemetry_interval_sec": None},
+    {"power_telemetry_interval_sec": 0},
+    {"power_source": None},
+    {"power_scope": ""},
+])
+def test_power_telemetry_rejects_incomplete_or_invalid_methodology(changes):
+    config = dict(
+        complete_plan().effective_config,
+        memory_telemetry=True, memory_telemetry_interval_sec=0.5,
+        power_telemetry=True, power_telemetry_interval_sec=0.5,
+        power_source="powermetrics", power_scope="processor_package",
+    )
+    config.update(changes)
+    with pytest.raises(ValueError, match="memory telemetry|power telemetry|power_"):
+        make_plan(effective_config=config).validate_for_execution()
+
+
+def test_disabled_power_telemetry_rejects_orphaned_source_settings():
+    config = dict(
+        complete_plan().effective_config,
+        power_telemetry=False, power_telemetry_interval_sec=None,
+        power_source="powermetrics", power_scope=None,
+    )
+    with pytest.raises(ValueError, match="require power telemetry"):
+        make_plan(effective_config=config).validate_for_execution()
+
+
+def test_sustained_temperature_methodology_is_identity_bearing_and_validated():
+    config = dict(
+        complete_plan().effective_config,
+        memory_telemetry=True, memory_telemetry_interval_sec=0.5,
+        temperature_telemetry=True, temperature_telemetry_interval_sec=0.5,
+        temperature_sources={"gpu_die_c": "nvidia-smi"},
+        sustained_duration_sec=600, sustained_window_sec=10,
+        sustained_context_tokens=2048, ambient_temp_c=18.5,
+    )
+    active = make_plan(tests=["sustained"], stage_order=["sustained"],
+                       effective_config=config)
+    active.validate_for_execution()
+    assert active.execution_identity["telemetry"]["temperature"] == {
+        "interval_sec": 0.5, "sources": {"gpu_die_c": "nvidia-smi"},
+    }
+    changed = make_plan(
+        tests=["sustained"], stage_order=["sustained"],
+        effective_config=dict(config, sustained_duration_sec=900),
+    )
+    assert changed.plan_id != active.plan_id
+    with pytest.raises(ValueError, match="temperature telemetry requires memory"):
+        make_plan(
+            tests=["sustained"], stage_order=["sustained"],
+            effective_config=dict(
+                config, memory_telemetry=False, memory_telemetry_interval_sec=None,
+            ),
+        ).validate_for_execution()
+
+
+def test_schema_three_plan_remains_readable_after_power_schema_change():
+    plan = make_plan(schema_version=3)
+    encoded = plan.to_dict()
+    assert RunPlan.from_dict(encoded) == plan
 
 
 def test_returned_models_and_config_cannot_mutate_the_plan():
@@ -265,12 +538,28 @@ def complete_plan():
         "concurrency_tool_levels": [1, 2], "concurrency_chat_levels": [1, 2, 4],
         "concurrency_tool_context": 4096, "concurrency_chat_context": 16384,
         "concurrency_chat_soft_exit_floor": 8,
+        "mtp_enabled": False, "mtp_configurations": {},
     })
     return make_plan(effective_config=config)
 
 
 def test_complete_plan_validation_accepts_resolved_execution_inputs():
     complete_plan().validate_for_execution()
+
+
+def test_complete_plan_validation_accepts_real_catalog_default_selection():
+    plan = complete_plan()
+    models = plan.models
+    models["llm"] = model_identity(select_model_variants([LLM_MODELS[0]], {}))
+
+    make_plan(models=models, effective_config=plan.effective_config).validate_for_execution()
+
+
+def test_complete_plan_validation_accepts_no_runnable_models_after_preflight():
+    plan = complete_plan()
+    models = plan.models
+    models["llm"] = []
+    make_plan(models=models, effective_config=plan.effective_config).validate_for_execution()
 
 
 @pytest.mark.parametrize(("key", "value"), [
@@ -296,6 +585,15 @@ def test_complete_plan_validation_rejects_missing_settings_and_model_identity():
     models["llm"] = [{"tag": "model:4b", "short": ""}]
     invalid = make_plan(models=models, effective_config=plan.effective_config)
     with pytest.raises(ValueError, match="invalid model identity"):
+        invalid.validate_for_execution()
+
+
+def test_complete_plan_validation_rejects_quantization_identity_outside_text_models():
+    plan = complete_plan()
+    models = plan.models
+    models["images"] = [{"short": "sdxl", "base_model": "image", "variant": "fp16"}]
+    invalid = make_plan(models=models, effective_config=plan.effective_config)
+    with pytest.raises(ValueError, match="invalid quantization identity"):
         invalid.validate_for_execution()
 
 

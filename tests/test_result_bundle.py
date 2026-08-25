@@ -8,6 +8,8 @@ from scripts.results.result_bundle import (
     aggregate_reproduction_errors, export_result_bundle, import_result_bundle,
     methodology_availability_errors, verify_result_bundle,
 )
+from scripts.results.llm_event_stage import event_store_path
+from scripts.results.local_execution_context import local_execution_path
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "results_v4_1_complete.json"
@@ -58,6 +60,15 @@ def test_bundle_export_applies_private_aliases_and_retains_source_identity(tmp_p
     assert json.loads(FIXTURE.read_text())["profile"]["hostname"] == "commercial-golden-system"
 
 
+def test_bundle_export_refuses_private_local_execution_context(tmp_path):
+    result = tmp_path / "results_private.json"
+    result.write_bytes(FIXTURE.read_bytes())
+    private = local_execution_path(event_store_path(result))
+    private.write_text('{"comfyui_dir":"/private/path"}', encoding="utf-8")
+    with pytest.raises(ValueError, match="private local execution context"):
+        export_result_bundle(result, tmp_path / "private.labresult", [private])
+
+
 def test_bundle_verifier_rejects_tampered_payload(tmp_path):
     bundle = tmp_path / "result.labresult"
     export_result_bundle(FIXTURE, bundle)
@@ -96,6 +107,34 @@ def test_aggregate_reproduction_detects_modified_mean():
     assert aggregate_reproduction_errors(result) == [
         "$.llm.golden.2K.tps_mean does not match valid_samples",
     ]
+
+
+def test_aggregate_reproduction_allows_one_unit_of_sample_rounding_error():
+    result = {
+        "llm": {"model": {"0.5K": {
+            "valid_runs": 2,
+            "valid_samples": [
+                {"client_ttft_sec": 0.100}, {"client_ttft_sec": 0.100},
+            ],
+            "client_ttft_mean_sec": 0.101,
+        }}},
+    }
+    assert aggregate_reproduction_errors(result) == []
+
+
+def test_bundle_verifies_when_aggregate_differs_by_sample_quantization(tmp_path):
+    result = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    case = result["llm"]["golden"]["2K"]
+    reproduced = round(sum(
+        sample["tokens_per_sec"] for sample in case["valid_samples"]
+    ) / len(case["valid_samples"]), 2)
+    case["tps_mean"] = reproduced + 0.01
+    source = tmp_path / "rounded.json"
+    source.write_text(json.dumps(result), encoding="utf-8")
+    bundle = tmp_path / "rounded.labresult"
+    export_result_bundle(source, bundle)
+    assert verify_result_bundle(bundle)["result"]["llm"]["golden"]["2K"]["tps_mean"] \
+        == case["tps_mean"]
 
 
 def test_methodology_availability_checks_local_bank_identity():

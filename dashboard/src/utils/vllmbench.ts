@@ -1,4 +1,6 @@
 import { buildFileLineConfigs, modelLabel, entriesOf } from "./shared";
+import { memoryFields } from "./memory";
+import { powerFields } from "./power";
 import type { JsonRecord } from "./shared";
 import type { ChartRow, LineConfig, ResultsFile } from "../types";
 
@@ -102,6 +104,8 @@ export function flattenVllmBenchData(files: ResultsFile[]): ChartRow[] {
           _fileId: file.id, model, modelLabel: modelLabel(model),
           input_len: entry.input_len, output_len: entry.output_len,
           avg_latency_sec: entry.avg_latency_sec, latency_output_tps: entry.output_tps,
+          ...memoryFields(entry),
+          ...powerFields(entry),
         });
       }
       for (const entry of vllmBenchThroughputEntries(modelData)) {
@@ -109,6 +113,8 @@ export function flattenVllmBenchData(files: ResultsFile[]): ChartRow[] {
         const row = byShape.get(key) || {
           _fileId: file.id, model, modelLabel: modelLabel(model),
           input_len: entry.input_len, output_len: entry.output_len,
+          ...memoryFields(entry),
+          ...powerFields(entry),
         };
         row.requests_per_sec = entry.requests_per_sec;
         row.throughput_output_tps = entry.output_tps;

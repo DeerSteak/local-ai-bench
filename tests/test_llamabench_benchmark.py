@@ -78,6 +78,7 @@ def test_build_prefill_command_shape():
         "-b", "2048", "-ub", "512",
         "-ngl", "999", "--split-mode", "layer",
         "--cache-type-k", "q8_0", "--cache-type-v", "q8_0",
+        "--flash-attn", "on",
         "-r", "3", "-o", "jsonl",
         "--progress",
         "-p", "512,2048", "-n", "0", "-d", "0",
@@ -101,6 +102,7 @@ def test_build_decode_command_shape():
         "-b", "2048", "-ub", "512",
         "-ngl", "999", "--split-mode", "layer",
         "--cache-type-k", "q8_0", "--cache-type-v", "q8_0",
+        "--flash-attn", "on",
         "-r", "3", "-o", "jsonl",
         "--progress",
         "-p", "0", "-n", "128,512", "-d", "512,2048",
@@ -139,6 +141,7 @@ def test_build_decode_command_uses_depth_and_tg_cross_product():
     assert cmd[cmd.index("-p") + 1] == "0"
     assert cmd[cmd.index("-n") + 1] == "128,512"
     assert cmd[cmd.index("-d") + 1] == "512,2048"
+    assert "-c" not in cmd
 
 
 def test_build_decode_command_cpu_only_ngl():
@@ -181,6 +184,20 @@ def test_run_one_parses_jsonl_on_success(monkeypatch):
     )
     entries = LlamaBenchBenchmark.run_one(["llama-bench"], 60)
     assert entries == fake_entries
+
+
+def test_run_one_passes_runtime_environment_to_process(monkeypatch):
+    captured = {}
+
+    def popen(cmd, stdout, stderr, text, env):
+        captured["env"] = env
+        return _FakePopen(0)
+
+    monkeypatch.setattr(
+        "scripts.workloads.llamabench_benchmark.subprocess.Popen", popen,
+    )
+    LlamaBenchBenchmark.run_one(["llama-bench"], 60, env={"ONEAPI": "ready"})
+    assert captured["env"] == {"ONEAPI": "ready"}
 
 
 def test_run_one_streams_each_jsonl_result(monkeypatch):
@@ -402,14 +419,18 @@ def test_run_records_entries_on_success(fake_engine, monkeypatch, small_matrix):
 
 def test_run_passes_on_progress_to_run_one(fake_engine, monkeypatch, small_matrix):
     captured = []
+    fake_engine._process_env = {"ONEAPI": "ready"}
 
-    def fake_run_one(cls, *a, on_progress=None, **kw):
-        captured.append(on_progress)
+    def fake_run_one(cls, *a, on_progress=None, env=None, **kw):
+        captured.append((on_progress, env))
         return [{"n_prompt": 512, "n_gen": 0, "avg_ts": 1.0}]
 
     monkeypatch.setattr(LlamaBenchBenchmark, "run_one", classmethod(fake_run_one))
     LlamaBenchBenchmark().run(fake_engine, _MODELS, reps=1)
-    assert captured == [Shared.log, Shared.log]
+    assert captured == [
+        (Shared.log, {"ONEAPI": "ready"}),
+        (Shared.log, {"ONEAPI": "ready"}),
+    ]
 
 
 def test_run_calls_save_fn_after_each_streamed_case(fake_engine, monkeypatch, small_matrix):
@@ -486,6 +507,10 @@ def test_run_journal_commits_each_row_before_same_sweep_timeout(
             self.entries = []
             self.states = []
             self.finished = False
+            self.telemetry_calls = []
+
+        def begin_measured(self, subwindow="measured"):
+            self.telemetry_calls.append(subwindow)
 
         def record_model_plan(self, model, requested_cases, reps):
             assert (requested_cases, reps) == (2, 3)
@@ -495,6 +520,7 @@ def test_run_journal_commits_each_row_before_same_sweep_timeout(
             return [("prefill", pp, []), ("decode", pp, tg)]
 
         def record_entry(self, model, entry):
+            self.telemetry_calls.append("record")
             self.entries.append(entry)
 
         def record_model_state(self, model, state, result):
@@ -508,6 +534,7 @@ def test_run_journal_commits_each_row_before_same_sweep_timeout(
             return {"projected": True}
 
     def fake_run_one(cls, command, *args, **kwargs):
+        assert journal.telemetry_calls == ["measured:native-sweep-includes-load"]
         kwargs["on_result"]({
             "n_prompt": 512, "n_gen": 0, "avg_ts": 123.0,
             "samples_ts": [122.0, 123.0, 124.0],
@@ -520,6 +547,7 @@ def test_run_journal_commits_each_row_before_same_sweep_timeout(
     assert result == {"projected": True}
     assert len(journal.entries) == 1
     assert journal.entries[0]["completed_reps"] == 3
+    assert journal.telemetry_calls == ["measured:native-sweep-includes-load", "record"]
     assert journal.states[0][0] == "timed_out"
     assert journal.finished is True
 

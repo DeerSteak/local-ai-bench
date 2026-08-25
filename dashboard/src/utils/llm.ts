@@ -5,6 +5,8 @@ import {
 import { getModelColor, modelLabel, getSkipInfo, entriesOf, valuesOf, lookup } from "./shared";
 import type { JsonRecord } from "./shared";
 import type { BarConfig, ChartRow, LineConfig, ResultsFile } from "../types";
+import { memoryChannelPeak } from "./memory";
+import { powerEfficiency, powerFields } from "./power";
 
 const SKIP_REASON_LABELS: Record<string, string> = {
   timed_out: "Skipped - LLM Timed Out",
@@ -15,6 +17,18 @@ const SKIP_REASON_LABELS: Record<string, string> = {
 };
 
 export const llmTTFTMean = (sample: JsonRecord[string]) => sample?.client_ttft_mean_sec ?? sample?.ttft_mean_sec;
+
+export function modelPlacementLabel(sample: JsonRecord[string]): string {
+  const placement = sample?.model_placement;
+  if (typeof placement?.gpu_layers === "number" && typeof placement?.total_layers === "number") {
+    const cpu = typeof placement.cpu_model_buffer_gb === "number"
+      ? ` · ${placement.cpu_model_buffer_gb.toFixed(1)} GB CPU`
+      : "";
+    return `${placement.gpu_layers}/${placement.total_layers} GPU layers${cpu}`;
+  }
+  const offload = placement?.cpu_offload_gb ?? sample?.cpu_offload_gb;
+  return typeof offload === "number" && offload > 0 ? `${offload} GB CPU offload` : "Not recorded";
+}
 // Prompt-processing throughput. Absent on results from before it was recorded, and
 // on any run whose engine reported no prompt duration — see docs/engines.md#prefill-timing.
 export const llmPrefillTPS = (sample: JsonRecord[string]) => sample?.prefill_tps_mean;
@@ -22,6 +36,8 @@ export const llmPrefillTPS = (sample: JsonRecord[string]) => sample?.prefill_tps
 export function llmMetricValue(sample: JsonRecord[string], metric: string): JsonRecord[string] {
   if (metric === "tps") return sample?.tps_mean;
   if (metric === "prefill") return llmPrefillTPS(sample);
+  if (metric === "memory") return memoryChannelPeak(sample, "process_rss_gb");
+  if (metric === "efficiency") return powerEfficiency(sample);
   return llmTTFTMean(sample);
 }
 export const llmValidRuns = (sample: JsonRecord[string]) => sample?.valid_runs ?? sample?.n_runs;
@@ -84,6 +100,7 @@ export function getAllLLMModels(files: ResultsFile[]): string[] {
   for (const f of files) {
     for (const m of Object.keys(f.data.llm || {})) s.add(m);
     for (const m of Object.keys(f.data.llm_conversation || {})) s.add(m);
+    for (const m of Object.keys(f.data.sustained || {})) s.add(m);
     for (const test of ACCURACY_TESTS)
       for (const m of Object.keys(f.data[test] || {})) s.add(m);
     for (const m of Object.keys(f.data.concurrency_tool || {})) s.add(m);
@@ -284,7 +301,14 @@ export function flattenLLMData(files: ResultsFile[], section = "llm"): ChartRow[
           ttft_mean: llmTTFTMean(s),
           ttft_stdev: s.client_ttft_stdev_sec ?? s.ttft_stdev_sec,
           prefill_tps: llmPrefillTPS(s), prefill_tps_stdev: s.prefill_tps_stdev,
+          host_ram_peak_gb: memoryChannelPeak(s, "host_ram_used_gb"),
+          process_rss_peak_gb: memoryChannelPeak(s, "process_rss_gb"),
+          accelerator_memory_peak_gb: memoryChannelPeak(s, "accelerator_memory_used_gb"),
+          headroom_gb: s?.memory?.headroom?.absolute_gb ?? null,
+          headroom_state: s?.memory?.headroom?.state ?? "not_recorded",
+          model_placement: modelPlacementLabel(s),
           n_runs: llmValidRuns(s),
+          ...powerFields(s),
         }));
     })
   );

@@ -7,6 +7,8 @@ import {
   buildLlamaBenchPrefillLineData,
 } from "./llamabench";
 import { getRunReliabilityWarning, parseResultsJSON } from "./shared";
+import { getMemoryRecordingState, runHeadroomSummary } from "./memory";
+import { buildPowerEfficiencyDataForModel, runPowerSummary } from "./power";
 
 
 function loadGolden(name: string) {
@@ -19,6 +21,35 @@ function loadGolden(name: string) {
 
 
 describe("4.1 golden result compatibility", () => {
+  it("renders a schema 1 aggregate-only result with missing newer sections", () => {
+    const data = loadGolden("results_v4_1_schema1_legacy.json");
+    const files = [{ id: "schema1", hostname: "Golden", data }];
+
+    expect(data.run.schema_version).toBe(1);
+    expect(buildLLMDataForModel(files, "golden", "tps"))
+      .toEqual([{ ctxLabel: "2K", f0: 50 }]);
+    expect(getMemoryRecordingState(files[0])).toBe("not_recorded");
+  });
+
+  it("renders schema 5 memory while preserving the benchmark measurement", () => {
+    const data = loadGolden("results_v6_schema5_memory.json");
+    const files = [{ id: "schema5", hostname: "Golden", data }];
+
+    expect(data.run.schema_version).toBe(5);
+    expect(buildLLMDataForModel(files, "golden", "tps"))
+      .toEqual([{ ctxLabel: "2K", f0: 50 }]);
+    expect(getMemoryRecordingState(files[0])).toBe("recorded");
+    expect(runHeadroomSummary(files[0])).toEqual({
+      state: "comfortable", absoluteGb: 12, casePath: "llm/golden/2K",
+    });
+    expect(buildPowerEfficiencyDataForModel(files, "golden"))
+      .toEqual([{ ctxLabel: "2K", f0: 10 }]);
+    expect(runPowerSummary(files[0])).toEqual({
+      status: "recorded", energyJoules: 12, idleWatts: 4,
+      scope: "accelerator", reason: null,
+    });
+  });
+
   it("renders complete LLM, conversation, and llama-bench measurements", () => {
     const data = loadGolden("results_v4_1_complete.json");
     const files = [{ id: "golden", hostname: "Golden", data }];
@@ -52,6 +83,17 @@ describe("4.1 golden result compatibility", () => {
 
     expect(data.run.plan.schema_version).toBe(1);
     expect(data.run.plan_id).toHaveLength(64);
+    expect(getRunReliabilityWarning(data)).toBe("");
+    expect(buildLLMDataForModel(files, "golden", "tps"))
+      .toEqual([{ ctxLabel: "2K", f0: 50 }]);
+  });
+
+  it("renders schema 4 pause-backed results without changing chart behavior", () => {
+    const data = loadGolden("results_v4_1_schema4_pause.json");
+    const files = [{ id: "schema4", hostname: "Golden", data }];
+
+    expect(data.run.schema_version).toBe(4);
+    expect(data.run.pause.control_transitions).toHaveLength(2);
     expect(getRunReliabilityWarning(data)).toBe("");
     expect(buildLLMDataForModel(files, "golden", "tps"))
       .toEqual([{ ctxLabel: "2K", f0: 50 }]);

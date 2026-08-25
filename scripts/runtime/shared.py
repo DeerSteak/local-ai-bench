@@ -13,7 +13,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -30,7 +29,9 @@ from scripts.runtime.comfyui_installation import (
 )
 from scripts.runtime import hardware
 from scripts.runtime.log_redaction import redact_log_text
-from scripts.workloads.models import IMAGE_MODELS
+from scripts.workloads.models import (
+    IMAGE_MODELS, image_checkpoint_groups, image_checkpoint_path,
+)
 from scripts.runtime.pause_control import wait_if_paused
 from scripts.results.result_store import atomic_write_json
 from scripts.runtime.progress_events import emit_model_finished, emit_progress
@@ -42,6 +43,16 @@ if TYPE_CHECKING:
 
 
 RUN_LOG_UTC_OFFSET_ENV = "LOCAL_AI_BENCH_RUN_LOG_UTC_OFFSET_MINUTES"
+WINDOWS_DISPLAY_ADAPTERS = {
+    "microsoft basic display adapter", "microsoft remote display adapter",
+}
+
+
+def _windows_gpu_names(output: str) -> list[str]:
+    return [
+        name for line in output.splitlines() if (name := line.strip())
+        and name.casefold() not in WINDOWS_DISPLAY_ADAPTERS
+    ]
 
 
 def _console_timezone(environment=None):
@@ -87,6 +98,11 @@ def _nvidia_gpu_summary(output):
     return devices[0]["name"], sum(capacities) if len(capacities) == len(devices) else None
 
 
+def _rocm_gpu_summary(output):
+    names = hardware.rocminfo_gpu_names(output)
+    return names[0] if names else None
+
+
 def _machine_identity(cpu, gpu, ram_gb, total_vram_gb=None):
     lines = []
     if cpu:
@@ -102,7 +118,6 @@ def _machine_identity(cpu, gpu, ram_gb, total_vram_gb=None):
 class EngineTimeout(TimeoutError):
     """Raised when chat() exceeds its wall-clock timeout. Carries whatever text
     had streamed before the cutoff — see docs/workloads.md#timeouts-and-loop-detection."""
-
     def __init__(self, message: str, partial_text: str = "",
                  budget_nudged: bool = False):
         super().__init__(message)
@@ -232,12 +247,14 @@ class Shared:
 
         try:
             info_out = subprocess.check_output(
-                ["rocminfo"], text=True, stderr=subprocess.DEVNULL,
+                [hardware.rocm_executable("rocminfo") or "rocminfo"],
+                text=True, stderr=subprocess.DEVNULL,
             )
             gpu_names = hardware.rocminfo_gpu_names(info_out)
             if any(hardware.classify_gpu(name) == "discrete" for name in gpu_names):
                 mem_out = subprocess.check_output(
-                    ["rocm-smi", "--showmeminfo", "vram", "--json"],
+                    [hardware.rocm_executable("rocm-smi") or "rocm-smi",
+                     "--showmeminfo", "vram", "--json"],
                     text=True, stderr=subprocess.DEVNULL, timeout=10,
                 )
                 mem_data = json.loads(mem_out)
@@ -311,16 +328,15 @@ class Shared:
         """Start ComfyUI if not already running. Returns whether it's now available."""
         if Shared.comfyui_available():
             try:
-                response = requests.get(f"{config.COMFYUI_URL}/object_info/CheckpointLoaderSimple", timeout=5)
-                available = checkpoint_names_from_object_info(response.json())
-                managed = {
-                    model["checkpoint"] for model in IMAGE_MODELS
-                    if (config.COMFYUI_MODELS_DIR / "checkpoints" / model["checkpoint"]).is_file()
-                }
-                if not managed_checkpoints_visible(available, managed):
-                    Shared.warn("ComfyUI is running but has not loaded Local AI Bench's managed model path")
-                    Shared.warn("Stop ComfyUI and retry so Local AI Bench can launch it with the correct configuration")
-                    return False
+                managed_models = [model for model in IMAGE_MODELS
+                                  if image_checkpoint_path(model, config.COMFYUI_MODELS_DIR).is_file()]
+                for loader, managed in image_checkpoint_groups(managed_models).items():
+                    response = requests.get(f"{config.COMFYUI_URL}/object_info/{loader}", timeout=5)
+                    available = checkpoint_names_from_object_info(response.json(), loader)
+                    if not managed_checkpoints_visible(available, managed):
+                        Shared.warn("ComfyUI is running but has not loaded Local AI Bench's managed model path")
+                        Shared.warn("Stop it without active work, restart it once, then retry the image workload")
+                        return False
             except Exception as exc:
                 Shared.warn(f"Could not verify checkpoints in the running ComfyUI server: {exc}")
                 return False
@@ -338,13 +354,13 @@ class Shared:
             return False
 
         # Check at least one image model checkpoint is present
-        checkpoints_dir = config.COMFYUI_MODELS_DIR / "checkpoints"
-        known = [m["checkpoint"] for m in IMAGE_MODELS]
-        found = [c for c in known if (checkpoints_dir / c).exists()]
+        known = [model["checkpoint"] for model in IMAGE_MODELS]
+        found = [model["checkpoint"] for model in IMAGE_MODELS
+                 if image_checkpoint_path(model, config.COMFYUI_MODELS_DIR).exists()]
         if not found:
-            Shared.warn("No image model checkpoints found in " + str(checkpoints_dir))
+            Shared.warn("No managed image model checkpoints found in " + str(config.COMFYUI_MODELS_DIR))
             Shared.warn("Expected one of: " + ", ".join(known))
-            Shared.warn("Run setup_check.py to download Flux models automatically")
+            Shared.warn("Run setup to download image models automatically")
             return False
         Shared.log(f"Found {len(found)}/{len(known)} image checkpoints: {found}")
 
@@ -461,8 +477,7 @@ class Shared:
             if cpu_names:
                 cpu = cpu_names[0]
 
-            _skip = {"microsoft basic display adapter", "microsoft remote display adapter"}
-            gpus = [n for n in _ps_names("Win32_VideoController") if n and n.lower() not in _skip]
+            gpus = _windows_gpu_names("\n".join(_ps_names("Win32_VideoController")))
             if gpus:
                 gpu = gpus[0]
             try:
@@ -491,7 +506,7 @@ class Shared:
             # NVIDIA first, then AMD via rocminfo, then lspci fallback
             try:
                 out = subprocess.run(
-                    ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                    [hardware.nvidia_smi_executable(), "--query-gpu=name", "--format=csv,noheader"],
                     capture_output=True, text=True, timeout=10,
                 ).stdout.strip()
                 if out:
@@ -501,18 +516,27 @@ class Shared:
             if not gpu:
                 try:
                     out = subprocess.run(
-                        ["rocminfo"], capture_output=True, text=True, timeout=10,
+                        [hardware.rocm_executable("rocminfo") or "rocminfo"],
+                        capture_output=True, text=True, timeout=10,
                     ).stdout
-                    for line in out.splitlines():
-                        if "Marketing Name:" in line:
-                            gpu = line.split(":", 1)[1].strip()
-                            break
+                    gpu = _rocm_gpu_summary(out)
+                except Exception:
+                    pass
+            if not gpu and Shared.detect_wsl(system, platform.release()):
+                try:
+                    out = subprocess.run(
+                        ["powershell.exe", "-NoProfile", "-Command",
+                         "(Get-CimInstance Win32_VideoController).Name"],
+                        capture_output=True, text=True, timeout=10,
+                    ).stdout
+                    gpus = _windows_gpu_names(out)
+                    gpu = gpus[0] if gpus else None
                 except Exception:
                     pass
             if not gpu:
                 try:
                     out = subprocess.run(
-                        ["lspci"], capture_output=True, text=True, timeout=10,
+                        ["lspci", "-nn"], capture_output=True, text=True, timeout=10,
                     ).stdout
                     for line in out.splitlines():
                         if any(k in line for k in ("VGA", "3D controller", "Display")):
@@ -555,9 +579,11 @@ class Shared:
             pass
         # ROCm (Linux)
         try:
-            out = subprocess.check_output(["rocminfo"], text=True,
-                                           stderr=subprocess.DEVNULL)
-            if "Marketing Name" in out:
+            out = subprocess.check_output(
+                [hardware.rocm_executable("rocminfo") or "rocminfo"],
+                text=True, stderr=subprocess.DEVNULL,
+            )
+            if _rocm_gpu_summary(out):
                 return "rocm"
         except (FileNotFoundError, subprocess.CalledProcessError):
             pass
@@ -572,17 +598,19 @@ class Shared:
                 names = [n.strip() for n in out.splitlines() if n.strip()]
                 if any("AMD" in n or "Radeon" in n for n in names):
                     return "rocm"
-                if any("Intel" in n and "Arc" in n for n in names):
+                if any(hardware.is_intel_xpu_display(n) for n in names):
                     return "xpu"
             except Exception:
                 pass
-        # No guaranteed xpu-smi on Linux — reuse the "Intel"+"Arc" heuristic on lspci (not just "Intel", to exclude integrated Iris Xe).
+        # lspci may report Arc Pro B-series by its Battlemage codename.
         if platform.system() == "Linux":
             try:
-                out = subprocess.check_output(["lspci"], text=True, stderr=subprocess.DEVNULL)
+                out = subprocess.check_output(
+                    ["lspci", "-nn"], text=True, stderr=subprocess.DEVNULL,
+                )
                 for line in out.splitlines():
                     if (any(k in line for k in ("VGA", "3D controller", "Display"))
-                            and "Intel" in line and "Arc" in line):
+                            and hardware.is_intel_xpu_display(line)):
                         return "xpu"
             except (FileNotFoundError, subprocess.CalledProcessError):
                 pass
@@ -609,18 +637,20 @@ class Shared:
         return min(base_ctx + headroom, model_max)
 
     @staticmethod
-    def build_prompt_for_context(target_tokens: int) -> str:
-        """Pad a prompt to ~target_tokens (1 token ≈ 4 chars) from a real document slice,
-        prefixed with a unique nonce so reruns don't share a prefix the slot cache can hit."""
-        nonce = uuid.uuid4().hex
-        prefix = f"[run {nonce}] "
+    def build_prompt_for_context(target_tokens: int, variant: int = 0) -> str:
+        """Build stable real-text prompt content for a context and variant."""
+        if variant < 0:
+            raise ValueError("prompt variant must be non-negative")
+        prefix = f"[single-shot {target_tokens}:{variant}] "
         chars_needed = target_tokens * 4
         body_needed = max(0, chars_needed - len(prefix))
 
         document = Shared._long_document()
         if body_needed > len(document):
             document = document * (body_needed // len(document) + 1)
-        start = random.randint(0, len(document) - body_needed) if len(document) > body_needed else 0
+        available = max(0, len(document) - body_needed)
+        start = ((target_tokens * 2654435761 + variant * 2246822519) % (available + 1)
+                 if available else 0)
         body = document[start:start + body_needed]
 
         return (prefix + body)[:chars_needed]
@@ -738,16 +768,20 @@ class Shared:
                                 save_fn=None, answers_path: Path | None = None,
                                 progress_stage: str | None = None,
                                 requires_tool_calls: bool = False,
+                                telemetry=None,
+                                journal=None,
                                 ) -> dict:
         """Shared run() body for the MCQ/Math/Reasoning/Code/Tool accuracy tests,
         parameterized by `ask_fn`/`rescore_partial_fn`/`score_fn` (see callers)."""
         from scripts.runtime.crash_cache import check_crash_cache, load_crash_cache
 
-        results = {}
-        answers_out: dict = {}
+        results = journal.export_results() if journal else {}
+        answers_out: dict = journal.export_answers() if journal else {}
 
         if not engine.ensure_running():
             Shared.err(f"Inference engine not reachable — skipping {skip_label} benchmark")
+            if journal:
+                raise RuntimeError("inference engine unavailable in supervised accuracy runner")
             return results
 
         crash_cache = load_crash_cache(crash_cache_path)
@@ -765,10 +799,20 @@ class Shared:
 
             if progress_stage:
                 emit_progress("model", progress_stage, "running", label, model_id=tag)
+            telemetry_active = False
             try:
+                pending_questions = journal.pending_questions(model) if journal else questions
+                if journal and not pending_questions:
+                    results = journal.export_results()
+                    answers_out = journal.export_answers()
+                    continue
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not downloaded — skipping")
                     Shared.warn("Download it with: python setup_check.py")
+                    if journal:
+                        journal.record_model_state(model, "skipped", {
+                            "skipped": True, "skip_reason": "model_not_downloaded",
+                        })
                     continue
 
                 if requires_tool_calls and not engine.supports_tool_calls(tag):
@@ -780,6 +824,8 @@ class Shared:
                         "skip_reason": "tool_calls_unsupported",
                         "skip_detail": f"No {engine.name} tool-call parser for this model",
                     }
+                    if journal:
+                        journal.record_model_state(model, "skipped", results[short])
                     continue
 
                 skip_entry = check_crash_cache(
@@ -788,8 +834,13 @@ class Shared:
                 )
                 if skip_entry is not None:
                     results[short] = skip_entry
+                    if journal:
+                        journal.record_model_state(model, "skipped", skip_entry)
                     continue
 
+                if telemetry:
+                    telemetry.begin_model_load()
+                    telemetry_active = True
                 if not engine.warmup(tag, label, config.ACCURACY_CONTEXT, warmup_runs,
                                      crash_cache, crash_cache_path,
                                      crash_extra={"bank_hash": bank_hash}):
@@ -797,7 +848,7 @@ class Shared:
                     continue
 
                 Shared.log(
-                    f"Answering {len(questions)} {question_noun} "
+                    f"Answering {len(pending_questions)} {question_noun} "
                     f"({config.ACC_TIMEOUT}s and {config.ACC_TOKEN_BUDGET} completion tokens each) ..."
                 )
                 answers: dict = {}
@@ -810,7 +861,9 @@ class Shared:
                 answers_out[short] = {"label": label, "answers": [], "partial": True}
                 results[short] = {"label": label, "partial": True, "answered": 0, "total": len(questions)}
 
-                for i, q in enumerate(questions):
+                for i, q in enumerate(pending_questions):
+                    if telemetry:
+                        telemetry.begin_measured(f"measured:{q['id']}")
                     samples, status, partial_text, metadata = Shared.run_measured_calls(
                         1, lambda run_i, q=q: ask_fn(tag, q), tag, crash_cache,
                         crash_cache_path, f"answering {q['id']}", engine,
@@ -829,6 +882,22 @@ class Shared:
                         "id": q["id"], "given": given, "raw_response": raw,
                     })
                     results[short]["answered"] = len(answers)
+
+                    if journal:
+                        attempt_number = journal.next_attempt(model, q["id"])
+                        if attempt_number is None:
+                            raise ValueError(f"accuracy question already completed: {q['id']}")
+                        journal.record_question(
+                            model, q["id"], given, raw, status,
+                            budget_nudged=budget_nudged,
+                            likely_loop=(status == "loop_detected" or (
+                                status == "timed_out" and bool(partial_text)
+                                and looks_like_loop(partial_text)
+                            )),
+                            attempt_number=attempt_number,
+                        )
+                        results = journal.export_results()
+                        answers_out = journal.export_answers()
 
                     if budget_nudged:
                         budget_nudged_ids.append(q["id"])
@@ -854,6 +923,16 @@ class Shared:
 
                     if (i + 1) % 10 == 0:
                         Shared.log(f"  {i+1}/{len(questions)} answered ...")
+
+                if journal:
+                    scored_result = results.get(short, {})
+                    if scored_result.get("accuracy_pct") is not None:
+                        Shared.ok(f"{label}: {scored_result['accuracy_pct']:.1f}% "
+                                  f"({scored_result['correct']}/{scored_result['total']})")
+                    Shared.log(f"Unloading {label} ...")
+                    engine.unload(tag)
+                    engine.wait_until_unloaded(tag)
+                    continue
 
                 scored = score_fn(questions, answers)
                 answers_out[short] = {
@@ -898,14 +977,33 @@ class Shared:
                            "skipping remaining work for this model")
                 results.setdefault(short, {}).update(
                     unexpected_model_failure(label, exc, crashed=True))
+                if journal:
+                    journal.record_model_state(model, "failed", results[short])
+                    results = journal.export_results()
+                    answers_out = journal.export_answers()
             finally:
-                if save_fn:
+                if telemetry_active and telemetry:
+                    memory = telemetry.finish_case()
+                    if journal:
+                        journal.record_model_evidence(
+                            model, memory, getattr(telemetry, "last_power", None),
+                        )
+                        results = journal.export_results()
+                        answers_out = journal.export_answers()
+                    elif isinstance(results.get(short), dict):
+                        results[short]["memory"] = memory
+                        if (power := getattr(telemetry, "last_power", None)) is not None:
+                            results[short]["power"] = power
+                if save_fn and not journal:
                     save_fn(results)
-                if answers_path:
+                if answers_path and not journal:
                     Shared.write_answers_sidecar(answers_path, answers_out)
                 if progress_stage:
                     emit_model_finished(progress_stage, label, results.get(short), model_id=tag)
 
+        if journal:
+            journal.finish()
+            return journal.export_results()
         return results
 
 

@@ -4,6 +4,8 @@ from pathlib import Path
 
 from scripts.results.event_store import EventStore, JournalEvent
 from scripts.results.run_plan import RunPlan
+from scripts.results.llm_event_stage import CaseTelemetryLike
+from scripts.runtime.telemetry import add_power_efficiency
 
 
 def group_remaining_sweeps(pp, tg, completed):
@@ -21,14 +23,22 @@ def group_remaining_sweeps(pp, tg, completed):
     return sweeps
 
 
+def completed_entry_tokens(entry: dict) -> int:
+    return (entry.get("n_prompt", 0) + entry.get("n_gen", 0)) * entry.get(
+        "completed_reps", 0,
+    )
+
+
 class NativeBenchEventStage:
     def __init__(self, path: Path, plan: RunPlan, export_fn, *, initialize: bool = True,
-                 resume_identity: dict | None = None, resume: bool = False):
+                 resume_identity: dict | None = None, resume: bool = False,
+                 telemetry: CaseTelemetryLike | None = None):
         self.plan = plan
         self.store = EventStore(path)
         self.export_fn = export_fn
         self.stage_id = plan.stage_id("llamabench")
         self.model_identities = {model.get("tag"): model for model in plan.models["llm"]}
+        self.telemetry = telemetry
         if resume:
             if not initialize:
                 raise ValueError("resume requires an initializing stage owner")
@@ -44,6 +54,18 @@ class NativeBenchEventStage:
 
     def close(self):
         self.store.close()
+
+    def begin_model_load(self) -> None:
+        if self.telemetry:
+            self.telemetry.begin_model_load()
+
+    def begin_measured(self, subwindow: str = "measured") -> None:
+        if self.telemetry:
+            self.telemetry.begin_measured(subwindow)
+
+    def discard_case(self) -> None:
+        if self.telemetry:
+            self.telemetry.finish_case()
 
     def _model_id(self, model: dict) -> str:
         identity = self.model_identities.get(model["tag"])
@@ -71,6 +93,12 @@ class NativeBenchEventStage:
         case_id = self.plan.case_id("llamabench", model_id, case_key)
         attempt_id = self.plan.attempt_id(case_id, 1)
         sample_id = self.plan.sample_id(attempt_id, 1)
+        memory = self.telemetry.finish_case() if self.telemetry else None
+        power = getattr(self.telemetry, "last_power", None) if self.telemetry else None
+        tokens = completed_entry_tokens(entry)
+        power = add_power_efficiency(power, "tokens_per_joule", tokens)
+        if self.telemetry:
+            self.telemetry.begin_measured("measured:native-sweep")
         self.store.append(self.plan.job_id, [
             JournalEvent("case", case_id, "running", {
                 "case_kind": "entry", "model_short": model["short"],
@@ -80,7 +108,9 @@ class NativeBenchEventStage:
                 "number": 1, "valid": True, "measurement": entry, "errors": [],
             }, parent_id=attempt_id),
             JournalEvent("attempt", attempt_id, "complete", {}, parent_id=case_id),
-            JournalEvent("case", case_id, "complete", {}, parent_id=self.stage_id),
+            JournalEvent("case", case_id, "complete", {
+                "memory": memory, "power": power,
+            }, parent_id=self.stage_id),
         ])
         self.export_fn(self.export())
 
@@ -147,6 +177,10 @@ class NativeBenchEventStage:
                 sample = next(value for value in projection["samples"].values()
                               if value["parent_id"] in attempts)
                 entry = sample["measurement"]
+                if case.get("memory") is not None:
+                    entry = {**entry, "memory": {**case["memory"], "case_id": case_id}}
+                if case.get("power") is not None:
+                    entry = {**entry, "power": {**case["power"], "case_id": case_id}}
                 model_result = results.setdefault(short, {
                     "prefill_entries": [], "decode_entries": [],
                     "requested_cases": 0, "completed_cases": 0,

@@ -76,8 +76,9 @@ cleanup_selected_results() {
 }
 trap cleanup_selected_results EXIT
 
+OPEN_PATH="/"
 if [ ${#SELECTED_RESULTS[@]} -gt 0 ]; then
-    npm --prefix "$DASHBOARD_DIR" run preview -- --port "$PORT" --open "/?autoload=1"
-else
-    npm --prefix "$DASHBOARD_DIR" run preview -- --port "$PORT" --open
+    OPEN_PATH="/?autoload=1"
 fi
+(cd "$SCRIPT_DIR" && "$SCRIPT_DIR/bench-env/bin/python" -m scripts.app.workspace_server \
+    --dist "$DASHBOARD_DIR/dist" --port "$PORT" --open-path "$OPEN_PATH")

@@ -36,7 +36,6 @@ from scripts.app.benchmark_frontend import (
     apply_saved_test_selection,
     build_benchmark_command,
     build_frontend_state,
-    frontend_state_from_run_plan,
     frontend_state_availability_errors,
     build_model_entries,
     build_test_entries,
@@ -47,7 +46,9 @@ from scripts.app.benchmark_frontend import (
     validate_gui_options,
 )
 from scripts.runtime.comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
-from scripts.runtime.engines import engine_names, get_engine, installed_engine_names
+from scripts.runtime.engines import (
+    engine_display_name, engine_names, get_engine, installed_engine_names,
+)
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.setup.model_inventory import build_model_inventory
 from scripts.app.engine_management import collect_engine_management
@@ -57,14 +58,18 @@ from scripts.setup.runtime_update import (
 from scripts.stage_registry import STAGE_ORDER
 from scripts.runtime.pause_control import PAUSE_CONTROL_ENV, create_pause_control, write_pause_state
 from scripts.runtime.progress_events import PROGRESS_PREFIX
+from scripts.runtime.telemetry import discover_power_source
+from scripts.runtime.mtp import mtp_progress_names, mtp_selection_error
 from scripts.runtime.crash_cache import clear_crash_caches, crash_cache_paths
 from scripts.runtime.shared import Shared
+from scripts.workloads.models import LLM_MODELS
+from scripts.workloads.model_variants import collapse_variant_selection, expanded_variant_catalog
 from scripts.setup.setup_config import (
     available_gpu_split_modes, configured_comfyui_dir, configured_gpu_devices,
     load_setup_config,
 )
 from scripts.setup.vllm_install import fetch_vllm_versions, is_dgx_spark
-from scripts.app.tk_utils import refresh_tk_layout
+from scripts.app.tk_utils import refresh_tk_layout, schedule_tk_layout_refresh
 from scripts.app.result_actions import (
     completed_result_paths, record_result_path, result_paths_for_log, write_run_logs,
 )
@@ -95,6 +100,7 @@ from scripts.app.benchmark_gui_support import (
     BENCHMARK_PRESETS,
     CUSTOM_PRESET,
     GPU_SPLIT_MODE_LABELS,
+    MTP_MODE_LABELS,
     apply_hardware_model_defaults,
     build_discovery_report,
     build_plan_preview,
@@ -105,6 +111,7 @@ from scripts.app.benchmark_gui_support import (
     format_run_outcome,
     gpu_split_mode_labels,
     gpu_split_mode_value,
+    mtp_mode_value,
     history_row_height,
     parse_progress_line,
     plan_preview_sections,
@@ -119,12 +126,58 @@ from scripts.app.benchmark_gui_support import (
     update_progress_metrics,
     workload_preflight_errors,
 )
+from scripts.app.benchmark_gui_accessibility import configure_keyboard_accessibility
 
 
 def launch_controlled_process(command: list[str], **kwargs):
     return _launch_controlled_process(
         command, utc_offset_fn=windows_host_utc_offset_minutes, **kwargs,
     )
+
+
+def authorize_macos_power_telemetry(enabled: bool, *, system=platform.system,
+                                    run=subprocess.run,
+                                    environ: dict[str, str] | None = None,
+                                    askpass_path: Path | None = None) -> str | None:
+    if not enabled or system() != "Darwin":
+        return None
+    helper = askpass_path or Path(__file__).with_name("macos_sudo_askpass.sh")
+    if not helper.is_file() or not os.access(helper, os.X_OK):
+        return "The macOS administrator prompt helper is missing or not executable."
+    sudo_environment = dict(os.environ if environ is None else environ)
+    sudo_environment["SUDO_ASKPASS"] = str(helper)
+    try:
+        result = run(
+            ["/usr/bin/sudo", "-A", "-v"], env=sudo_environment,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "Administrator permission could not be requested."
+    if result.returncode != 0:
+        return "Administrator permission was canceled or denied; the benchmark was not started."
+    return None
+
+
+def authorize_linux_rapl_power_telemetry(enabled: bool, *, system=platform.system,
+                                         discover=discover_power_source,
+                                         run=subprocess.run,
+                                         which=shutil.which) -> str | None:
+    if not enabled or system() != "Linux":
+        return None
+    availability = discover()
+    if availability.source != "rapl" or availability.available:
+        return None
+    sudo = which("sudo")
+    if not sudo:
+        return "RAPL power telemetry needs sudo, but sudo is not installed."
+    try:
+        result = run([sudo, "-v"], timeout=120)
+    except (OSError, subprocess.TimeoutExpired):
+        return "Administrator permission could not be requested for RAPL power telemetry."
+    if result.returncode != 0:
+        return "Administrator permission was canceled or denied; the benchmark was not started."
+    return None
 
 
 @dataclass(frozen=True)
@@ -186,34 +239,146 @@ def process_completion_state(kind: str | None, exit_code: int) -> ProcessComplet
     return ProcessCompletionState(status, exit_code == 0)
 
 
+def gui_option_control_value(key: str, value: Any) -> Any:
+    if key == "gpu_split_mode":
+        return GPU_SPLIT_MODE_LABELS[gpu_split_mode_value(value)]
+    if key == "mtp":
+        return MTP_MODE_LABELS[mtp_mode_value(value)]
+    if value is None:
+        return ""
+    return value if isinstance(value, bool) else str(value)
+
+
 def normalize_gui_option_values(values: dict[str, Any]) -> dict[str, Any]:
     options = dict(GUI_OPTION_DEFAULTS)
-    for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget"):
+    for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget",
+                "sustained_duration"):
         try:
             options[key] = int(values[key])
         except (TypeError, ValueError):
             options[key] = values[key]
+    try:
+        raw_ambient = str(values["ambient_temp_c"]).strip()
+        options["ambient_temp_c"] = float(raw_ambient) if raw_ambient else None
+    except (TypeError, ValueError):
+        options["ambient_temp_c"] = values["ambient_temp_c"]
     options["gpu_split_mode"] = gpu_split_mode_value(values["gpu_split_mode"])
-    for key in ("cpu_only", "force_all", "retry_crashed_models", "offline",
-                "llamacpp_no_repack"):
+    options["mtp"] = mtp_mode_value(values["mtp"])
+    for key in ("cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
+                "power_telemetry", "llamacpp_no_repack"):
         options[key] = values[key]
     for key in ("out", "comfyui"):
         options[key] = str(values[key]).strip()
     return options
 
 
+def restored_tg_tokens(state: dict[str, Any] | None) -> set[int]:
+    if state is None or state["tg_tokens"] is None:
+        return set(config.LLAMABENCH_TG)
+    return set(state["tg_tokens"])
+
+
+def runtime_profiles_for_engines(engines: dict, hardware_profile: dict) -> dict[str, dict]:
+    hardware_backend = hardware_profile["backend"]
+    return {
+        name: {"runtime_backend": engine.runtime_backend(hardware_backend, cpu_only=False)}
+        for name, engine in engines.items()
+    }
+
+
+def pending_runtime_profiles(engine_names: Sequence[str]) -> dict[str, dict]:
+    return {
+        name: {"runtime_backend": None}
+        for name in engine_names
+    }
+
+
+def split_modes_for_runtime_profiles(setup: dict, selected_engines: Sequence[str],
+                                     profiles: dict[str, dict], *, cpu_only: bool) -> tuple[str, ...]:
+    if cpu_only:
+        return ("layer",)
+    backends = [
+        value if isinstance(value := profiles.get(name, {}).get("runtime_backend"), str) else None
+        for name in selected_engines
+    ]
+    if not backends or any(backend is None for backend in backends):
+        return ("layer",)
+    supported = []
+    for backend in backends:
+        assert backend is not None
+        supported.append(set(available_gpu_split_modes(setup, backend)))
+    return tuple(mode for mode in ("single", "layer", "tensor")
+                 if all(mode in modes for modes in supported))
+
+
+def split_mode_capability_known(selected_engines: Sequence[str], profiles: dict[str, dict],
+                                *, cpu_only: bool) -> bool:
+    if cpu_only:
+        return True
+    return bool(selected_engines) and all(
+        isinstance(profiles.get(name, {}).get("runtime_backend"), str)
+        for name in selected_engines
+    )
+
+
+def reconcile_gpu_split_mode(requested: str, available: Sequence[str], *, known: bool) -> str:
+    return requested if not known or requested in available else "layer"
+
+
+def gpu_split_mode_availability_error(requested: str, available: Sequence[str], *, known: bool
+                                      ) -> str | None:
+    if not known or requested in available:
+        return None
+    label = GPU_SPLIT_MODE_LABELS.get(requested, requested)
+    return (
+        f"{label} is unavailable for the detected GPU runtime "
+        "and topology."
+    )
+
+
+def start_runtime_profile_load(engines: dict, hardware_profile: dict,
+                               output_queue: queue.Queue,
+                               loader=runtime_profiles_for_engines,
+                               thread_factory: Any = threading.Thread) -> None:
+    def load() -> None:
+        try:
+            profiles = loader(engines, hardware_profile)
+        except Exception:
+            profiles = pending_runtime_profiles(tuple(engines))
+        output_queue.put(profiles)
+
+    thread_factory(target=load, daemon=True).start()
+
+
 def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[MenuEntry],
+                             model_owners: dict[str, set[str]],
                              max_prompt_tokens: int | None, tg_tokens: list[int],
                              gui_options: dict[str, Any], selected_preset: str,
                              detected_tools: dict[str, str | None],
                              found_comfyui: Path | None,
                              detected_comfyui: Path) -> BenchmarkLaunchError | BenchmarkLaunchReady:
-    errors = validate_gui_options(gui_options)
+    state_options = dict(gui_options)
+    if (isinstance(state_options["ambient_temp_c"], str)
+            and state_options["ambient_temp_c"].strip().lower() == "none"):
+        state_options["ambient_temp_c"] = None
+    launch_options = dict(state_options)
+    if "sustained" not in tests:
+        launch_options["ambient_temp_c"] = None
+    errors = validate_gui_options(launch_options)
     if not tests:
         errors.append("Select at least one benchmark test.")
     selection_error = model_selection_error(entries, tests)
     if selection_error:
         errors.append(selection_error)
+    selected_engines = parse_engine_selection(engine)
+    selected_by_engine = selected_catalog_models_by_engine(
+        entries, selected_engines, model_owners,
+    )
+    mtp_error = mtp_selection_error(
+        selected_by_engine, launch_options["mtp"], tests,
+    )
+    if mtp_error:
+        errors.append(mtp_error)
     if TG_TOKEN_TESTS & set(tests) and not tg_tokens:
         errors.append("Select at least one llama-bench generation size.")
     custom_comfyui = (
@@ -224,28 +389,58 @@ def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[Men
     if errors:
         return BenchmarkLaunchError(errors)
     preview = build_plan_preview(
-        engine=engine, tests=tests, entries=entries, options=gui_options,
+        engine=engine, tests=tests, entries=entries, options=launch_options,
         max_prompt_tokens=max_prompt_tokens, tg_tokens=tg_tokens,
         comfyui_dir=custom_comfyui or detected_comfyui,
     )
     state = build_frontend_state(
         engine, tests, entries, max_prompt_tokens=max_prompt_tokens,
-        tg_tokens=tg_tokens if TG_TOKEN_TESTS & set(tests) else None,
-        gui_options=gui_options, selected_preset=selected_preset,
+        tg_tokens=tg_tokens,
+        gui_options=state_options, selected_preset=selected_preset,
     )
     command = build_benchmark_command(
         engine, detected_comfyui, tests, entries,
         max_prompt_tokens=(max_prompt_tokens
                            if MAX_PROMPT_TOKEN_TESTS & set(tests) else None),
         tg_tokens=tg_tokens if TG_TOKEN_TESTS & set(tests) else None,
-        gui_options=gui_options,
+        gui_options=state_options,
     )
     return BenchmarkLaunchReady(preview, state, command)
+
+
+def selected_catalog_models(entries: list[MenuEntry]) -> list[dict]:
+    selected = {entry.value for entry in entries if entry.checked}
+    return [model for model in expanded_variant_catalog(LLM_MODELS) if model["tag"] in selected]
+
+
+def selected_catalog_models_by_engine(entries: list[MenuEntry], engine_names: Sequence[str],
+                                      model_owners: dict[str, set[str]]) -> dict[str, list[dict]]:
+    selected = selected_catalog_models(entries)
+    return {
+        engine_name: [
+            model for model in selected
+            if engine_name in model_owners.get(model["tag"], set())
+        ]
+        for engine_name in engine_names
+    }
 
 
 def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
     from tkinter import filedialog, font as tkfont, messagebox, simpledialog, ttk
+
+    root = tk.Tk()
+    root.title(f"Local AI Bench v{config.VERSION}")
+    root.geometry("1080x820")
+    root.minsize(860, 650)
+    root.columnconfigure(0, weight=1)
+    root.rowconfigure(0, weight=1)
+    loading = ttk.Frame(root, padding=24)
+    loading.place(x=0, y=0, relwidth=1, relheight=1)
+    loading_status = ttk.Label(loading, text="Discovering local runtimes and models…")
+    loading_status.pack(anchor="nw")
+    root.protocol("WM_DELETE_WINDOW", lambda: None)
+    root.update()
 
     saved = load_frontend_state(FRONTEND_STATE_PATH)
     setup = load_setup_config(config.SETUP_CONFIG_PATH)
@@ -257,18 +452,22 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     selected_engine = saved["engine"] if saved and saved["engine"] in available_engines else available_engines[0]
     # Every installed engine's models, so switching engines re-gates the list instead of
     # offering models the newly selected engine cannot run.
+    engine_instances = {name: get_engine(name) for name in available_engines}
     engine_inventories = {
-        name: build_model_inventory(get_engine(name), config.COMFYUI_MODELS_DIR)
+        name: build_model_inventory(engine_instances[name], config.COMFYUI_MODELS_DIR)
         for name in available_engines
     }
     inventory, model_owners = merge_model_inventories(engine_inventories)
     detected_tools = {name: find_llamacpp_tool(name) for name in (
         "llama-server", "llama-bench", "llama-batched-bench",
     )}
-    system_ram_gb = Shared.system_ram_gb()
-    hardware_backend = Shared.detect_backend()
-    runtime_backend = get_engine(selected_engine).runtime_backend(hardware_backend)
-    gpu_split_modes = available_gpu_split_modes(setup, runtime_backend)
+    hardware_profile = Shared.build_profile()
+    system_ram_gb = hardware_profile["ram_gb"]
+    hardware_backend = hardware_profile["backend"]
+    runtime_profiles = pending_runtime_profiles(available_engines)
+    runtime_profiles_ready = [False]
+    runtime_profile_queue = queue.Queue()
+    gpu_split_modes = ["layer"]
     discovery = build_discovery_report(
         platform_name=platform.system(), architecture=platform.machine(),
         ram_gb=system_ram_gb, backend=hardware_backend,
@@ -276,6 +475,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         comfyui_dir=found_comfyui, inventory=inventory,
         free_storage_gb=shutil.disk_usage(config.SCRIPT_DIR).free / 1e9,
     )
+    loading_status.configure(text="Building benchmark controls…")
+    root.update()
 
     default_tests = build_test_entries(inventory)
     default_test_values = [entry.value for entry in default_tests if entry.checked]
@@ -290,17 +491,11 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     custom_model_defaults = {entry.value: entry.checked for entry in custom_models}
     apply_saved_model_selection(custom_models, saved)
 
-    root = tk.Tk()
-    root.title(f"Local AI Bench v{config.VERSION}")
-    root.geometry("1080x820")
-    root.minsize(860, 650)
-    root.columnconfigure(0, weight=1)
-    root.rowconfigure(0, weight=1)
-
     style = ttk.Style(root)
     style.configure("Title.TLabel", font=("TkDefaultFont", 21, "bold"))
     style.configure("Section.TLabel", font=("TkDefaultFont", 12, "bold"))
     style.configure("Start.TButton", font=("TkDefaultFont", 12, "bold"), padding=(18, 9))
+    configure_keyboard_accessibility(root, ttk)
     history_font = tkfont.nametofont("TkDefaultFont")
     style.configure(
         "History.Treeview",
@@ -312,16 +507,14 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     test_vars = {entry.value: tk.BooleanVar(value=entry.checked) for entry in custom_tests}
     model_vars = {entry.value: tk.BooleanVar(value=entry.checked) for entry in custom_models}
     cap_var = tk.StringVar(value=str(saved["max_prompt_tokens"]) if saved and saved["max_prompt_tokens"] else "No cap")
-    saved_tg = set(saved["tg_tokens"] or config.LLAMABENCH_TG) if saved else set(config.LLAMABENCH_TG)
+    saved_tg = restored_tg_tokens(saved)
     tg_vars = {value: tk.BooleanVar(value=value in saved_tg) for value in TG_TOKEN_OPTIONS}
     options = effective_gui_options(saved)
-    if options["gpu_split_mode"] not in gpu_split_modes:
-        options["gpu_split_mode"] = "layer"
     option_vars: dict[str, tk.Variable] = {
-        key: (tk.BooleanVar(value=value) if isinstance(value, bool) else tk.StringVar(value=str(value)))
+        key: (tk.BooleanVar(value=value) if isinstance(value, bool)
+              else tk.StringVar(value=gui_option_control_value(key, value)))
         for key, value in options.items()
     }
-    option_vars["gpu_split_mode"].set(GPU_SPLIT_MODE_LABELS[options["gpu_split_mode"]])
     if not option_vars["comfyui"].get():
         option_vars["comfyui"].set(str(detected_comfyui))
     preset_var = tk.StringVar(value=restored_preset_name(saved))
@@ -337,6 +530,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     notebook = ttk.Notebook(root)
     notebook.grid(sticky="nsew")
+    loading.lift()
     configuration_screen = build_configuration_screen(
         notebook, tk=tk, ttk=ttk, discovery=discovery, advanced_var=advanced_var,
         preset_var=preset_var, project_status=project_status,
@@ -345,11 +539,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         model_vars=model_vars, model_defaults=custom_model_defaults,
         custom_models=custom_models, cap_var=cap_var, tg_vars=tg_vars,
     )
+    root.update()
     config_tab = configuration_screen.frame
     run_log_screen = build_run_log_screen(
         notebook, tk=tk, ttk=ttk, configuration_frame=config_tab,
     )
     history_screen = build_history_screen(notebook, tk=tk, ttk=ttk)
+    root.update()
     log_tab = run_log_screen.frame
     history_tab = history_screen.frame
     engines_tab, engine_management = build_engine_screen(
@@ -375,8 +571,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         llamacpp_model_probe=engine_updates.probe_llamacpp_model,
         run_active=lambda: process is not None and process.poll() is None,
     )
+    root.update()
     notebook.bind(
-        "<<NotebookTabChanged>>", lambda _event: refresh_tk_layout(root), add="+",
+        "<<NotebookTabChanged>>", lambda _event: schedule_tk_layout_refresh(root), add="+",
     )
     form = configuration_screen.form
     canvas = configuration_screen.canvas
@@ -428,14 +625,39 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             engine_check_vars[selection.engines[0]].set(True)
         engine_var.set(selection.value)
         engine_note.set(selection.note)
+        llamacpp_only = selection.engines == ["llamacpp"]
+        if not llamacpp_only:
+            selected_tags = {
+                value for value, variable in model_vars.items() if variable.get()
+            }
+            collapsed = collapse_variant_selection(
+                [{
+                    "tag": entry.value, "base_model": entry.base_model,
+                    "variant": entry.variant, "default": entry.default_variant,
+                } for entry in custom_models],
+                selected_tags,
+            )
+            for entry in custom_models:
+                if entry.base_model:
+                    model_vars[entry.value].set(entry.value in collapsed)
+        configuration_screen.set_variant_children_visible(llamacpp_only)
         for value, widget in model_widgets.items():
             available = selection.model_availability.get(value, True)
             widget.configure(state="normal" if available else "disabled")
             if not available and model_vars[value].get():
                 model_vars[value].set(False)
+        if runtime_profiles_ready[0]:
+            refresh_split_modes()
 
+    engine_label_vars = {
+        name: tk.StringVar(value=engine_display_name(name))
+        for name in available_engines
+    }
     for index, name in enumerate(available_engines):
-        ttk.Checkbutton(engine_box, text=name, variable=engine_check_vars[name]).grid(
+        ttk.Checkbutton(
+            engine_box, textvariable=engine_label_vars[name],
+            variable=engine_check_vars[name],
+        ).grid(
             row=0, column=index, sticky="w", padx=(0, 16))
     ttk.Button(
         engine_box, text="Reset", width=6,
@@ -479,51 +701,90 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     execution_box = ttk.LabelFrame(configuration_frame, text="Execution", padding=12)
     execution_box.grid(row=5, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
-    split_labels = gpu_split_mode_labels(gpu_split_modes)
-    ttk.Label(execution_box, text="GPU mode").grid(row=1, column=0, sticky="w", pady=2)
-    ttk.Combobox(
-        execution_box, state="readonly", textvariable=option_vars["gpu_split_mode"],
+
+    def execution_row(pady: Any = 0):
+        frame = ttk.Frame(execution_box)
+        frame.pack(fill="x", pady=pady)
+        frame.columnconfigure(0, minsize=330)
+        frame.columnconfigure(1, weight=1)
+        return frame
+
+    split_labels = gpu_split_mode_labels(tuple(gpu_split_modes))
+    gpu_mode_row = execution_row(pady=2)
+    ttk.Label(gpu_mode_row, text="GPU mode").grid(row=0, column=0, sticky="w")
+    split_mode_combo = ttk.Combobox(
+        gpu_mode_row, state="readonly", textvariable=option_vars["gpu_split_mode"],
         values=split_labels, width=30,
-    ).grid(row=1, column=1, sticky="w", padx=(10, 0), pady=2)
+    )
+    split_mode_combo.grid(row=0, column=1, sticky="w", padx=(10, 0))
     ttk.Button(
-        execution_box, text="Reset", width=6,
+        gpu_mode_row, text="Reset", width=6,
         command=lambda: option_vars["gpu_split_mode"].set(GPU_SPLIT_MODE_LABELS["layer"]),
-    ).grid(row=1, column=2, padx=(8, 0))
+    ).grid(row=0, column=2, padx=(8, 0))
+    mtp_row = execution_row(pady=2)
+    ttk.Label(mtp_row, text="Native MTP (compatible models)").grid(
+        row=0, column=0, sticky="w",
+    )
+    ttk.Combobox(
+        mtp_row, state="readonly", textvariable=option_vars["mtp"],
+        values=tuple(MTP_MODE_LABELS.values()), width=30,
+    ).grid(row=0, column=1, sticky="w", padx=(10, 0))
+    ttk.Button(
+        mtp_row, text="Reset", width=6,
+        command=lambda: option_vars["mtp"].set(MTP_MODE_LABELS["off"]),
+    ).grid(row=0, column=2, padx=(8, 0))
     labels = (("warmup", f"Warmup runs (default {config.WARMUP_RUNS})"),
               ("runs", f"Measured runs (1–10; default {config.N_RUNS})"),
               ("timeout", f"Run timeout, seconds (default {config.RUN_TIMEOUT})"),
               ("acc_timeout", f"Accuracy timeout, seconds (default {config.ACC_TIMEOUT})"),
-              ("acc_token_budget", f"Accuracy token budget (default {config.ACC_TOKEN_BUDGET})"))
-    for row, (key, label) in enumerate(labels, 2):
-        ttk.Label(execution_box, text=label).grid(row=row, column=0, sticky="w", pady=2)
-        ttk.Entry(execution_box, textvariable=option_vars[key], width=12).grid(row=row, column=1, sticky="w", padx=(10, 0), pady=2)
+              ("acc_token_budget", f"Accuracy token budget (default {config.ACC_TOKEN_BUDGET})"),
+              ("sustained_duration", f"Sustained soak, seconds (default {config.SUSTAINED_DURATION_SEC})"),
+              ("ambient_temp_c", "Ambient temperature, °C (optional)"))
+    for key, label in labels:
+        row = execution_row(pady=2)
+        ttk.Label(row, text=label).grid(row=0, column=0, sticky="w")
+        ttk.Entry(row, textvariable=option_vars[key], width=12).grid(
+            row=0, column=1, sticky="w", padx=(10, 0))
         ttk.Button(
-            execution_box, text="Reset", width=6,
-            command=lambda option=key: option_vars[option].set(str(GUI_OPTION_DEFAULTS[option])),
-        ).grid(row=row, column=2, padx=(8, 0), pady=2)
-    ttk.Checkbutton(execution_box, text="CPU-only inference", variable=option_vars["cpu_only"]).grid(row=8, column=0, columnspan=2, sticky="w", pady=(8, 0))
-    ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["cpu_only"].set(False)).grid(row=8, column=2, padx=(8, 0))
-    ttk.Checkbutton(execution_box, text="Run slow models instead of skipping", variable=option_vars["force_all"]).grid(row=9, column=0, columnspan=2, sticky="w")
-    ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["force_all"].set(False)).grid(row=9, column=2, padx=(8, 0))
-    ttk.Checkbutton(execution_box, text="Retry models that crashed previously", variable=option_vars["retry_crashed_models"]).grid(row=10, column=0, columnspan=2, sticky="w")
-    ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["retry_crashed_models"].set(False)).grid(row=10, column=2, padx=(8, 0))
-    ttk.Checkbutton(execution_box, text="Offline mode (loopback only)", variable=option_vars["offline"]).grid(row=11, column=0, columnspan=2, sticky="w")
-    ttk.Button(execution_box, text="Reset", width=6, command=lambda: option_vars["offline"].set(False)).grid(row=11, column=2, padx=(8, 0))
+            row, text="Reset", width=6,
+            command=lambda option=key: option_vars[option].set(
+                "" if GUI_OPTION_DEFAULTS[option] is None
+                else str(GUI_OPTION_DEFAULTS[option])
+            ),
+        ).grid(row=0, column=2, padx=(8, 0))
+    checkboxes = (
+        ("cpu_only", "CPU-only inference", (8, 0)),
+        ("force_all", "Run slow models instead of skipping", 0),
+        ("retry_crashed_models", "Retry models that crashed previously", 0),
+        ("offline", "Offline mode (loopback only)", 0),
+        ("memory_telemetry", "Memory telemetry", 0),
+        ("power_telemetry", "Power and energy telemetry (requires permission)", 0),
+    )
+    for key, text, pady in checkboxes:
+        row = execution_row(pady=pady)
+        ttk.Checkbutton(row, text=text, variable=option_vars[key]).grid(
+            row=0, column=0, columnspan=2, sticky="w")
+        ttk.Button(
+            row, text="Reset", width=6,
+            command=lambda option=key: option_vars[option].set(GUI_OPTION_DEFAULTS[option]),
+        ).grid(row=0, column=2, padx=(8, 0))
+    repack_row = execution_row()
     ttk.Checkbutton(
-        execution_box, text="Disable llama.cpp weight repacking (-nr)",
+        repack_row, text="Disable llama.cpp weight repacking (-nr)",
         variable=option_vars["llamacpp_no_repack"],
-    ).grid(row=12, column=0, columnspan=2, sticky="w")
+    ).grid(row=0, column=0, columnspan=2, sticky="w")
     ttk.Button(
-        execution_box, text="Reset", width=6,
+        repack_row, text="Reset", width=6,
         command=lambda: option_vars["llamacpp_no_repack"].set(False),
-    ).grid(row=12, column=2, padx=(8, 0))
+    ).grid(row=0, column=2, padx=(8, 0))
     ttk.Label(
-        execution_box, text="More warmups/runs improve repeatability but increase time. CPU-only changes the tested device; force-all can make runs much longer.",
+        execution_row(pady=(8, 0)), text="More warmups/runs improve repeatability but increase time. CPU-only changes the tested device; force-all can make runs much longer.",
         wraplength=430,
-    ).grid(row=13, column=0, columnspan=2, sticky="w", pady=(8, 0))
+    ).pack(anchor="w")
+    reset_execution_row = execution_row(pady=(8, 0))
     ttk.Button(
-        execution_box, text="Clear Crash Caches", command=clear_all_crash_caches,
-    ).grid(row=16, column=0, sticky="w", pady=(8, 0))
+        execution_row(pady=(8, 0)), text="Clear Crash Caches", command=clear_all_crash_caches,
+    ).pack(anchor="w")
 
     paths_box = ttk.LabelFrame(configuration_frame, text="Paths", padding=12)
     paths_box.grid(row=6, column=0, columnspan=2, sticky="nsew", pady=(0, 10))
@@ -556,6 +817,17 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     def reset_models():
         for name, variable in model_vars.items():
             variable.set(custom_model_defaults[name])
+        apply_engine_availability()
+
+    def select_all_models():
+        for variable in model_vars.values():
+            variable.set(True)
+        apply_engine_availability()
+
+    def clear_models():
+        for variable in model_vars.values():
+            variable.set(False)
+        configuration_screen.sync_variant_parents()
 
     def reset_workload():
         cap_var.set("No cap")
@@ -565,12 +837,13 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     def reset_execution():
         set_selected_engines([available_engines[0]])
         defaults = custom_option_defaults(detected_comfyui)
-        for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget", "gpu_split_mode",
-                    "cpu_only", "force_all", "retry_crashed_models", "offline",
-                    "llamacpp_no_repack"):
+        for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget",
+                    "sustained_duration", "ambient_temp_c", "gpu_split_mode",
+                    "mtp",
+                    "cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
+                    "power_telemetry", "llamacpp_no_repack"):
             variable = option_vars[key]
-            value = GPU_SPLIT_MODE_LABELS[defaults[key]] if key == "gpu_split_mode" else defaults[key]
-            variable.set(value)
+            variable.set(gui_option_control_value(key, defaults[key]))
 
     def reset_paths():
         defaults = custom_option_defaults(detected_comfyui)
@@ -608,13 +881,25 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         )
         if errors:
             raise ValueError("\n".join(errors))
-        requested_split = state.get("gui_options", {}).get("gpu_split_mode", "layer")
-        if requested_split not in gpu_split_modes:
-            raise ValueError("Tensor split is unavailable for the detected GPU runtime and topology.")
+        restored = [name for name in parse_engine_selection(state.get("engine", ""))
+                    if name in available_engines]
+        selected = restored or parse_engine_selection(engine_var.get())
+        gui_options = state.get("gui_options", {})
+        requested_split = gpu_split_mode_value(gui_options.get("gpu_split_mode", "layer"))
+        cpu_only = bool(gui_options.get("cpu_only", False))
+        available_splits = split_modes_for_runtime_profiles(
+            setup, selected, runtime_profiles, cpu_only=cpu_only,
+        )
+        capability_known = split_mode_capability_known(
+            selected, runtime_profiles, cpu_only=cpu_only,
+        )
+        split_error = gpu_split_mode_availability_error(
+            requested_split, available_splits, known=capability_known,
+        )
+        if split_error:
+            raise ValueError(split_error)
         applying_configuration[0] = True
         try:
-            restored = [name for name in parse_engine_selection(state.get("engine", ""))
-                        if name in available_engines]
             if restored:
                 set_selected_engines(restored)
             selected_tests = set(state["tests"])
@@ -626,16 +911,15 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             }
             for entry in custom_models:
                 model_vars[entry.value].set(entry.value in selected_models)
+            apply_engine_availability()
             cap = state["max_prompt_tokens"]
             cap_var.set(str(cap) if cap else "No cap")
             selected_tg = set(state["tg_tokens"] or config.LLAMABENCH_TG)
             for value, variable in tg_vars.items():
                 variable.set(value in selected_tg)
             for key, value in state.get("gui_options", {}).items():
-                if key == "gpu_split_mode":
-                    option_vars[key].set(GPU_SPLIT_MODE_LABELS[value])
-                else:
-                    option_vars[key].set(value if isinstance(value, bool) else str(value))
+                control_value = requested_split if key == "gpu_split_mode" else value
+                option_vars[key].set(gui_option_control_value(key, control_value))
         finally:
             applying_configuration[0] = False
         preset_var.set(CUSTOM_PRESET)
@@ -647,15 +931,19 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     model_actions.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
     ttk.Button(model_actions, text="Reset Models", command=reset_models).pack(side="left")
     ttk.Button(
+        model_actions, text="Select All", command=select_all_models,
+    ).pack(side="left", padx=(8, 0))
+    ttk.Button(
+        model_actions, text="Clear", command=clear_models,
+    ).pack(side="left", padx=(8, 0))
+    ttk.Button(
         model_actions, text="Import Hugging Face Model",
         command=lambda: open_model_import_dialog(),
     ).pack(side="right")
     ttk.Button(workload_box, text="Reset Workload Sizes", command=reset_workload).grid(
         row=3, column=0, columnspan=2, sticky="w", pady=(8, 0),
     )
-    ttk.Button(execution_box, text="Reset Execution", command=reset_execution).grid(
-        row=14, column=0, columnspan=2, sticky="w", pady=(8, 0),
-    )
+    ttk.Button(reset_execution_row, text="Reset Execution", command=reset_execution).pack(anchor="w")
     ttk.Button(paths_box, text="Reset Paths", command=reset_paths).grid(
         row=3, column=0, columnspan=3, sticky="w", pady=(8, 0),
     )
@@ -682,7 +970,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     current_log = run_log_actions.current_log
     review_outbound_metadata = run_log_actions.review_outbound_metadata
 
-    def launch_history_process(
+    def launch_process(
             command, kind, result_paths, status, stages, entries, engines, error_title):
         nonlocal process, active_process_kind, active_result_paths
         creationflags = (
@@ -709,23 +997,10 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         show_progress_window(stages, entries, engines=engines)
         threading.Thread(target=read_process, args=(process,), daemon=True).start()
 
-    def fallback_history_fork(source_path, output_path, plan):
-        nonlocal pending_fork_source
-        try:
-            state = frontend_state_from_run_plan(plan, collect_options())
-            state["gui_options"]["out"] = str(output_path)
-            apply_frontend_state(state)
-        except (KeyError, ValueError) as exc:
-            messagebox.showerror("Fork unavailable", str(exc), parent=root)
-            return
-        pending_fork_source = source_path
-        notebook.select(config_tab)
-        root.after(0, start_run)
-
     history_process = HistoryProcessActions(
         root=root, filedialog=filedialog, messagebox=messagebox,
         process_active=lambda: process is not None and process.poll() is None,
-        launch=launch_history_process, fallback_fork=fallback_history_fork,
+        launch=launch_process,
     )
     history_actions = HistoryActions(
         history_screen, root=root, tk=tk, ttk=ttk, filedialog=filedialog,
@@ -758,7 +1033,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     process = None
     active_process_kind = None
     active_result_paths: list[Path] = []
-    pending_fork_source = None
     process_control_path = None
     process_paused = False
     process_exit_observed_at = None
@@ -806,13 +1080,18 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         has_discrete_vram[0] = show_vram_usage(configured_gpu_devices(setup))
         system_memory_baseline[0] = system_memory_usage()[0]
         run_engines = list(engines or parse_engine_selection(engine_var.get()))
-        progress_screen.show(tests, entries, run_engines, show_vram=has_discrete_vram[0])
+        progress_screen.show(
+            tests, entries, run_engines, model_owners,
+            show_vram=has_discrete_vram[0],
+        )
         progress_metrics = progress_screen.metrics
         progress_started_at = progress_screen.started_at
 
     def update_progress(event):
         nonlocal progress_metrics
-        progress_screen.update(event)
+        elapsed = (None if progress_started_at is None
+                   else time.monotonic() - progress_started_at)
+        progress_screen.update({**event, "elapsed_seconds": elapsed})
         progress_metrics = progress_screen.metrics
 
     def append_log(text):
@@ -877,6 +1156,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             completed = len(progress_metrics.get("finished_models", ()))
             remaining = estimate_remaining_seconds(
                 elapsed, completed, progress_metrics.get("total_models", 0),
+                progress_metrics.get("last_completion_elapsed"),
             )
             estimate = "calibrating" if remaining is None else f"about {remaining // 60}m {remaining % 60}s"
             usage = process_resource_usage(process.pid)
@@ -917,6 +1197,25 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             key: variable.get() for key, variable in option_vars.items()
         })
 
+    def refresh_split_modes(*_):
+        selected = parse_engine_selection(engine_var.get())
+        resolved = split_modes_for_runtime_profiles(
+            setup, selected, runtime_profiles,
+            cpu_only=bool(option_vars["cpu_only"].get()),
+        )
+        capability_known = split_mode_capability_known(
+            selected, runtime_profiles,
+            cpu_only=bool(option_vars["cpu_only"].get()),
+        )
+        gpu_split_modes[:] = resolved
+        split_mode_combo.configure(values=gpu_split_mode_labels(resolved))
+        current = gpu_split_mode_value(option_vars["gpu_split_mode"].get())
+        reconciled = reconcile_gpu_split_mode(current, resolved, known=capability_known)
+        if reconciled != current:
+            option_vars["gpu_split_mode"].set(GPU_SPLIT_MODE_LABELS[reconciled])
+
+    option_vars["cpu_only"].trace_add("write", refresh_split_modes)
+
     configuration_files = ConfigurationFileActions(
         configuration_screen, root=root, tk=tk, ttk=ttk, filedialog=filedialog,
         simpledialog=simpledialog, messagebox=messagebox, active_project=active_project,
@@ -926,7 +1225,6 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     configuration_files.bind()
 
     def start_run():
-        nonlocal process, active_process_kind, pending_fork_source, active_result_paths
         tests = expand_selected_tests(
             name for name, variable in test_vars.items() if variable.get())
         entries = custom_models
@@ -937,6 +1235,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         gui_options = collect_options()
         preparation = prepare_benchmark_launch(
             engine=engine_var.get(), tests=tests, entries=entries,
+            model_owners=model_owners,
             max_prompt_tokens=max_prompt, tg_tokens=tg_tokens,
             gui_options=gui_options, selected_preset=preset_var.get(),
             detected_tools=detected_tools, found_comfyui=found_comfyui,
@@ -948,36 +1247,29 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             )
             return
         if not show_plan_preview(root, tk, ttk, preparation.preview):
-            pending_fork_source = None
+            return
+        authorization_error = authorize_macos_power_telemetry(
+            gui_options["power_telemetry"],
+        ) or authorize_linux_rapl_power_telemetry(gui_options["power_telemetry"])
+        if authorization_error:
+            messagebox.showerror(
+                "Power telemetry permission", authorization_error, parent=root,
+            )
             return
         if not save_frontend_state(preparation.state, FRONTEND_STATE_PATH):
             if not messagebox.askyesno("Settings not saved", "The configuration could not be saved. Run it anyway?", parent=root):
                 return
-        command = preparation.command
-        if pending_fork_source is not None:
-            command.extend(["--fork-plan", str(pending_fork_source)])
-        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if platform.system() == "Windows" else 0
-        try:
-            process, control_path = launch_controlled_process(
-                command, creationflags=creationflags,
-            )
-        except OSError as exc:
-            pending_fork_source = None
-            messagebox.showerror("Benchmark could not start", str(exc), parent=root)
-            return
-        begin_process_control(control_path)
-        pending_fork_source = None
-        active_process_kind = "benchmark"
-        active_result_paths = []
-        log_text.configure(state="normal")
-        log_text.delete("1.0", "end")
-        log_text.configure(state="disabled")
-        run_status.set("Benchmark is running. Results are checkpointed throughout the run.")
-        start_button.configure(state="disabled")
-        stop_button.configure(state="normal")
-        notebook.select(log_tab)
-        show_progress_window(tests, entries, engines=parse_engine_selection(engine_var.get()))
-        threading.Thread(target=read_process, args=(process,), daemon=True).start()
+        launch_process(
+            preparation.command, "benchmark", [],
+            "Benchmark is running. Results are checkpointed throughout the run.",
+            tests, entries, mtp_progress_names(
+                selected_catalog_models_by_engine(
+                    entries, parse_engine_selection(engine_var.get()), model_owners,
+                ),
+                gui_options["mtp"],
+            ),
+            "Benchmark could not start",
+        )
 
     def stop_run():
         if process is None or process.poll() is not None:
@@ -1027,8 +1319,26 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     start_button.configure(command=start_run)
     stop_button.configure(command=stop_run)
     pause_button.configure(command=toggle_pause)
+    loading.destroy()
     root.protocol("WM_DELETE_WINDOW", close_window)
     update_advanced()
+    refresh_tk_layout(root)
+
+    def poll_runtime_profiles():
+        try:
+            profiles = runtime_profile_queue.get_nowait()
+        except queue.Empty:
+            root.after(100, poll_runtime_profiles)
+            return
+        runtime_profiles.clear()
+        runtime_profiles.update(profiles)
+        runtime_profiles_ready[0] = True
+        refresh_split_modes()
+
+    start_runtime_profile_load(
+        engine_instances, hardware_profile, runtime_profile_queue,
+    )
+    root.after(50, poll_runtime_profiles)
     root.after(100, poll_output)
     root.after(150, lambda: (root.lift(), root.attributes("-topmost", True), root.focus_force(),
                              root.after(400, lambda: root.attributes("-topmost", False))))

@@ -193,6 +193,7 @@ local_ai_bench_config.json
 /.omc
 /dashboard/.omc
 /results
+/.artifacts
 
 # Result files staged for the dashboard to serve — never source, always generated.
 /dashboard/public/__selected_results__/
@@ -214,6 +215,7 @@ local_ai_bench_config.json
 /llama.cpp
 /python_embeded
 /benchmark_images
+/qualification-evidence/
 scratch_nonascii_report.txt
 run_nvidia_gpu_fast_fp16_accumulation.bat
 run_nvidia_gpu.bat
@@ -222,3 +224,4 @@ README_VERY_IMPORTANT.txt
 /advanced
 /update
 vllm-env/
+.vscode

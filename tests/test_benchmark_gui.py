@@ -1,4 +1,5 @@
 import json
+import queue
 import subprocess
 from pathlib import Path
 from typing import cast
@@ -16,15 +17,20 @@ from scripts.app.benchmark_frontend import (
     validate_gui_options,
 )
 from scripts.app.benchmark_gui import (
+    authorize_linux_rapl_power_telemetry, authorize_macos_power_telemetry,
     BENCHMARK_PRESETS, CUSTOM_PRESET, BenchmarkLaunchError, BenchmarkLaunchReady,
     PsutilLike, apply_hardware_model_defaults,
     build_discovery_report, build_plan_preview, custom_option_defaults, default_control_values,
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
-    gpu_split_mode_labels, gpu_split_mode_value, history_row_height,
+    gui_option_control_value,
+    gpu_split_mode_availability_error, gpu_split_mode_labels, gpu_split_mode_value,
+    history_row_height,
     launch_controlled_process, open_path_command, parse_progress_line,
-    normalize_gui_option_values, prepare_benchmark_launch,
+    normalize_gui_option_values, prepare_benchmark_launch, restored_tg_tokens,
+    pending_runtime_profiles,
     process_completion_state, resolve_engine_selection,
     resolve_engine_names,
+    selected_catalog_models,
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
     query_gpu_process_memory, query_gpu_usage,
     query_vram_usage, show_vram_usage,
@@ -34,10 +40,14 @@ from scripts.app.benchmark_gui import (
     resolve_preset,
     preset_control_values, process_resource_usage, preset_after_control_change,
     restored_preset_name, should_finalize_process_exit,
-    resource_usage_rows, system_memory_usage,
+    reconcile_gpu_split_mode, resource_usage_rows, runtime_profiles_for_engines,
+    split_mode_capability_known, split_modes_for_runtime_profiles,
+    system_memory_usage,
+    start_runtime_profile_load,
     windows_host_utc_offset_minutes,
     update_progress_metrics, workload_preflight_errors,
 )
+from scripts.app.benchmark_gui_process import open_path_process_options
 from scripts.app.result_actions import (
     completed_result_paths, dashboard_launcher_command, record_result_path,
     result_paths_for_log, run_log_path, selected_result_paths, write_run_logs,
@@ -56,6 +66,119 @@ def test_effective_gui_options_uses_defaults_without_saved_gui_settings():
     assert effective_gui_options(None) is not GUI_OPTION_DEFAULTS
 
 
+def test_effective_gui_options_preserves_known_split_modes_and_defaults_unknown_values():
+    assert effective_gui_options({
+        "gui_options": dict(GUI_OPTION_DEFAULTS, gpu_split_mode="tensor"),
+    })["gpu_split_mode"] == "tensor"
+    assert effective_gui_options({
+        "gui_options": dict(GUI_OPTION_DEFAULTS, gpu_split_mode="row"),
+    })["gpu_split_mode"] == "layer"
+
+
+def test_gui_runtime_profiles_probe_only_each_engine_backend():
+    calls = []
+
+    class Engine:
+        def __init__(self, backend):
+            self.backend = backend
+
+        def runtime_backend(self, hardware_backend, *, cpu_only):
+            calls.append((hardware_backend, cpu_only))
+            return self.backend
+
+    profiles = runtime_profiles_for_engines(
+        {"llamacpp": Engine("cuda"), "vllm": Engine("cpu")}, {"backend": "cuda"},
+    )
+    assert profiles == {
+        "llamacpp": {"runtime_backend": "cuda"},
+        "vllm": {"runtime_backend": "cpu"},
+    }
+    assert calls == [("cuda", False), ("cuda", False)]
+
+
+def test_pending_gui_runtime_profiles_do_not_guess_a_backend():
+    assert pending_runtime_profiles(["llamacpp", "vllm"]) == {
+        "llamacpp": {"runtime_backend": None},
+        "vllm": {"runtime_backend": None},
+    }
+
+
+def test_split_modes_use_runtime_backend_intersection_and_cpu_constraint():
+    setup = {"gpu": {"devices": [
+        {"backend": "cuda"}, {"backend": "cuda"},
+    ]}}
+    profiles = {
+        "llamacpp": {"runtime_backend": "cuda"},
+        "vllm": {"runtime_backend": "vulkan"},
+    }
+    assert split_modes_for_runtime_profiles(
+        setup, ["llamacpp"], profiles, cpu_only=False,
+    ) == ("single", "layer", "tensor")
+    assert split_modes_for_runtime_profiles(
+        setup, ["llamacpp", "vllm"], profiles, cpu_only=False,
+    ) == ("layer",)
+    assert split_modes_for_runtime_profiles(
+        setup, ["llamacpp"], profiles, cpu_only=True,
+    ) == ("layer",)
+    assert split_modes_for_runtime_profiles(
+        setup, ["llamacpp"], pending_runtime_profiles(["llamacpp"]),
+        cpu_only=False,
+    ) == ("layer",)
+
+
+def test_split_mode_capability_is_unknown_until_selected_runtime_backends_resolve():
+    pending = pending_runtime_profiles(["llamacpp"])
+    resolved = {"llamacpp": {"runtime_backend": "cuda"}}
+
+    assert not split_mode_capability_known(["llamacpp"], pending, cpu_only=False)
+    assert split_mode_capability_known(["llamacpp"], resolved, cpu_only=False)
+    assert split_mode_capability_known(["llamacpp"], pending, cpu_only=True)
+
+
+def test_split_mode_reconciliation_preserves_requested_mode_until_capability_is_known():
+    assert reconcile_gpu_split_mode("tensor", ("layer",), known=False) == "tensor"
+    assert reconcile_gpu_split_mode(
+        "tensor", ("single", "layer", "tensor"), known=True,
+    ) == "tensor"
+    assert reconcile_gpu_split_mode("tensor", ("layer",), known=True) == "layer"
+
+
+def test_split_mode_validation_defers_unknown_capability_and_rejects_known_mismatch():
+    assert gpu_split_mode_availability_error("tensor", ("layer",), known=False) is None
+    assert gpu_split_mode_availability_error(
+        "tensor", ("single", "layer", "tensor"), known=True,
+    ) is None
+    assert gpu_split_mode_availability_error(
+        "single", ("layer",), known=True,
+    ) == "Single GPU is unavailable for the detected GPU runtime and topology."
+    assert gpu_split_mode_availability_error(
+        "row", ("layer",), known=True,
+    ) == "row is unavailable for the detected GPU runtime and topology."
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_gui_runtime_profile_loader_always_returns_a_terminal_profile(fails):
+    output = queue.Queue()
+
+    class ImmediateThread:
+        def __init__(self, *, target, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    def load(_engines, _hardware):
+        if fails:
+            raise RuntimeError("probe failed")
+        return {"vllm": {"runtime_backend": "cuda"}}
+
+    start_runtime_profile_load(
+        {"vllm": object()}, {"backend": "cuda"}, output,
+        loader=load, thread_factory=ImmediateThread,
+    )
+    assert output.get_nowait()["vllm"]["runtime_backend"] == (None if fails else "cuda")
+
+
 def test_dual_gpu_modes_have_user_facing_labels_and_round_trip():
     modes = ("single", "layer", "tensor")
     labels = gpu_split_mode_labels(modes)
@@ -63,6 +186,7 @@ def test_dual_gpu_modes_have_user_facing_labels_and_round_trip():
         "Single GPU", "Layer split (recommended)", "Tensor parallel (experimental)",
     )
     assert tuple(gpu_split_mode_value(label) for label in labels) == modes
+    assert tuple(gpu_split_mode_value(mode) for mode in modes) == modes
     with pytest.raises(ValueError, match="Unknown GPU mode"):
         gpu_split_mode_value("invalid")
 
@@ -193,19 +317,44 @@ def test_normalize_gui_option_values_converts_controls_and_trims_paths():
     raw = {
         **GUI_OPTION_DEFAULTS, "runs": "5", "timeout": "bad",
         "gpu_split_mode": "Tensor parallel (experimental)", "out": " result.json ",
+        "mtp": "Both",
         "comfyui": " /ComfyUI ",
     }
     options = normalize_gui_option_values(raw)
     assert options["runs"] == 5
     assert options["timeout"] == "bad"
     assert options["gpu_split_mode"] == "tensor"
+    assert options["mtp"] == "both"
     assert options["out"] == "result.json"
     assert options["comfyui"] == "/ComfyUI"
+    assert options["ambient_temp_c"] is None
+
+
+def test_optional_gui_values_stay_blank_when_written_to_controls():
+    assert gui_option_control_value("ambient_temp_c", None) == ""
+    assert gui_option_control_value("ambient_temp_c", 18.5) == "18.5"
+    assert gui_option_control_value(
+        "gpu_split_mode", "tensor",
+    ) == "Tensor parallel (experimental)"
+    assert gui_option_control_value("mtp", "both") == "Both"
+
+
+def test_normalize_gui_option_values_accepts_canonical_gpu_mode():
+    options = normalize_gui_option_values(dict(GUI_OPTION_DEFAULTS, gpu_split_mode="layer"))
+    assert options["gpu_split_mode"] == "layer"
+
+
+def test_restored_tg_tokens_distinguishes_empty_selection_from_legacy_default():
+    assert restored_tg_tokens({"tg_tokens": []}) == set()
+    assert restored_tg_tokens({"tg_tokens": [128, 1024]}) == {128, 1024}
+    assert restored_tg_tokens({"tg_tokens": None}) == set(config.LLAMABENCH_TG)
+    assert restored_tg_tokens(None) == set(config.LLAMABENCH_TG)
 
 
 def test_prepare_benchmark_launch_returns_validation_errors_without_launch_data(tmp_path):
     preparation = prepare_benchmark_launch(
         engine="llamacpp", tests=[], entries=[], max_prompt_tokens=None, tg_tokens=[],
+        model_owners={},
         gui_options=dict(GUI_OPTION_DEFAULTS), selected_preset="Custom",
         detected_tools={}, found_comfyui=None, detected_comfyui=tmp_path,
     )
@@ -218,7 +367,8 @@ def test_prepare_benchmark_launch_builds_review_state_and_command(tmp_path):
     options = dict(GUI_OPTION_DEFAULTS, runs=4, out="result.json")
     preparation = prepare_benchmark_launch(
         engine="llamacpp", tests=["llm"], entries=entries,
-        max_prompt_tokens=8192, tg_tokens=[], gui_options=options,
+        model_owners={"model": {"llamacpp"}},
+        max_prompt_tokens=8192, tg_tokens=[1024], gui_options=options,
         selected_preset="Quick run", detected_tools={"llama-server": "/bin/server"},
         found_comfyui=None, detected_comfyui=tmp_path,
     )
@@ -226,15 +376,62 @@ def test_prepare_benchmark_launch_builds_review_state_and_command(tmp_path):
     assert preparation.preview is not None and "Measured runs: 4" in preparation.preview
     assert preparation.state is not None
     assert preparation.state["selected_preset"] == "Quick run"
+    assert preparation.state["tg_tokens"] == [1024]
     assert preparation.command is not None
+    assert "--tg-tokens" not in preparation.command
     assert preparation.command[preparation.command.index("--max-prompt-tokens") + 1] == "8192"
     assert preparation.command[preparation.command.index("--out") + 1] == "result.json"
+
+
+def test_prepare_benchmark_launch_ignores_ambient_without_sustained(tmp_path):
+    entries = [MenuEntry("model", "Model", "llm", "LLM", True)]
+    preparation = prepare_benchmark_launch(
+        engine="llamacpp", tests=["llm"], entries=entries,
+        model_owners={"model": {"llamacpp"}},
+        max_prompt_tokens=None, tg_tokens=[],
+        gui_options=dict(GUI_OPTION_DEFAULTS, ambient_temp_c="None"),
+        selected_preset="Custom", detected_tools={"llama-server": "/bin/server"},
+        found_comfyui=None, detected_comfyui=tmp_path,
+    )
+    assert isinstance(preparation, BenchmarkLaunchReady)
+    assert preparation.state["gui_options"]["ambient_temp_c"] is None
+    assert "--ambient-temp-c" not in preparation.command
+
+
+def test_prepare_benchmark_launch_preserves_valid_ambient_without_sustained(tmp_path):
+    entries = [MenuEntry("model", "Model", "llm", "LLM", True)]
+    preparation = prepare_benchmark_launch(
+        engine="llamacpp", tests=["llm"], entries=entries,
+        model_owners={"model": {"llamacpp"}},
+        max_prompt_tokens=None, tg_tokens=[],
+        gui_options=dict(GUI_OPTION_DEFAULTS, ambient_temp_c=18.5),
+        selected_preset="Custom", detected_tools={"llama-server": "/bin/server"},
+        found_comfyui=None, detected_comfyui=tmp_path,
+    )
+    assert isinstance(preparation, BenchmarkLaunchReady)
+    assert preparation.state["gui_options"]["ambient_temp_c"] == 18.5
+    assert "--ambient-temp-c" not in preparation.command
+
+
+def test_prepare_benchmark_launch_validates_ambient_for_sustained(tmp_path):
+    entries = [MenuEntry("model", "Model", "llm", "LLM", True)]
+    preparation = prepare_benchmark_launch(
+        engine="llamacpp", tests=["sustained"], entries=entries,
+        model_owners={"model": {"llamacpp"}},
+        max_prompt_tokens=None, tg_tokens=[],
+        gui_options=dict(GUI_OPTION_DEFAULTS, ambient_temp_c="invalid"),
+        selected_preset="Custom", detected_tools={"llama-server": "/bin/server"},
+        found_comfyui=None, detected_comfyui=tmp_path,
+    )
+    assert isinstance(preparation, BenchmarkLaunchError)
+    assert "--ambient-temp-c must be a number." in preparation.errors
 
 
 def test_prepare_benchmark_launch_requires_tg_selection_for_llamabench(tmp_path):
     entries = [MenuEntry("model", "Model", "llm", "LLM", True)]
     preparation = prepare_benchmark_launch(
         engine="llamacpp", tests=["llamabench"], entries=entries,
+        model_owners={"model": {"llamacpp"}},
         max_prompt_tokens=None, tg_tokens=[], gui_options=dict(GUI_OPTION_DEFAULTS),
         selected_preset="Custom", detected_tools={"llama-bench": "/bin/bench"},
         found_comfyui=None, detected_comfyui=tmp_path,
@@ -247,12 +444,62 @@ def test_prepare_benchmark_launch_requires_a_selected_model(tmp_path):
     entries = [MenuEntry("model", "Model", "llm", "LLM", False)]
     preparation = prepare_benchmark_launch(
         engine="llamacpp", tests=["llm"], entries=entries,
+        model_owners={"model": {"llamacpp"}},
         max_prompt_tokens=None, tg_tokens=[], gui_options=dict(GUI_OPTION_DEFAULTS),
         selected_preset="Custom", detected_tools={"llama-server": "/bin/server"},
         found_comfyui=None, detected_comfyui=tmp_path,
     )
     assert isinstance(preparation, BenchmarkLaunchError)
     assert any("model" in error.lower() for error in preparation.errors)
+
+
+def test_prepare_benchmark_launch_rejects_non_mtp_workloads_before_progress(tmp_path):
+    entries = [MenuEntry(
+        "qwen3.5:4b-q4_K_M", "Qwen", "llm", "LLM", True,
+    )]
+    preparation = prepare_benchmark_launch(
+        engine="llamacpp", tests=["llm", "img"], entries=entries,
+        model_owners={"qwen3.5:4b-q4_K_M": {"llamacpp"}},
+        max_prompt_tokens=None, tg_tokens=[],
+        gui_options=dict(GUI_OPTION_DEFAULTS, mtp="on"),
+        selected_preset="Custom", detected_tools={"llama-server": "/bin/server"},
+        found_comfyui=tmp_path, detected_comfyui=tmp_path,
+    )
+    assert isinstance(preparation, BenchmarkLaunchError)
+    assert any("cannot run non-MTP workloads: img" in error for error in preparation.errors)
+
+
+def test_prepare_benchmark_launch_rejects_mtp_for_engine_missing_selected_model(tmp_path):
+    tag = "qwen3.5:4b-q4_K_M"
+    entries = [MenuEntry(tag, "Qwen", "llm", "LLM", True)]
+    preparation = prepare_benchmark_launch(
+        engine="llamacpp,vllm", tests=["llm"], entries=entries,
+        model_owners={tag: {"llamacpp"}}, max_prompt_tokens=None, tg_tokens=[],
+        gui_options=dict(GUI_OPTION_DEFAULTS, mtp="on"), selected_preset="Custom",
+        detected_tools={"llama-server": "/bin/server"},
+        found_comfyui=None, detected_comfyui=tmp_path,
+    )
+    assert isinstance(preparation, BenchmarkLaunchError)
+    assert any("missing: vllm" in error for error in preparation.errors)
+
+
+def test_selected_catalog_models_limits_mtp_progress_to_checked_entries():
+    entries = [
+        MenuEntry("qwen3.5:4b-q4_K_M", "MTP", "llm", "LLM", False),
+        MenuEntry("gemma3:1b-it-q4_K_M", "Plain", "llm", "LLM", True),
+        MenuEntry("custom", "Custom", "custom", "Custom", True),
+    ]
+    assert [model["tag"] for model in selected_catalog_models(entries)] == [
+        "gemma3:1b-it-q4_K_M",
+    ]
+
+
+def test_selected_catalog_models_preserves_nondefault_variant_for_fit_reporting():
+    entries = [MenuEntry(
+        "gemma3:1b-it-q8_0", "Gemma Q8", "llm", "LLM", True,
+    )]
+
+    assert [model["variant"] for model in selected_catalog_models(entries)] == ["Q8_0"]
 
 
 def test_resolve_engine_names_restores_default_without_model_checks():
@@ -327,6 +574,20 @@ def test_open_path_command_uses_each_desktop_platform_launcher():
     assert open_path_command(path, "Windows") == ["explorer", "/tmp/results"]
 
 
+def test_open_path_process_does_not_inherit_terminal_streams():
+    assert open_path_process_options("Linux") == {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "start_new_session": True,
+    }
+    assert open_path_process_options("Windows") == {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
+
+
 def test_launch_controlled_process_supplies_progress_environment(monkeypatch, tmp_path):
     control_path = tmp_path / "pause.json"
     control_path.write_text("{}", encoding="utf-8")
@@ -355,6 +616,84 @@ def test_launch_controlled_process_supplies_progress_environment(monkeypatch, tm
     assert calls[0][1]["creationflags"] == 7
     assert calls[0][1]["encoding"] == "utf-8"
     assert calls[0][1]["errors"] == "replace"
+
+
+def test_macos_power_authorization_uses_graphical_askpass(tmp_path):
+    helper = tmp_path / "askpass"
+    helper.write_text("#!/bin/sh\n", encoding="utf-8")
+    helper.chmod(0o700)
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return type("Result", (), {"returncode": 0})()
+
+    assert authorize_macos_power_telemetry(
+        True, system=lambda: "Darwin", run=run, environ={"SAFE": "yes"},
+        askpass_path=helper,
+    ) is None
+    assert calls[0][0] == ["/usr/bin/sudo", "-A", "-v"]
+    assert calls[0][1]["env"] == {"SAFE": "yes", "SUDO_ASKPASS": str(helper)}
+    assert calls[0][1]["stdin"] is subprocess.DEVNULL
+    assert calls[0][1]["timeout"] == 120
+
+
+def test_power_authorization_skips_other_paths_and_blocks_denial(tmp_path):
+    run = lambda *_args, **_kwargs: pytest.fail("authorization must not run")
+    assert authorize_macos_power_telemetry(False, system=lambda: "Darwin", run=run) is None
+    assert authorize_macos_power_telemetry(True, system=lambda: "Linux", run=run) is None
+
+    helper = tmp_path / "askpass"
+    helper.write_text("#!/bin/sh\n", encoding="utf-8")
+    helper.chmod(0o700)
+    denied = lambda *_args, **_kwargs: type("Result", (), {"returncode": 1})()
+    error = authorize_macos_power_telemetry(
+        True, system=lambda: "Darwin", run=denied, askpass_path=helper,
+    )
+    assert error is not None and "canceled or denied" in error
+
+
+def test_power_authorization_rejects_missing_or_hung_prompt(tmp_path):
+    missing_error = authorize_macos_power_telemetry(
+        True, system=lambda: "Darwin", askpass_path=tmp_path / "missing",
+    )
+    assert missing_error is not None and "missing or not executable" in missing_error
+    helper = tmp_path / "askpass"
+    helper.write_text("#!/bin/sh\n", encoding="utf-8")
+    helper.chmod(0o700)
+
+    def timeout(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired("sudo", 120)
+
+    timeout_error = authorize_macos_power_telemetry(
+        True, system=lambda: "Darwin", run=timeout, askpass_path=helper,
+    )
+    assert timeout_error is not None and "could not be requested" in timeout_error
+
+
+def test_linux_rapl_power_authorization_prompts_once_in_the_terminal():
+    calls = []
+    denied = type("Availability", (), {"source": "rapl", "available": False})()
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return type("Result", (), {"returncode": 0})()
+
+    assert authorize_linux_rapl_power_telemetry(
+        True, system=lambda: "Linux", discover=lambda: denied, run=run,
+        which=lambda name: "/usr/bin/sudo" if name == "sudo" else None,
+    ) is None
+    assert calls == [(["/usr/bin/sudo", "-v"], {"timeout": 120})]
+
+
+def test_linux_power_authorization_skips_readable_or_non_rapl_sources():
+    run = lambda *_args, **_kwargs: pytest.fail("authorization must not run")
+    for source, available in (("rapl", True), ("nvidia-smi", False)):
+        status = type("Availability", (), {"source": source, "available": available})()
+        assert authorize_linux_rapl_power_telemetry(
+            True, system=lambda: "Linux", discover=lambda status=status: status,
+            run=run,
+        ) is None
 
 
 def test_windows_host_offset_comes_from_powershell_only_under_wsl():
@@ -409,6 +748,7 @@ def test_recovery_command_and_inspection_are_explicit_and_readable(tmp_path):
         "action": "fork", "plan_id": "plan-1", "interrupted_attempts": 2,
         "stage_states": {"llm": "interrupted"},
         "case_counts": {"complete": 17, "timed_out": 1},
+        "stage_case_counts": {"llm": {"complete": 17, "timed_out": 1}},
         "retryable_cases": [{
             "case_id": "case_1", "stage": "llm", "label": "model · 8K",
             "state": "timed_out", "model": "model",
@@ -418,6 +758,7 @@ def test_recovery_command_and_inspection_are_explicit_and_readable(tmp_path):
     assert "Decision: FORK" in detail
     assert "llm: interrupted" in detail
     assert "complete: 17" in detail
+    assert "llm: complete=17, timed_out=1" in detail
     assert "llm: model · 8K (timed_out)" in detail
     assert "runtime identity changed" in detail
     fork = fork_executor_command(result, tmp_path / "fork.json", python_executable="python")
@@ -463,9 +804,43 @@ def test_recovery_progress_entries_deduplicate_models_and_use_catalog_labels():
     )
     entries = recovery_progress_entries(plan)
     assert [(entry.kind, entry.value, entry.label) for entry in entries] == [
-        ("llm", tag, "Gemma 3 1B"),
+        ("llm", tag, "Gemma 3 1B — Q4_K_M (~0.8 GB)"),
     ]
     assert recovery_progress_entries(plan, {"other"}) == []
+
+
+def test_recovery_progress_entries_label_nondefault_catalog_variant():
+    tag = "gemma3:1b-it-q6_K"
+    plan = RunPlan.create(
+        application_version="4.1", engine_name="llamacpp",
+        tests=["llm"], stage_order=["llm"],
+        models={
+            "llm": [{
+                "tag": tag, "short": "gemma3-1b-q6", "base_model": "gemma3:1b-it",
+                "variant": "Q6_K",
+            }],
+            "concurrency": [], "embeddings": [], "images": [],
+        },
+        effective_config={"cpu_only": False, "force_all": False, "warmup_runs": 0},
+    )
+
+    assert recovery_progress_entries(plan)[0].label == "Gemma 3 1B — Q6_K (~1.0 GB)"
+
+
+def test_recovery_progress_entries_include_embedding_and_image_models():
+    plan = RunPlan.create(
+        application_version="6.0-pre7", engine_name="llamacpp",
+        tests=["emb", "img"], stage_order=["emb", "img"], models={
+            "llm": [], "concurrency": [],
+            "embeddings": [{"tag": "nomic-embed-text", "short": "nomic-embed-text"}],
+            "images": [{"short": "sdxl"}],
+        }, effective_config={"cpu_only": False, "force_all": False, "warmup_runs": 0},
+    )
+    assert [(entry.kind, entry.value, entry.label)
+            for entry in recovery_progress_entries(plan)] == [
+        ("embedding", "nomic-embed-text", "Nomic Embed Text"),
+        ("image", "sdxl", "SDXL"),
+    ]
 
 
 def test_discovery_report_summarizes_readiness_without_mutation():
@@ -541,7 +916,7 @@ def test_history_row_height_tracks_scaled_font_height(line_height, expected):
 def test_progress_metrics_count_terminal_models_and_measurement_quality_once():
     metrics = {
         "total_models": 2, "finished_models": set(), "usable_models": set(),
-        "retries": 0, "valid": 0, "invalid": 0,
+        "retries": 0, "valid": 0, "invalid": 0, "last_completion_elapsed": None,
     }
     metrics = update_progress_metrics(
         metrics, {"kind": "measurement", "stage": "llm", "status": "retrying", "model": "A"},
@@ -551,6 +926,7 @@ def test_progress_metrics_count_terminal_models_and_measurement_quality_once():
     )
     terminal = {
         "kind": "model", "stage": "llm", "status": "complete", "model": "A", "usable": True,
+        "elapsed_seconds": 30,
     }
     metrics = update_progress_metrics(metrics, terminal)
     metrics = update_progress_metrics(metrics, terminal)
@@ -559,6 +935,7 @@ def test_progress_metrics_count_terminal_models_and_measurement_quality_once():
     )
     assert (metrics["retries"], metrics["invalid"], len(metrics["finished_models"])) == (1, 1, 2)
     assert metrics["usable_models"] == {("llm", "A")}
+    assert metrics["last_completion_elapsed"] == 30
     assert progress_summary_rows(metrics) == {
         "Finished models": "2 / 2",
         "Usable coverage": "1 / 2",
@@ -567,11 +944,13 @@ def test_progress_metrics_count_terminal_models_and_measurement_quality_once():
     }
 
 
-@pytest.mark.parametrize(("elapsed", "completed", "total", "expected"), [
-    (60, 1, 4, 180), (60, 4, 4, 0), (60, 0, 4, None), (-1, 1, 4, None),
+@pytest.mark.parametrize(("elapsed", "completed", "total", "calibrated", "expected"), [
+    (60, 1, 4, None, 180), (75, 1, 4, 60, 165), (90, 2, 4, 80, 70),
+    (60, 4, 4, 60, 0), (60, 0, 4, None, None), (-1, 1, 4, None, None),
+    (30, 1, 4, 40, None),
 ])
-def test_remaining_time_estimate(elapsed, completed, total, expected):
-    assert estimate_remaining_seconds(elapsed, completed, total) == expected
+def test_remaining_time_estimate(elapsed, completed, total, calibrated, expected):
+    assert estimate_remaining_seconds(elapsed, completed, total, calibrated) == expected
 
 
 def test_process_resource_usage_includes_child_processes():
@@ -609,6 +988,74 @@ def test_process_resource_usage_includes_child_processes():
             return parent
 
     assert process_resource_usage(42, cast(PsutilLike, Psutil)) == (50, 3.0)
+
+
+def test_process_resource_usage_skips_inaccessible_children():
+    class ResourceError(Exception):
+        pass
+
+    class Process:
+        pid = 0
+
+        def __init__(self, cpu, rss, *, inaccessible=False, children=()):
+            self.cpu = cpu
+            self.rss = rss
+            self.inaccessible = inaccessible
+            self._children = children
+
+        def children(self, recursive):
+            assert recursive
+            return list(self._children)
+
+        def cpu_percent(self, interval):
+            assert interval is None
+            return self.cpu
+
+        def memory_info(self):
+            if self.inaccessible:
+                raise ResourceError("privileged child")
+            return type("Memory", (), {"rss": self.rss})()
+
+    accessible = Process(20, 1024 ** 3)
+    privileged = Process(90, 8 * 1024 ** 3, inaccessible=True)
+    parent = Process(30, 2 * 1024 ** 3, children=[accessible, privileged])
+
+    class Psutil:
+        Error = ResourceError
+
+        @staticmethod
+        def Process(_pid):
+            return parent
+
+    assert process_resource_usage(42, cast(PsutilLike, Psutil)) == (50, 3.0)
+
+
+def test_process_resource_usage_retains_parent_when_child_enumeration_races():
+    class ResourceError(Exception):
+        pass
+
+    class Parent:
+        pid = 42
+
+        def children(self, recursive):
+            assert recursive
+            raise ResourceError("child exited")
+
+        def cpu_percent(self, interval):
+            assert interval is None
+            return 30
+
+        def memory_info(self):
+            return type("Memory", (), {"rss": 2 * 1024 ** 3})()
+
+    class Psutil:
+        Error = ResourceError
+
+        @staticmethod
+        def Process(_pid):
+            return Parent()
+
+    assert process_resource_usage(42, cast(PsutilLike, Psutil)) == (30, 2.0)
 
 
 def test_system_memory_usage_reports_used_and_total_gibibytes():
@@ -685,15 +1132,16 @@ def test_vram_line_only_applies_to_discrete_memory_devices(monkeypatch):
     assert show_vram_usage([
         {"name": "AMD Radeon Pro W7900", "vendor": "amd", "vram_gb": 48},
     ])
+    assert show_vram_usage([
+        {"name": "Intel Arc Pro B65", "vendor": "intel", "vram_gb": 24},
+    ])
     assert not show_vram_usage([
         {"name": "AMD Radeon Graphics", "vendor": "amd", "vram_gb": 2},
         {"name": "NVIDIA GB10", "vendor": "nvidia", "vram_gb": None},
     ])
 
     monkeypatch.setattr(
-        Shared, "sample_memory_gb", staticmethod(lambda: {
-            "gpu_vram_used_gb": 10.25, "gpu_vram_total_gb": 24.0,
-        }),
+        "scripts.runtime.telemetry.query_sampler_vram_usage", lambda: (10.25, 24.0),
     )
     assert query_vram_usage() == (10.25, 24.0)
     assert resource_usage_rows(None, None, 0, None, None) == {

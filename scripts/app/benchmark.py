@@ -5,6 +5,8 @@ See docs/workloads.md for what each test measures, docs/cli-reference.md for fla
 import argparse
 import fnmatch
 import json
+import math
+import os
 import platform
 import re
 import signal
@@ -13,31 +15,56 @@ from datetime import datetime
 from pathlib import Path
 
 from scripts.runtime import config
-from scripts.app.benchmark_options import TEST_CHOICES, TG_TOKEN_CHOICES, TIER_CHOICES, option_value_errors
+from scripts.runtime.execution_profile import build_execution_profile
+from scripts.app.benchmark_options import (
+    MTP_CHOICES, TEST_CHOICES, TG_TOKEN_CHOICES, TIER_CHOICES, option_value_errors,
+)
 from scripts.runtime.progress_events import emit_result_saved, set_progress_engine
 from scripts.runtime.comfyui_installation import find_comfyui_installation, normalize_comfyui_dir
 from scripts.workloads.conversation_selection import conv_skip_entry
 from scripts.runtime.shared import Shared
+from scripts.runtime.mtp import active_mtp_configurations
 from scripts.runtime.engines import get_engine, engine_names as registered_engine_names
 from scripts.runtime.engines.vllm import VllmEngine
 from scripts.results.event_store import EventStore
 from scripts.workloads.llm_prefill_benchmark import LLMPrefillBenchmark
+from scripts.workloads.llm_conversation_benchmark import LLMConversationBenchmark
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.results.llm_event_stage import event_store_path
+from scripts.results.local_execution_context import (
+    LocalExecutionContext, images_dir_for_result, write_local_execution_context,
+)
 from scripts.workloads.embedding_benchmark import EmbeddingBenchmark
-from scripts.workloads.image_benchmark import ImageBenchmark
+from scripts.workloads.image_benchmark import (
+    ImageBenchmark, image_resume_artifacts, image_resume_runtimes,
+)
 from scripts.workloads.mcq_benchmark import MCQBenchmark
 from scripts.workloads.math_benchmark import MathBenchmark
 from scripts.workloads.methodology_profile import resolve_methodology_profile
 from scripts.runtime.network_policy import apply_offline_mode
+from scripts.runtime.telemetry import (
+    CaseTelemetry, derive_run_memory_summary, derive_run_power_summary,
+    discover_power_source, discover_temperature_source, power_availability_dict,
+    temperature_availability_dict,
+)
+
+
+def temperature_telemetry_requested(tests, environ=None) -> bool:
+    environ = os.environ if environ is None else environ
+    qualification_value = environ.get("LOCAL_AI_BENCH_QUALIFICATION_TEMPERATURE")
+    if qualification_value in {"0", "1"}:
+        return qualification_value == "1"
+    return "sustained" in tests
 from scripts.runtime.pause_control import apply_pause_evidence
 from scripts.workloads.reasoning_benchmark import ReasoningBenchmark
 from scripts.workloads.code_benchmark import CodeBenchmark
 from scripts.workloads.tool_benchmark import ToolBenchmark
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
-from scripts.workloads.llamabench_concurrency_benchmark import LlamaBenchConcurrencyBenchmark
-from scripts.workloads.vllm_benchmark import VllmBenchBenchmark
 from scripts.workloads.models import IMAGE_MODELS, LLM_MODELS_XSMALL, LLM_MODELS_SMALL, LLM_MODELS_MEDIUM, LLM_MODELS_LARGE, LLM_MODELS, EMBED_MODELS
+from scripts.workloads.model_variants import (
+    expanded_model_variants, expanded_variant_catalog, normalize_variant_selectors,
+    select_model_variants, variant_sweep_cost,
+)
 from scripts.setup.model_inventory import build_model_inventory, format_model_inventory, sanitize_tag_to_short
 from scripts.app.orchestration import (
     LifecycleCoordinator, RunContext, RunPaths, StageDefinition,
@@ -47,16 +74,21 @@ from scripts.app.orchestration import (
 from scripts.results.result_store import (ResultStore, atomic_write_json, build_run_manifest, finish_run,
                           finish_active_stage, model_identity)
 from scripts.results.run_plan import RunPlan, load_run_plan
+from scripts.runtime.model_preflight import (
+    filter_models, maximum_requested_context, run_runtime_preflight, run_static_preflight,
+)
+from scripts.runtime.mtp import expand_mtp_passes, mtp_selection_error
 from scripts.results.resume_policy import build_engine_resume_identity
 from scripts.results.result_history import ETA_MATCH_KEYS, estimate_matching_plan_seconds
 from scripts.runtime.supervised_stage import relay_runner_log, run_supervised_llm, run_supervised_stage
 from scripts.setup.setup_config import (
     available_gpu_split_modes, configured_comfyui_dir, load_setup_config,
 )
-from scripts.setup.runtime_identity import engine_runtime_version
 from scripts.stage_registry import (
-    ACCURACY_TESTS, CONCURRENCY_TESTS, LLM_TESTS, engine_incompatible_tests,
+    ACCURACY_TESTS, CONCURRENCY_TESTS, JOURNAL_STAGES, LLM_TESTS,
+    engine_incompatible_tests,
 )
+from scripts.workloads.accuracy_registry import accuracy_spec
 
 
 def checkpoint_terminal_exception(results: dict, exc: BaseException, checkpoint) -> None:
@@ -118,9 +150,8 @@ def format_duration_estimate(seconds: float | None) -> str:
     return f"about {minutes // 60}h {minutes % 60}m" if minutes >= 60 else f"about {minutes}m"
 
 
-def eta_match_config(args) -> dict:
-    """Runtime-shaping settings required for a historical ETA match."""
-    values = {
+def runtime_shaping_config(args) -> dict:
+    return {
         "runs": config.N_RUNS, "warmup_runs": args.warmup,
         "run_timeout_seconds": config.RUN_TIMEOUT,
         "accuracy_timeout_seconds": config.ACC_TIMEOUT,
@@ -136,13 +167,30 @@ def eta_match_config(args) -> dict:
         "concurrency_tool_context": config.CONCURRENCY_TOOL_CONTEXT,
         "concurrency_chat_context": config.CONCURRENCY_CHAT_CONTEXT,
         "concurrency_chat_soft_exit_floor": config.CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT,
+        "mtp_enabled": False, "mtp_configurations": {},
+        "sustained_duration_sec": getattr(args, "sustained_duration", config.SUSTAINED_DURATION_SEC),
+        "sustained_window_sec": config.SUSTAINED_WINDOW_SEC,
+        "sustained_context_tokens": config.SUSTAINED_CONTEXT_TOKENS,
     }
-    return {key: values[key] for key in ETA_MATCH_KEYS}
+
+
+def eta_match_config(args, *, mtp_enabled: bool = False) -> dict:
+    """Runtime-shaping settings required for a historical ETA match."""
+    values = runtime_shaping_config(args)
+    values["mtp_enabled"] = mtp_enabled
+    matched = {key: values[key] for key in ETA_MATCH_KEYS}
+    if "sustained" in getattr(args, "tests", []):
+        matched.update({key: values[key] for key in (
+            "sustained_duration_sec", "sustained_window_sec", "sustained_context_tokens",
+        )})
+    return matched
 
 
 def format_resolved_plan(engine: str, tests: list[str], models: dict[str, list[dict]],
                          estimate_seconds: float | None, *, runs: int, warmups: int,
-                         max_prompt_tokens: int | None, sample_size: int | None) -> str:
+                         max_prompt_tokens: int | None, sample_size: int | None,
+                         sustained_duration: int = config.SUSTAINED_DURATION_SEC,
+                         sweep_cost: dict | None = None) -> str:
     family_for = {
         "emb": "embeddings", "img": "images", "conc_tool": "concurrency",
         "conc_chat": "concurrency",
@@ -164,11 +212,14 @@ def format_resolved_plan(engine: str, tests: list[str], models: dict[str, list[d
         elif test == "llamabenchconc":
             cases = f"pp {config.LLAMABENCH_CONC_PP}; tg {config.LLAMABENCH_CONC_TG}; concurrency {config.LLAMABENCH_CONC_NPL}"
         elif test == "vllmbench":
-            cases = f"input {config.VLLMBENCH_INPUT}; output {config.VLLMBENCH_OUTPUT}"
+            cases = f"input {config.LLAMABENCH_PP}; output {config.VLLMBENCH_OUTPUT}"
         elif test == "conc_tool":
             cases = f"levels {config.CONCURRENCY_TOOL_LEVELS}"
         elif test == "conc_chat":
             cases = f"levels {config.CONCURRENCY_CHAT_LEVELS}"
+        elif test == "sustained":
+            cases = (f"{sustained_duration}s soak; {config.SUSTAINED_WINDOW_SEC}s windows; "
+                     f"{config.SUSTAINED_CONTEXT_TOKENS}-token context")
         elif test == "img":
             cases = "; ".join(
                 f"{model['short']}={model.get('resolutions', config.IMAGE_RESOLUTIONS)}"
@@ -180,6 +231,12 @@ def format_resolved_plan(engine: str, tests: list[str], models: dict[str, list[d
             cases = "one document"
         lines.append(f"  {test}: {', '.join(labels) or '(no models)'} — {cases}")
     lines.append(f"Runs: {runs} measured + {warmups} warmup")
+    if sweep_cost:
+        lines.append(
+            f"Sweep cost: +{sweep_cost['added_disk_gb']:.1f} GB disk; "
+            f"{sweep_cost['download_gb']:.1f} GB download; "
+            f"~{sweep_cost['runtime_multiplier']:.2f}x model-work time"
+        )
     lines.append(f"Estimated duration: {format_duration_estimate(estimate_seconds)}")
     return "\n".join(lines)
 
@@ -206,7 +263,7 @@ def select_tier(maxtier: str | None, image_models: list) -> tuple[list, str, lis
 def apply_max_prompt_tokens_cap(max_tokens: int | None, context_lengths: list[int],
                                 llamabench_pp: list[int], llamabenchconc_pp: int,
                                 ) -> tuple[list[int], list[int], int]:
-    """Caps 'llm'/'llamabench'/'llamabenchconc' prompt depths to max_tokens — see --max-prompt-tokens.
+    """Caps LLM and native-benchmark prompt depths to max_tokens — see --max-prompt-tokens.
     Raises ValueError if the cap excludes every depth from a list-based sweep."""
     if max_tokens is None:
         return list(context_lengths), list(llamabench_pp), llamabenchconc_pp
@@ -238,11 +295,21 @@ def filter_models_by_pattern(models: list, patterns: list[str] | None, key: str 
 
 
 def resolve_custom_models(patterns: list[str], catalog: list[dict], installed_tags: list[str],
-                          known_catalog: list[dict] = LLM_MODELS + EMBED_MODELS) -> list[dict]:
+                          known_catalog: list[dict] | None = None) -> list[dict]:
     """Resolve patterns against catalog entries and installed custom models."""
+    if known_catalog is None:
+        known_catalog = expanded_variant_catalog(LLM_MODELS) + EMBED_MODELS
     known_catalog_tags = {m["tag"] for m in known_catalog}
-    resolved = list(filter_models_by_pattern(catalog, patterns))
-    seen = {m["tag"] for m in resolved}
+    resolved = [
+        model for model in catalog
+        if any(
+            fnmatch.fnmatchcase(variant["tag"], pattern)
+            for variant in expanded_model_variants(model) for pattern in patterns
+        )
+    ]
+    seen = {
+        variant["tag"] for model in resolved for variant in expanded_model_variants(model)
+    }
 
     for pattern in patterns:
         for tag in installed_tags:
@@ -260,6 +327,15 @@ def downloaded_models(catalog: list[dict], installed_tags: list[str]) -> list[di
     order — see docs/workloads.md#concurrency."""
     installed = set(installed_tags)
     return [m for m in catalog if m["tag"] in installed]
+
+
+def downloaded_model_families(catalog: list[dict], installed_tags: list[str]) -> list[dict]:
+    """Keep a catalog family when any of its executable variants is installed."""
+    installed = set(installed_tags)
+    return [
+        model for model in catalog
+        if any(variant["tag"] in installed for variant in expanded_model_variants(model))
+    ]
 
 
 def fork_provenance(source_path: Path, plan: RunPlan, output_path: Path) -> dict:
@@ -295,6 +371,13 @@ def interruption_exit_code(sig) -> int:
     return 128 + int(sig)
 
 
+def cleanup_signal_numbers(signal_module: object = signal) -> tuple[int, ...]:
+    values = [int(getattr(signal_module, "SIGINT")), int(getattr(signal_module, "SIGTERM"))]
+    if hasattr(signal_module, "SIGBREAK"):
+        values.append(int(getattr(signal_module, "SIGBREAK")))
+    return tuple(dict.fromkeys(values))
+
+
 def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
                          patterns: list[str] | None, concurrency_enabled: bool
                          ) -> tuple[list[dict], list[dict]]:
@@ -306,7 +389,7 @@ def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
     )
     concurrency_models = []
     if concurrency_enabled:
-        concurrency_models = downloaded_models(LLM_MODELS, installed_tags)
+        concurrency_models = downloaded_model_families(LLM_MODELS, installed_tags)
         if patterns:
             concurrency_models = resolve_custom_models(
                 patterns, concurrency_models, installed_tags,
@@ -317,6 +400,7 @@ def resolve_model_scopes(tier_models: list[dict], installed_tags: list[str],
 def engine_version_applies(tests: list[str]) -> bool:
     return bool(set(tests) & (set(LLM_TESTS) | set(CONCURRENCY_TESTS) | {"emb"}))
 
+
 def engine_pass_tests(tests: list[str], engine_name: str, *, include_images: bool) -> list[str]:
     """Workloads that produce results in one engine pass."""
     incompatible = set(engine_incompatible_tests(tests, engine_name))
@@ -324,6 +408,32 @@ def engine_pass_tests(tests: list[str], engine_name: str, *, include_images: boo
         test for test in tests
         if test not in incompatible and (include_images or test != "img")
     ]
+
+
+def engine_scope_tests(tests: list[str], scope: dict, *, include_images: bool) -> list[str]:
+    """Workloads with at least one compatible model in this engine pass."""
+    selected = engine_pass_tests(tests, scope["name"], include_images=include_images)
+    if "llm_models" in scope and not scope["llm_models"]:
+        selected = [test for test in selected if test not in LLM_TESTS]
+    if "concurrency_models" in scope and not scope["concurrency_models"]:
+        selected = [test for test in selected if test not in CONCURRENCY_TESTS]
+    if "embedding_models" in scope and not scope["embedding_models"]:
+        selected = [test for test in selected if test != "emb"]
+    return selected
+
+
+def build_engine_execution_profiles(engine_scopes: list[dict], tests: list[str], *,
+                                    cpu_only: bool, hardware_profile: dict,
+                                    profile_builder=build_execution_profile) -> dict[str, dict]:
+    profiles = {}
+    for index, scope in enumerate(engine_scopes):
+        pass_tests = engine_scope_tests(tests, scope, include_images=index == 0)
+        if pass_tests:
+            profiles[scope["name"]] = profile_builder(
+                scope["engine"], pass_tests, cpu_only=cpu_only,
+                engine_name=scope["name"], hardware_profile=hardware_profile,
+            )
+    return profiles
 
 
 def selected_plan_models(tests: list[str], llm_models: list[dict],
@@ -337,6 +447,45 @@ def selected_plan_models(tests: list[str], llm_models: list[dict],
         "embeddings": model_identity(embedding_models) if "emb" in selected else [],
         "images": model_identity(image_models) if "img" in selected else [],
     }
+
+
+def validated_run_plan(*, engine_name: str, tests: list[str], stage_order: list[str],
+                       models: dict[str, list[dict]], effective_config: dict,
+                       job_id: str | None = None) -> RunPlan:
+    plan = RunPlan.create(
+        application_version=config.VERSION, engine_name=engine_name,
+        tests=tests, stage_order=stage_order, models=models,
+        effective_config=effective_config, job_id=job_id,
+    )
+    plan.validate_for_execution()
+    return plan
+
+
+def preflight_result(preflight, power_availability, temperature_availability) -> dict:
+    return {
+        **preflight.to_dict(),
+        **({"power": power_availability_dict(power_availability)}
+           if power_availability else {}),
+        **({"temperature": temperature_availability_dict(temperature_availability)}
+           if temperature_availability else {}),
+    }
+
+
+def apply_preflight_plan(plan: RunPlan, preflight, *, engine_name: str,
+                         tests: list[str], stage_order: list[str],
+                         llm_models: list[dict], concurrency_models: list[dict],
+                         embedding_models: list[dict], image_models: list[dict],
+                         effective_config: dict) -> tuple[RunPlan, list[dict], list[dict]]:
+    llm_models = filter_models(llm_models, preflight.runnable_tags)
+    concurrency_models = filter_models(concurrency_models, preflight.runnable_tags)
+    plan = validated_run_plan(
+        engine_name=engine_name, tests=tests, stage_order=stage_order,
+        models=selected_plan_models(
+            tests, llm_models, concurrency_models, embedding_models, image_models,
+        ),
+        effective_config=effective_config, job_id=plan.job_id,
+    )
+    return plan, llm_models, concurrency_models
 
 
 def resolve_catalog_scopes(image_models: list[dict], embedding_patterns: list[str] | None,
@@ -381,18 +530,43 @@ def validate_engine_scopes(tests: list[str], engine_name: str, llm_patterns: lis
     return errors
 
 
+def apply_variant_selections(engine_scopes: list[dict], selectors: list[str] | None,
+                             engine_names: list[str], tests: list[str]) -> None:
+    selections = normalize_variant_selectors(selectors, LLM_MODELS)
+    if selections and engine_names != ["llamacpp"]:
+        raise ValueError("--model-variant requires --engine llamacpp")
+    for scope in engine_scopes:
+        scope["llm_models"] = select_model_variants(scope["llm_models"], selections)
+        if selections and scope.get("inventory_loaded"):
+            missing = sorted(
+                model["tag"] for model in scope["llm_models"]
+                if model.get("base_model") in selections
+                and model["tag"] not in scope["installed_tags"]
+            )
+            if missing:
+                raise ValueError(
+                    "selected model variants are not installed: " + ", ".join(missing)
+                )
+        if any(test in tests for test in CONCURRENCY_TESTS):
+            scope["concurrency_models"] = select_model_variants(
+                scope["concurrency_models"], selections,
+            )
+
+
 def resolve_engine_scopes(engine_names: list[str], engine_factory, tier_models: list[dict],
-                          tier_label: str, llm_patterns: list[str] | None, tests: list[str]
+                          tier_label: str, llm_patterns: list[str] | None, tests: list[str],
+                          *, embedding_models: list[dict] | None = None,
+                          embedding_patterns: list[str] | None = None,
+                          variant_selectors: list[str] | None = None,
                           ) -> tuple[list[dict], list[str]]:
     """Resolve and validate every engine before benchmark orchestration."""
+    embedding_models = [] if embedding_models is None else embedding_models
     concurrency_enabled = any(test in tests for test in CONCURRENCY_TESTS)
     normal_llm_enabled = any(test in tests for test in LLM_TESTS)
-    known_tags = [model["tag"] for model in LLM_MODELS + EMBED_MODELS]
-    custom_lookup_needed = bool(
+    embedding_enabled = "emb" in tests
+    inventory_needed = bool(variant_selectors) or concurrency_enabled or bool(
         llm_patterns and normal_llm_enabled
-        and any(pattern not in known_tags for pattern in llm_patterns)
-    )
-    inventory_needed = custom_lookup_needed or concurrency_enabled
+    ) or bool(embedding_patterns and embedding_enabled)
     scopes = []
     errors = []
     for engine_name in engine_names:
@@ -402,18 +576,69 @@ def resolve_engine_scopes(engine_names: list[str], engine_factory, tier_models: 
             [model["tag"] for model in engine.list_installed_models()]
             if inventory_needed else []
         )
+        engine_tier_models = (
+            downloaded_model_families(tier_models, installed_tags)
+            if llm_patterns and normal_llm_enabled else tier_models
+        )
         llm_models, concurrency_models = resolve_model_scopes(
-            tier_models, installed_tags, llm_patterns, concurrency_enabled,
+            engine_tier_models, installed_tags, llm_patterns, concurrency_enabled,
+        )
+        engine_embeddings = (
+            downloaded_models(embedding_models, installed_tags)
+            if embedding_patterns and embedding_enabled else embedding_models
         )
         scopes.append({
             "name": engine_name,
             "engine": engine,
+            "installed_tags": frozenset(installed_tags),
+            "inventory_loaded": inventory_needed,
             "llm_models": llm_models,
             "concurrency_models": concurrency_models,
+            "embedding_models": engine_embeddings,
         })
-        errors.extend(validate_engine_scopes(
-            engine_tests, engine_name, llm_patterns, llm_models, concurrency_models, tier_label,
-        ))
+        if len(engine_names) == 1:
+            errors.extend(validate_engine_scopes(
+                engine_tests, engine_name, llm_patterns,
+                llm_models, concurrency_models, tier_label,
+            ))
+            if embedding_patterns and "emb" in engine_tests and not engine_embeddings:
+                errors.append(
+                    f"--embedding-models {' '.join(embedding_patterns)} matched no installed "
+                    f"embedding models for {engine_name}"
+                )
+    if len(engine_names) > 1:
+        relevant_llm = [
+            model for scope in scopes
+            if any(test in engine_pass_tests(
+                tests, scope["name"], include_images=True,
+            ) for test in LLM_TESTS)
+            for model in scope["llm_models"]
+        ]
+        relevant_concurrency = [
+            model for scope in scopes
+            if any(test in engine_pass_tests(
+                tests, scope["name"], include_images=True,
+            ) for test in CONCURRENCY_TESTS)
+            for model in scope["concurrency_models"]
+        ]
+        relevant_embeddings = [
+            model for scope in scopes for model in scope["embedding_models"]
+        ]
+        if llm_patterns and normal_llm_enabled and not relevant_llm:
+            errors.append(
+                f"--llm-models {' '.join(llm_patterns)} matched no LLM models in the "
+                f"selected tier ({tier_label}) or installed for the selected engines"
+            )
+        if llm_patterns and concurrency_enabled and not relevant_concurrency:
+            errors.append(
+                f"--llm-models {' '.join(llm_patterns)} matched no downloaded concurrency "
+                "models for the selected engines"
+            )
+        if embedding_patterns and embedding_enabled and not relevant_embeddings:
+            errors.append(
+                f"--embedding-models {' '.join(embedding_patterns)} matched no installed "
+                "embedding models for the selected engines"
+            )
     return scopes, errors
 
 
@@ -469,6 +694,12 @@ def add_model_selection_arguments(parser: argparse.ArgumentParser) -> None:
              "them first. --models is retained as a backward-compatible alias.",
     )
     parser.add_argument(
+        "--model-variant", dest="model_variants", action="append", default=None,
+        metavar="BASE=VARIANT",
+        help="Select one GGUF quantization for a catalog base model; repeat for a sweep "
+             "(llama.cpp only). Omission keeps every model's documented default.",
+    )
+    parser.add_argument(
         "--embedding-models", nargs="+", default=None,
         help="Only test these embedding model tags — exact tags or shell-style wildcards "
              "(default: every catalog embedding model). Quote wildcards in a shell.",
@@ -479,6 +710,18 @@ def add_model_selection_arguments(parser: argparse.ArgumentParser) -> None:
              "or shell-style wildcards (default: every image model allowed by --maxtier). "
              "Applied after --maxtier. Quote wildcards in a shell.",
     )
+
+
+def supervised_stage_runner(event_path: Path, stage_name: str, save_fn, *,
+                            resume_identity, power_availability,
+                            temperature_availability):
+    def runner(context):
+        return run_supervised_stage(
+            context.plan, event_path, stage_name, save_fn,
+            resume_identity=resume_identity, power_availability=power_availability,
+            temperature_availability=temperature_availability,
+        )
+    return runner
 
 
 def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/ComfyUI runs
@@ -602,6 +845,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "and uses f16 KV cache because llama.cpp does not support quantized KV there.",
     )
     parser.add_argument(
+        "--mtp", choices=MTP_CHOICES, default="off",
+        help="Native multi-token prediction for supported engine/model artifacts: off, on, "
+             "or both as separate comparable result passes (default: off). MTP applies only "
+             "to server-backed text workloads.",
+    )
+    parser.add_argument(
         "--llamacpp-no-repack", action="store_true",
         help="Disable llama.cpp weight repacking with --no-repack/-nr. This can reduce model "
              "startup time and peak loading memory but may reduce CPU inference throughput "
@@ -651,6 +900,29 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "offline/telemetry-disabled environment settings to managed runtimes. Local "
              "llama.cpp and ComfyUI HTTP connections remain available.",
     )
+    parser.add_argument(
+        "--memory-telemetry", action=argparse.BooleanOptionalAction, default=True,
+        help="Record qualified 0.5-second memory sampling for completed workload cases. "
+             "Use --no-memory-telemetry to disable it (default: enabled).",
+    )
+    parser.add_argument(
+        "--power-telemetry", action="store_true",
+        help="Record opt-in power and energy measurements through the shared 0.5-second "
+             "resource sampler. Requires active source permission and memory telemetry "
+             "(default: false).",
+    )
+    parser.add_argument(
+        "--sustained-duration", type=positive_int, default=config.SUSTAINED_DURATION_SEC,
+        metavar="SECONDS",
+        help=f"Minimum sustained-load soak duration per model (default: "
+             f"{config.SUSTAINED_DURATION_SEC}s; minimum "
+             f"{config.SUSTAINED_MIN_CLASSIFICATION_SEC}s).",
+    )
+    parser.add_argument(
+        "--ambient-temp-c", type=float, default=None, metavar="CELSIUS",
+        help="Ambient temperature measured near the system immediately before a sustained "
+             "run (default: not recorded).",
+    )
     _engines = registered_engine_names()
     parser.add_argument(
         "--engine", type=str, default=_engines[0],
@@ -663,6 +935,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "docs referencing --engine don't need to change when one is.",
     )
     args = parser.parse_args()
+    if args.power_telemetry and not args.memory_telemetry:
+        parser.error("--power-telemetry requires --memory-telemetry")
     apply_quick_preset(args)
     config.LLAMACPP_GPU_SPLIT_MODE = args.gpu_split_mode
     config.LLAMACPP_NO_REPACK = args.llamacpp_no_repack
@@ -679,6 +953,17 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         parser.error(option_errors[0])
 
     args.tests = expand_tests(args.tests)
+    if "sustained" in args.tests and not args.memory_telemetry:
+        parser.error("the sustained workload requires --memory-telemetry for aligned sampling")
+    if args.ambient_temp_c is not None and "sustained" not in args.tests:
+        parser.error("--ambient-temp-c requires --tests sustained")
+    if args.sustained_duration < config.SUSTAINED_MIN_CLASSIFICATION_SEC:
+        parser.error(
+            f"--sustained-duration must be at least {config.SUSTAINED_MIN_CLASSIFICATION_SEC}"
+        )
+    if args.ambient_temp_c is not None and (
+            not math.isfinite(args.ambient_temp_c) or not -100 <= args.ambient_temp_c <= 100):
+        parser.error("--ambient-temp-c must be a finite value from -100 to 100")
     setup_config = load_setup_config(config.SETUP_CONFIG_PATH)
     if args.comfyui and not normalize_comfyui_dir(Path(args.comfyui)):
         parser.error("--comfyui must contain main.py or a ComfyUI/main.py portable layout")
@@ -691,7 +976,6 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         run_engine_names = resolve_engine_names(args.engine, _engines)
     except ValueError as exc:
         parser.error(str(exc))
-
     if args.list_models:
         any_installed = False
         for engine_name in run_engine_names:
@@ -732,42 +1016,83 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     )
     engine_scopes, engine_errors = resolve_engine_scopes(
         run_engine_names, get_engine, tier_models, tier_label, args.llm_models, args.tests,
+        embedding_models=embedding_models, embedding_patterns=args.embedding_models,
+        variant_selectors=args.model_variants,
     )
     validation_errors.extend(engine_errors)
+    try:
+        apply_variant_selections(
+            engine_scopes, args.model_variants, run_engine_names, args.tests,
+        )
+    except ValueError as exc:
+        validation_errors.append(str(exc))
     if validation_errors:
         for error in validation_errors:
             Shared.err(error)
         sys.exit(2)
 
+    base_execution_scopes = [
+        {
+            **scope,
+            "tests": engine_scope_tests(
+                args.tests, scope, include_images=index == 0,
+            ),
+        }
+        for index, scope in enumerate(engine_scopes)
+    ]
+    mtp_error = mtp_selection_error(
+        {
+            scope["name"]: scope["llm_models"] + scope["concurrency_models"]
+            for scope in engine_scopes
+        },
+        args.mtp, args.tests,
+    )
+    if mtp_error:
+        parser.error(mtp_error)
+    execution_passes = expand_mtp_passes(base_execution_scopes, args.mtp)
+    if args.mtp == "on" and not execution_passes:
+        parser.error(
+            "--mtp on requires a selected model with cataloged native MTP support "
+            "and at least one server-backed text workload"
+        )
+
     hardware_profile = Shared.build_profile()
     if args.dry_run:
         previews = []
-        for run_idx, engine_scope in enumerate(engine_scopes):
-            include_images = len(engine_scopes) == 1 or run_idx == 0
-            tests = engine_pass_tests(args.tests, engine_scope["name"], include_images=include_images)
+        for engine_scope in execution_passes:
+            tests = engine_scope["tests"]
             if not tests:
                 continue
             plan_models = selected_plan_models(
                 tests, engine_scope["llm_models"], engine_scope["concurrency_models"],
-                embedding_models, image_models,
+                engine_scope["embedding_models"], image_models,
             )
             estimate = estimate_matching_plan_seconds(
                 config.RESULTS_DIR, engine_scope["name"], tests, plan_models,
-                eta_match_config(args), hardware_profile,
+                eta_match_config(args, mtp_enabled=engine_scope["mtp_enabled"]), hardware_profile,
             )
             display_models = {
                 "llm": engine_scope["llm_models"],
                 "concurrency": engine_scope["concurrency_models"],
-                "embeddings": embedding_models, "images": image_models,
+                "embeddings": engine_scope["embedding_models"], "images": image_models,
             }
             previews.append(format_resolved_plan(
-                engine_scope["name"], tests, display_models, estimate,
+                engine_scope["progress_name"], tests, display_models, estimate,
                 runs=args.runs, warmups=args.warmup,
                 max_prompt_tokens=args.max_prompt_tokens, sample_size=args.sample,
+                sustained_duration=args.sustained_duration,
+                sweep_cost=variant_sweep_cost(
+                    engine_scope["llm_models"], LLM_MODELS,
+                    [item["tag"] for item in engine_scope["engine"].list_installed_models()],
+                ),
             ))
         Shared.output(format_dry_run_output(previews))
         return
 
+    execution_profiles = build_engine_execution_profiles(
+        engine_scopes, args.tests, cpu_only=args.cpu_only,
+        hardware_profile=hardware_profile,
+    )
     _safe = re.sub(r'[\\/:*?"<>|\s]+', '_', hardware_profile['hostname']).strip('_')
     _start_stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     config.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -775,26 +1100,39 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
     multi_engine = len(run_engine_names) > 1
 
-    for run_idx, engine_scope in enumerate(engine_scopes):
+    for run_idx, engine_scope in enumerate(execution_passes):
         engine_name = engine_scope["name"]
         engine = engine_scope["engine"]
         llm_models = engine_scope["llm_models"]
         conc_models = engine_scope["concurrency_models"]
+        embedding_models = engine_scope["embedding_models"]
         # Held on Shared so shutdown_managed() (called from the signal handler and
         # the finally block) can consult the live engine without threading it in.
         Shared._active_engine = engine
 
-        set_progress_engine(engine_name)
+        mtp_enabled = engine_scope["mtp_enabled"]
+        progress_name = engine_scope["progress_name"]
+        configure_mtp = getattr(engine, "set_mtp_enabled", None)
+        if configure_mtp is not None:
+            configure_mtp(mtp_enabled)
+        set_progress_engine(progress_name)
+        suffix_parts = []
         if multi_engine:
-            Shared.section(f"Engine: {engine_name} ({run_idx + 1}/{len(run_engine_names)})")
+            suffix_parts.append(engine_name)
+        if args.mtp != "off":
+            suffix_parts.append(f"mtp-{'on' if mtp_enabled else 'off'}")
+        if suffix_parts:
             _base = Path(base_out_path)
-            out_path = str(_base.with_name(f"{_base.stem}_{engine_name}{_base.suffix}"))
+            suffix = "_".join(suffix_parts)
+            out_path = str(_base.with_name(f"{_base.stem}_{suffix}{_base.suffix}"))
         else:
             out_path = base_out_path
+        if len(execution_passes) > 1:
+            Shared.section(
+                f"Pass: {progress_name} ({run_idx + 1}/{len(execution_passes)})"
+            )
 
-        # Image generation doesn't depend on --engine (separate ComfyUI call) — run it once, first pass only.
-        include_images = not multi_engine or run_idx == 0
-        if not include_images and "img" in args.tests:
+        if "img" not in engine_scope["tests"] and "img" in args.tests:
             Shared.log("Image generation doesn't depend on --engine — already "
                        f"captured in the {run_engine_names[0]} pass, skipping for {engine_name}")
 
@@ -804,25 +1142,20 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                      else "run only under their native engines")
             Shared.log(f"{', '.join(native_elsewhere)} {scope} — skipping for {engine_name}")
 
-        tests = engine_pass_tests(args.tests, engine_name, include_images=include_images)
+        tests = engine_scope["tests"]
         if not tests:
             Shared.log(f"No selected workloads apply to {engine_name} — skipping this engine pass")
             continue
 
         engine_backed_tests = [
             t for t in ("llm", "conv", "llamabench", "llamabenchconc", "emb", "mcq", "math", "reasoning", "code", "tool",
-                        "conc_tool", "conc_chat") if t in tests
+                        "conc_tool", "conc_chat", "sustained") if t in tests
         ]
-        hardware_backend = hardware_profile["backend"]
-        profile = {
-            **hardware_profile,
-            "hardware_backend": hardware_backend,
-            "backend": (engine.runtime_backend(hardware_backend, cpu_only=args.cpu_only)
-                        if engine_backed_tests else hardware_backend),
-        }
+        profile = execution_profiles[engine_name]
         runtime_version = (
-            engine_runtime_version(engine_name, engine) if engine_version_applies(tests) else None
+            profile["engine_support"]["runtime_version"] if engine_version_applies(tests) else None
         )
+        hardware_backend = profile["hardware_backend"]
         if (engine_backed_tests
                 and args.gpu_split_mode not in available_gpu_split_modes(setup_config, profile["backend"])):
             parser.error(
@@ -838,6 +1171,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             Shared.output(f"  Hardware:  {profile['hardware_backend']}")
         Shared.output(f"  RAM:       {profile['ram_gb']} GB")
         Shared.output(f"  Engine:    {engine_name}")
+        Shared.output(f"  MTP:       {'on' if mtp_enabled else 'off'}")
         if runtime_version:
             Shared.output(f"  Runtime:   {runtime_version}")
         Shared.output(f"  Runs:      {config.N_RUNS} measured + {args.warmup} warmup")
@@ -849,6 +1183,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         Shared.output(f"  Models:    {tier_label}")
         if args.llm_models:
             Shared.output(f"  --llm-models: {', '.join(m['label'] for m in llm_models)}")
+        if args.model_variants:
+            Shared.output(f"  --model-variant: {', '.join(args.model_variants)}")
         if args.embedding_models:
             Shared.output(f"  --embedding-models: {', '.join(m['label'] for m in embedding_models)}")
         if args.maxtier or args.image_models:
@@ -891,6 +1227,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 sys.exit(interruption_exit_code(sig))
 
         stage_order = ordered_stage_keys(tuple(tests))
+        mtp_configurations = active_mtp_configurations(
+            [*llm_models, *conc_models], engine_name, mtp_enabled,
+        )
         vllm_kv_cache_dtype = "auto"
         vllm_launcher_args = []
         if isinstance(engine, VllmEngine):
@@ -900,57 +1239,162 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             engine_name=engine_name, tests=tests, cpu_only=args.cpu_only,
             vllm_kv_cache_dtype=vllm_kv_cache_dtype,
             vllm_launcher_args=vllm_launcher_args,
+            mtp_enabled=mtp_enabled,
+            mtp_configurations=mtp_configurations,
         )
+        if "sampling_profile" in methodology:
+            engine.set_sampling_profile(methodology["sampling_profile"])
+        power_availability = discover_power_source() if args.power_telemetry else None
+        temperature_availability = discover_temperature_source() \
+            if temperature_telemetry_requested(tests) else None
+        if power_availability:
+            if power_availability.available:
+                Shared.log(
+                    f"Power preflight: {power_availability.source} available "
+                    f"({power_availability.scope})"
+                )
+            else:
+                Shared.warn(f"Power preflight: unavailable — {power_availability.reason}")
+        if temperature_availability:
+            if temperature_availability.available:
+                Shared.log(
+                    "Temperature preflight: "
+                    + ", ".join(
+                        f"{channel}={source}"
+                        for channel, source in temperature_availability.sources.items()
+                    )
+                )
+            else:
+                Shared.warn(
+                    f"Temperature preflight: unavailable — {temperature_availability.reason}"
+                )
         effective_config = {
-            "runs": config.N_RUNS, "warmup_runs": args.warmup,
-            "run_timeout_seconds": config.RUN_TIMEOUT,
-            "accuracy_timeout_seconds": config.ACC_TIMEOUT,
-            "accuracy_token_budget": config.ACC_TOKEN_BUDGET,
-            "cpu_only": args.cpu_only, "force_all": args.force_all,
+            **runtime_shaping_config(args),
             "retry_crashed_models": args.retry_crashed_models,
             "gpu_split_mode": args.gpu_split_mode,
             "llamacpp_no_repack": args.llamacpp_no_repack,
-            "max_prompt_tokens": args.max_prompt_tokens,
-            "context_lengths": config.CONTEXT_LENGTHS,
-            "llamabench_pp": config.LLAMABENCH_PP,
-            "llamabench_tg": config.LLAMABENCH_TG,
-            "concurrency_tool_levels": config.CONCURRENCY_TOOL_LEVELS,
-            "concurrency_chat_levels": config.CONCURRENCY_CHAT_LEVELS,
-            "concurrency_tool_context": config.CONCURRENCY_TOOL_CONTEXT,
-            "concurrency_chat_context": config.CONCURRENCY_CHAT_CONTEXT,
-            "concurrency_chat_soft_exit_floor": config.CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT,
-            "sample_size": args.sample,
             "offline": args.offline,
+            "mtp_enabled": mtp_enabled,
+            "mtp_configurations": methodology.get("mtp_configurations", {}),
+            "progress_engine_name": progress_name,
+            "memory_telemetry": args.memory_telemetry,
+            "memory_telemetry_interval_sec": (
+                config.TELEMETRY_INTERVAL_SEC if args.memory_telemetry else None
+            ),
+            "power_telemetry": args.power_telemetry,
+            "power_telemetry_interval_sec": (
+                config.TELEMETRY_INTERVAL_SEC if args.power_telemetry else None
+            ),
+            "power_source": power_availability.source if power_availability else None,
+            "power_scope": power_availability.scope if power_availability else None,
+            "temperature_telemetry": temperature_availability is not None,
+            "temperature_telemetry_interval_sec": (
+                config.TELEMETRY_INTERVAL_SEC if temperature_availability else None
+            ),
+            "temperature_sources": (
+                dict(temperature_availability.sources) if temperature_availability else None
+            ),
+            "ambient_temp_c": args.ambient_temp_c,
             "methodology_profile": methodology["profile"],
             "effective_optimizations": methodology["effective_optimizations"],
+            **({"sampling_profile": methodology["sampling_profile"]}
+               if "sampling_profile" in methodology else {}),
         }
         plan_models = selected_plan_models(
             tests, llm_models, conc_models, embedding_models, image_models,
         )
-        plan = RunPlan.create(
-            application_version=config.VERSION, engine_name=engine_name,
-            tests=tests, stage_order=stage_order, models=plan_models,
-            effective_config=effective_config,
+        plan = validated_run_plan(
+            engine_name=engine_name, tests=tests, stage_order=stage_order,
+            models=plan_models, effective_config=effective_config,
         )
-        plan.validate_for_execution()
+        context_cap = args.max_prompt_tokens or max(LLMConversationBenchmark.CONV_CHECKPOINTS)
+        contexts_by_test = {
+            "llm": config.CONTEXT_LENGTHS,
+            "conv": [value for value in LLMConversationBenchmark.CONV_CHECKPOINTS
+                     if value <= context_cap],
+            "llamabench": config.LLAMABENCH_PP,
+            "llamabenchconc": [config.LLAMABENCH_CONC_PP],
+            "vllmbench": config.LLAMABENCH_PP,
+            "mcq": [config.ACCURACY_CONTEXT], "math": [config.ACCURACY_CONTEXT],
+            "reasoning": [config.ACCURACY_CONTEXT], "code": [config.ACCURACY_CONTEXT],
+            "tool": [config.ACCURACY_CONTEXT],
+            "sustained": [config.SUSTAINED_CONTEXT_TOKENS],
+            "conc_tool": [config.CONCURRENCY_TOOL_CONTEXT],
+            "conc_chat": [config.CONCURRENCY_CHAT_CONTEXT],
+        }
+        preflight_models = list({
+            model["tag"]: model for model in [*llm_models, *conc_models]
+        }.values())
+        preflight = run_static_preflight(
+            engine, preflight_models, tests,
+            maximum_requested_context(tests, contexts_by_test), args.force_all,
+        )
+        for report in preflight.reports:
+            if report.status == "excluded":
+                Shared.err(f"Preflight excluded {report.tag}: {report.detail}")
+            elif report.status in {"warning", "workload_limited"}:
+                Shared.warn(f"Preflight {report.tag}: {report.detail}")
+            else:
+                Shared.log(f"Preflight {report.tag}: passed")
+        Shared.log(
+            f"Static model preflight completed in {preflight.elapsed_seconds:.2f}s "
+            f"({len(preflight.reports)} model(s))"
+        )
+        plan, llm_models, conc_models = apply_preflight_plan(
+            plan, preflight, engine_name=engine_name, tests=tests,
+            stage_order=stage_order, llm_models=llm_models,
+            concurrency_models=conc_models, embedding_models=embedding_models,
+            image_models=image_models, effective_config=effective_config,
+        )
         forked_from = (
             fork_provenance(Path(args.fork_plan), plan, Path(out_path))
             if args.fork_plan else None
         )
-        journal_stages = set(tests) & {"llm", "conv", "llamabench", "conc_tool", "conc_chat"}
+        journal_stages = set(tests) & JOURNAL_STAGES
+        image_dir = None
+        if "img" in journal_stages:
+            image_dir = images_dir_for_result(Path(out_path))
+            write_local_execution_context(
+                event_store_path(Path(out_path)),
+                LocalExecutionContext(plan.job_id, comfyui_dir.resolve(), image_dir),
+            )
         resume_identity = None
+        extra_resume_runtimes = {}
+        extra_resume_artifacts = {
+            f"bank:{stage}": accuracy_spec(stage).data_path
+            for stage in journal_stages & set(ACCURACY_TESTS)
+        }
+        if "emb" in journal_stages:
+            extra_resume_artifacts["corpus:embeddings"] = EmbeddingBenchmark.EMBED_DOCUMENT_PATH
+        if "img" in journal_stages:
+            extra_resume_artifacts.update(image_resume_artifacts(image_models))
+            extra_resume_runtimes.update(image_resume_runtimes(comfyui_dir))
+        model_families = []
+        resume_identity_options: dict | None = None
         if journal_stages:
-            extra_resume_runtimes = {}
             if "llamabench" in tests:
                 llama_bench_path = find_llamacpp_tool("llama-bench")
                 if not llama_bench_path:
                     raise ValueError("cannot identify llama-bench runtime for resume")
                 extra_resume_runtimes["llama-bench"] = Path(llama_bench_path).resolve()
-            model_families = []
-            if journal_stages & {"llm", "conv", "llamabench"}:
+            if "llamabenchconc" in tests:
+                batched_bench_path = find_llamacpp_tool("llama-batched-bench")
+                if not batched_bench_path:
+                    raise ValueError("cannot identify llama-batched-bench runtime for resume")
+                extra_resume_runtimes["llama-batched-bench"] = Path(
+                    batched_bench_path,
+                ).resolve()
+            if "vllmbench" in tests:
+                vllm_bench_path = engine.bench_executable()
+                if not vllm_bench_path:
+                    raise ValueError("cannot identify vLLM bench runtime for resume")
+                extra_resume_runtimes["vllm-bench"] = Path(vllm_bench_path).resolve()
+            if journal_stages & {"llm", "conv", "llamabench", "llamabenchconc", "vllmbench", "sustained", *ACCURACY_TESTS}:
                 model_families.append("llm")
             if journal_stages & {"conc_tool", "conc_chat"}:
                 model_families.append("concurrency")
+            if "emb" in journal_stages:
+                model_families.append("embeddings")
             identity_model_count = len({
                 model["tag"] for family in model_families for model in plan.models[family]
                 if engine.model_pulled(model["tag"])
@@ -958,12 +1402,19 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             Shared.log(
                 f"Verifying resume identity for {identity_model_count} local model artifact(s) ..."
             )
+            resume_identity_options = {
+                "model_families": model_families,
+                "include_engine_runtime": bool(journal_stages & {
+                    "llm", "conv", "vllmbench", "sustained", "emb", "conc_tool", "conc_chat",
+                    *ACCURACY_TESTS,
+                }),
+                "extra_runtimes": extra_resume_runtimes,
+                "extra_artifacts": extra_resume_artifacts,
+                "digest_cache_path": config.RESUME_DIGEST_CACHE_PATH,
+                "environment": profile,
+            }
             resume_identity = build_engine_resume_identity(
-                plan, engine, model_families=model_families,
-                include_engine_runtime=bool(journal_stages - {"llamabench"}),
-                extra_runtimes=extra_resume_runtimes,
-                digest_cache_path=config.RESUME_DIGEST_CACHE_PATH,
-                environment=profile,
+                plan, engine, **resume_identity_options,
             )
 
         results = {
@@ -984,6 +1435,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 "code": Shared.file_hash(CodeBenchmark.CODE_DATA_PATH),
                 "tool": Shared.file_hash(ToolBenchmark.TOOL_DATA_PATH),
             },
+            "preflight":       preflight_result(
+                preflight, power_availability, temperature_availability,
+            ),
             "sample_ids": {},  # populated only when --sample is used
             "llm":             {},
             "llm_conversation": {},
@@ -999,6 +1453,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "llamabench":      {},
             "llamabenchconc":  {},
             "vllmbench":       {},
+            "sustained":       {},
         }
 
         results["run"] = build_run_manifest(
@@ -1009,7 +1464,26 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
         store = ResultStore(Path(out_path), results)
 
+        def update_telemetry_summaries():
+            sections = {
+                key: results.get(key) for key in (
+                    "llm", "llm_conversation", "embeddings", "images", "mcq", "math",
+                    "reasoning", "code", "tool", "concurrency_tool", "concurrency_chat",
+                    "llamabench", "llamabenchconc", "vllmbench",
+                    "sustained",
+                )
+            }
+            memory_summary = derive_run_memory_summary({
+                key: value for key, value in sections.items()
+            })
+            if memory_summary is not None:
+                results["run"]["memory_summary"] = memory_summary
+            power_summary = derive_run_power_summary(sections)
+            if power_summary is not None:
+                results["run"]["power_summary"] = power_summary
+
         def _checkpoint(label=""):
+            update_telemetry_summaries()
             apply_pause_evidence(results["run"])
             store.checkpoint()
             if label:
@@ -1018,31 +1492,79 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         def make_save(key, stage_key=None):
             def _save(partial):
                 store.update_section(key, partial, stage_key or key)
+                update_telemetry_summaries()
+                store.checkpoint()
             return _save
 
         _checkpoint("run started")
-        signal.signal(signal.SIGINT,  _cleanup)
-        signal.signal(signal.SIGTERM, _cleanup)
+        for cleanup_signal in cleanup_signal_numbers():
+            signal.signal(cleanup_signal, _cleanup)
 
         lifecycle = LifecycleCoordinator(
             engine, engine_name, _engines, get_engine, Shared.shutdown_managed,
             Shared.comfyui_available, ImageBenchmark.comfyui_free_models,
         )
+        if engine_backed_tests and preflight.runnable_tags:
+            lifecycle.prepare_engine(args.cpu_only)
+            preflight = run_runtime_preflight(
+                preflight, engine, min(maximum_requested_context(tests, contexts_by_test) or 512, 4096),
+                config.RUN_TIMEOUT,
+            )
+            for report in preflight.reports:
+                runtime_check = next(
+                    (check for check in report.checks if check.name == "formatting_probe"), None,
+                )
+                if runtime_check is not None and runtime_check.severity == "hard_failure":
+                    Shared.err(f"Preflight excluded {report.tag}: {runtime_check.detail}")
+            Shared.log(
+                f"Model preflight completed in {preflight.elapsed_seconds:.2f}s "
+                f"({len(preflight.reports)} model(s))"
+            )
+            plan, llm_models, conc_models = apply_preflight_plan(
+                plan, preflight, engine_name=engine_name, tests=tests,
+                stage_order=stage_order, llm_models=llm_models,
+                concurrency_models=conc_models, embedding_models=embedding_models,
+                image_models=image_models, effective_config=effective_config,
+            )
+            results["preflight"] = preflight_result(
+                preflight, power_availability, temperature_availability,
+            )
+            results["run"].update(
+                models=plan.models, plan_id=plan.plan_id, plan=plan.to_dict(),
+            )
+            if journal_stages:
+                assert resume_identity_options is not None
+                resume_identity = build_engine_resume_identity(
+                    plan, engine, **resume_identity_options,
+                )
+            _checkpoint("runtime preflight complete")
         context = RunContext(
             plan, RunPaths(Path(out_path), comfyui_dir), engine, store, lifecycle,
         )
+        journal_path = event_store_path(Path(out_path))
+
+        def start_case_telemetry():
+            if not args.memory_telemetry:
+                return None
+            return CaseTelemetry(
+                power_availability=power_availability,
+                temperature_availability=temperature_availability,
+            ).start()
 
         def run_llm(_context):
             return run_supervised_llm(
-                _context.plan, event_store_path(Path(out_path)), make_save("llm"),
-                resume_identity=resume_identity,
+                _context.plan, journal_path, make_save("llm"),
+                resume_identity=resume_identity, power_availability=power_availability,
+                temperature_availability=temperature_availability,
             )
 
-        def run_conversation(_context):
-            return run_supervised_stage(
-                _context.plan, event_store_path(Path(out_path)), "conv",
-                make_save("llm_conversation", "conv"), resume_identity=resume_identity,
-            )
+        stage_runner = lambda stage, save: supervised_stage_runner(
+            journal_path, stage, save, resume_identity=resume_identity,
+            power_availability=power_availability,
+            temperature_availability=temperature_availability,
+        )
+        run_conversation = stage_runner("conv", make_save("llm_conversation", "conv"))
+        run_sustained = stage_runner("sustained", make_save("sustained"))
 
         def release_port_for_runner(_context):
             """A runner is a separate process and cannot stop this one's server, so a
@@ -1050,28 +1572,12 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             if engine.available():
                 engine.stop()
 
-        def run_llamabench(_context):
-            return run_supervised_stage(
-                _context.plan, event_store_path(Path(out_path)), "llamabench",
-                make_save("llamabench"), resume_identity=resume_identity,
-            )
-
-        def run_llamabench_concurrency(_context):
-            return LlamaBenchConcurrencyBenchmark().run(
-                engine=engine, models=llm_models, cpu_only=_context.plan.cpu_only,
-                save_fn=make_save("llamabenchconc"),
-            )
-
-        def run_vllmbench(_context):
-            return VllmBenchBenchmark().run(
-                engine=engine, models=llm_models, save_fn=make_save("vllmbench"),
-            )
-
-        def run_embeddings(_context):
-            return EmbeddingBenchmark().run(
-                engine=engine, models=embedding_models, warmup_runs=_context.plan.warmup_runs,
-                save_fn=make_save("embeddings", "emb"),
-            )
+        run_llamabench = stage_runner("llamabench", make_save("llamabench"))
+        run_llamabench_concurrency = stage_runner(
+            "llamabenchconc", make_save("llamabenchconc"),
+        )
+        run_vllmbench = stage_runner("vllmbench", make_save("vllmbench"))
+        run_embeddings = stage_runner("emb", make_save("embeddings", "emb"))
 
         def accuracy_stage(test_name, Bench):
             def runner(_context):
@@ -1080,10 +1586,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     questions = Shared.stratified_sample(questions, args.sample)
                     results["sample_ids"][test_name] = [q["id"] for q in questions]
                 answers_path = sidecar_path(_context.paths.output_path, f"answers_{test_name}_")
-                section = Bench().run(
-                    engine=engine, models=llm_models, questions=questions,
-                    warmup_runs=_context.plan.warmup_runs, save_fn=make_save(test_name),
-                    answers_path=answers_path,
+                section = run_supervised_stage(
+                    _context.plan, journal_path, test_name,
+                    make_save(test_name), resume_identity=resume_identity,
+                    power_availability=power_availability,
+                    temperature_availability=temperature_availability,
                 )
                 Shared.ok(f"Answers saved to: {answers_path}")
                 return section
@@ -1096,8 +1603,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 if not conc_models:
                     Shared.warn(f"No downloaded models to test — {key} test will have nothing to run")
                 return run_supervised_stage(
-                    _context.plan, event_store_path(Path(out_path)), key,
+                    _context.plan, journal_path, key,
                     make_save(section, key), resume_identity=resume_identity,
+                    power_availability=power_availability,
+                    temperature_availability=temperature_availability,
                 )
             return StageDefinition(key, section, len(conc_models), runner,
                                    prepare=release_port_for_runner)
@@ -1106,20 +1615,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             lifecycle.restore_gpu()
             lifecycle.stop_engine()
 
-        def run_images(_context):
-            if not Shared.ensure_comfyui(_context.paths.comfyui_dir):
-                Shared.warn("Image benchmarks will be skipped")
-                return {}
-            out_stem = _context.paths.output_path.stem
-            images_name = ("images_" + out_stem[len("results_"):]
-                           if out_stem.startswith("results_") else f"images_{out_stem}")
-            return ImageBenchmark().run(
-                image_models=image_models, resolutions=config.IMAGE_RESOLUTIONS,
-                seed=config.IMAGE_SEED, prompt=config.IMAGE_PROMPT,
-                comfyui_dir=_context.paths.comfyui_dir, timeout=config.RUN_TIMEOUT * 2,
-                save_fn=make_save("images", "img"),
-                images_dir=config.RESULTS_DIR / images_name,
-            )
+        run_images = stage_runner("img", make_save("images", "img"))
 
         registry = [
             StageDefinition("llm", "llm", len(llm_models), run_llm,
@@ -1131,6 +1627,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             StageDefinition("llamabenchconc", "llamabenchconc", len(llm_models),
                             run_llamabench_concurrency, prepare=release_port_for_runner),
             StageDefinition("vllmbench", "vllmbench", len(llm_models), run_vllmbench,
+                            prepare=release_port_for_runner),
+            StageDefinition("sustained", "sustained", len(llm_models), run_sustained,
                             prepare=release_port_for_runner),
             StageDefinition("emb", "embeddings", len(embedding_models), run_embeddings,
                             requires_engine=True),
@@ -1180,5 +1678,16 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     Shared.section("Done")
     Shared.ok("All servers shut down. Benchmark complete.")
 
+
+def cli_main(run=main) -> int:
+    try:
+        run()
+    except StageExecutionError as exc:
+        Shared.err(f"Benchmark stopped: {exc}")
+        Shared.err("Partial results were preserved for inspection or recovery.")
+        return 1
+    return 0
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(cli_main())

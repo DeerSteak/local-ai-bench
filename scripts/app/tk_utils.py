@@ -7,6 +7,11 @@ def refresh_tk_layout(widget) -> None:
     widget.after_idle(widget.update_idletasks)
 
 
+def schedule_tk_layout_refresh(widget) -> None:
+    """Refresh after the active UI event without blocking it."""
+    widget.after_idle(widget.update_idletasks)
+
+
 def mousewheel_scroll_units(*, delta: int = 0, button: int = 0,
                             platform_name: str = "") -> int:
     """Translate Tk wheel events into vertical canvas scroll units."""

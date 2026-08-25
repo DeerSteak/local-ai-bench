@@ -3,9 +3,12 @@ vLLM's own cache, never by path, so a containerised vLLM works unchanged."""
 
 import http.client
 import json
+import math
 import os
 import platform
 import re
+import shutil
+import secrets
 import signal
 import subprocess
 import tempfile
@@ -16,6 +19,7 @@ import urllib.request
 from pathlib import Path
 
 import requests
+import psutil
 
 from scripts.runtime import config
 from scripts.runtime.engines import openai_api
@@ -24,7 +28,8 @@ from scripts.runtime.engines.base import (
     ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine,
 )
 from scripts.setup.setup_config import (
-    configured_vllm_launcher_args, configured_vllm_path, load_setup_config,
+    configured_gpu_devices, configured_vllm_launcher_args, configured_vllm_path,
+    load_setup_config,
 )
 from scripts.setup.custom_models import custom_model, load_custom_models
 from scripts.setup.vllm_install import (
@@ -32,13 +37,108 @@ from scripts.setup.vllm_install import (
     hf_cache_snapshot_dir, vllm_cache_home,
 )
 from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
-from scripts.runtime.shared import (
-    EngineLoopDetected,
-    EngineTimeout,
-    Shared,
-)
 from scripts.runtime.generation_guard import looks_like_loop
 from scripts.runtime.crash_cache import record_crash
+from scripts.runtime.mtp import native_mtp_config
+from scripts.runtime.shared import EngineLoopDetected, EngineTimeout, Shared
+
+
+_KV_MEMORY_RE = re.compile(r"Available KV cache memory:\s*(-?\d+(?:\.\d+)?)\s*GiB", re.I)
+_KV_REQUIRED_RE = re.compile(
+    r"\(?([\d.]+)\s*GiB KV cache is needed, which is larger than "
+    r"the available KV cache memory \(([\d.]+)\s*GiB\)", re.I,
+)
+
+
+def available_kv_cache_gib(log_text: str) -> float | None:
+    """Return the last vLLM KV-cache memory profile reading."""
+    matches = _KV_MEMORY_RE.findall(log_text or "")
+    return float(matches[-1]) if matches else None
+
+
+def next_cpu_offload_gb(log_text: str, current_gb: int = 0) -> int | None:
+    """Choose a 2 GiB-aligned retry from vLLM's measured KV-cache deficit."""
+    available = available_kv_cache_gib(log_text)
+    required = _KV_REQUIRED_RE.findall(log_text or "")
+    if required:
+        needed_gib, available_gib = map(float, required[-1])
+        shortfall = max(0.0, needed_gib - available_gib)
+    elif available is not None and "No available memory for the cache blocks" in log_text:
+        shortfall = max(0.0, -available)
+    else:
+        return None
+    needed = shortfall + (config.VLLM_OFFLOAD_RESERVE_GB if current_gb == 0 else 0)
+    calculated = math.ceil(needed / config.VLLM_OFFLOAD_STEP_GB) * config.VLLM_OFFLOAD_STEP_GB
+    return current_gb + max(config.VLLM_OFFLOAD_STEP_GB, calculated)
+
+
+def tensor_parallel_size(args: list[str]) -> int:
+    """Read vLLM's per-worker CPU-offload multiplier from launcher arguments."""
+    for index, value in enumerate(args):
+        if value in {"--tensor-parallel-size", "-tp"} and index + 1 < len(args):
+            try:
+                return max(1, int(args[index + 1]))
+            except ValueError:
+                return 1
+        for prefix in ("--tensor-parallel-size=", "-tp="):
+            if value.startswith(prefix):
+                try:
+                    return max(1, int(value.removeprefix(prefix)))
+                except ValueError:
+                    return 1
+    return 1
+
+
+def offload_retry_allowed(retry_gb: int | None, host_limit_gb: int, attempts: int) -> bool:
+    """Bound adaptive retries by current host capacity and attempt count."""
+    return offload_stop_reason(retry_gb, host_limit_gb, attempts) is None
+
+
+def offload_stop_reason(retry_gb: int | None, host_limit_gb: int, attempts: int) -> str | None:
+    """Explain why an adaptive retry is unsafe or inapplicable."""
+    if retry_gb is None:
+        return "failure was not a recognized KV-cache memory shortage"
+    if retry_gb > host_limit_gb:
+        return (f"CPU offload retry needs {retry_gb} GiB per worker, "
+                f"above the {host_limit_gb} GiB host-RAM limit")
+    if attempts >= config.VLLM_OFFLOAD_MAX_ATTEMPTS:
+        return f"CPU offload calibration reached its {config.VLLM_OFFLOAD_MAX_ATTEMPTS}-retry limit"
+    return None
+
+
+def offload_timeout_message(tag: str, cpu_offload_gb: int, attempts: int) -> str:
+    """Describe which calibration load exhausted its caller budget."""
+    total = config.VLLM_OFFLOAD_MAX_ATTEMPTS + 1
+    return (f"loading {tag} exceeded the request wall-clock timeout during CPU-offload "
+            f"calibration attempt {attempts + 1}/{total} "
+            f"(--cpu-offload-gb {cpu_offload_gb})")
+
+
+def load_attempt_deadline(now: float, caller_deadline: float | None, timeout: int) -> float:
+    """Bound one load attempt by both its own window and its caller's budget."""
+    attempt_deadline = now + timeout
+    return min(attempt_deadline, caller_deadline) if caller_deadline is not None else attempt_deadline
+
+
+def load_timeout_error(tag: str, cpu_offload_gb: int, attempts: int,
+                       timeout: int, caller_expired: bool) -> Exception:
+    """Keep caller exhaustion distinct from an unhealthy server."""
+    if caller_expired:
+        return EngineTimeout(offload_timeout_message(tag, cpu_offload_gb, attempts))
+    return RuntimeError(f"vLLM did not become healthy within {timeout}s loading {tag}")
+
+
+def offload_calibration_timeout(load_timeout: int, requested_timeout: int) -> int:
+    """Budget concurrency startup for the initial load and every bounded retry."""
+    attempts = config.VLLM_OFFLOAD_MAX_ATTEMPTS + 1
+    return max(requested_timeout, load_timeout * attempts)
+
+
+def vllm_gpu_memory_utilization(machine: str, devices: list[dict]) -> float:
+    names = " ".join(str(device.get("name", "")) for device in devices).casefold()
+    if machine.casefold() in {"arm64", "aarch64"} and "gb10" in names:
+        return 0.70
+    return config.VLLM_GPU_MEMORY_UTILIZATION
 
 
 class VllmEngine(InferenceEngine):
@@ -54,12 +154,20 @@ class VllmEngine(InferenceEngine):
     def __init__(self):
         setup = load_setup_config(config.SETUP_CONFIG_PATH)
         self._launcher = configured_vllm_path(setup, "launcher") or find_vllm_launcher()
-        self._executable = configured_vllm_path(setup, "executable") or find_vllm_binary(
-            platform_name=platform.system())
+        self._executable = (
+            configured_vllm_path(setup, "executable") or find_vllm_binary(
+                platform_name=platform.system())
+        )
         # Set when setup_check.py found a reachable vLLM with no local binary/launcher —
         # an externally-managed server we talk to but never spawn or stop ourselves.
-        self._server_url = configured_vllm_path(setup, "server_url")
+        configured_server_url = configured_vllm_path(setup, "server_url")
+        self._server_url = configured_server_url if self._local_runtime is None else None
         self._launcher_extra_args = configured_vllm_launcher_args(setup)
+        gpu_devices = configured_gpu_devices(setup)
+        self._gpu_fingerprint = json.dumps(gpu_devices, sort_keys=True)
+        self._gpu_memory_utilization = vllm_gpu_memory_utilization(
+            platform.machine(), gpu_devices,
+        )
         recorded_home = configured_vllm_path(setup, "hf_home")
         self._cache_home = Path(recorded_home) if recorded_home else vllm_cache_home(self._launcher)
 
@@ -71,9 +179,78 @@ class VllmEngine(InferenceEngine):
         self._loaded_embedding: bool | None = None
         self._loaded_n_parallel: int = 1
         self._loaded_tool_parser: str | None = None
+        self._loaded_mtp_config: dict | None = None
+        self._loaded_cpu_offload_gb = 0
         self._gpu_visible = True
         self._kv_cache_dtype = "auto"
+        self._cpu_offload_gb: dict[str, int] = self._load_offload_cache()
         self._model_lock = threading.RLock()
+
+    def set_mtp_enabled(self, enabled: bool) -> None:
+        self._mtp_enabled = bool(enabled)
+
+    def _native_mtp_config(self, tag: str, *, embedding: bool = False) -> dict | None:
+        if not getattr(self, "_mtp_enabled", False) or embedding:
+            return None
+        model = next((model for model in LLM_MODELS if model["tag"] == tag), None)
+        if model is None:
+            raise RuntimeError(f"{tag} has no cataloged native MTP configuration for vLLM")
+        mtp_config = native_mtp_config(model, self.name)
+        if mtp_config is None:
+            raise RuntimeError(f"{tag} does not support native MTP with vLLM")
+        return {"method": "mtp", **mtp_config}
+
+    @property
+    def _local_runtime(self) -> str | None:
+        return self._executable or self._launcher
+
+    @property
+    def _uses_launcher(self) -> bool:
+        return self._executable is None and self._launcher is not None
+
+    @property
+    def _offload_cache_path(self) -> Path:
+        return self._cache_home / "local-ai-bench-vllm-offload.json"
+
+    def _load_offload_cache(self) -> dict[str, int]:
+        try:
+            payload = json.loads(self._offload_cache_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        values = payload.get("offload_gb") if isinstance(payload, dict) else None
+        if not isinstance(values, dict):
+            return {}
+        return {
+            key: value for key, value in values.items()
+            if isinstance(key, str) and isinstance(value, int) and value > 0
+        }
+
+    def _save_offload_cache(self) -> None:
+        self._cache_home.mkdir(parents=True, exist_ok=True)
+        target = self._offload_cache_path
+        temporary = target.with_suffix(".tmp")
+        temporary.write_text(json.dumps({"offload_gb": self._cpu_offload_gb}, indent=2) + "\n",
+                             encoding="utf-8")
+        temporary.replace(target)
+
+    def _offload_key(self, tag: str, repo: str) -> str:
+        runtime = self._local_runtime or "external"
+        try:
+            runtime_mtime = Path(runtime).stat().st_mtime_ns
+        except OSError:
+            runtime_mtime = 0
+        snapshot = self._snapshot_dir(tag)
+        revision = snapshot.name if snapshot else "unknown"
+        visible = os.environ.get("CUDA_VISIBLE_DEVICES", "all")
+        return "|".join((repo, revision, self._kv_cache_dtype, str(runtime),
+                         str(runtime_mtime), self._gpu_fingerprint, visible))
+
+    def _host_offload_limit_gb(self) -> int:
+        available = psutil.virtual_memory().available / (1024 ** 3)
+        usable = max(0, int(available - config.VLLM_OFFLOAD_HOST_RESERVE_GB))
+        launcher_args = self._launcher_extra_args if self._uses_launcher else []
+        per_worker = usable // tensor_parallel_size(launcher_args)
+        return per_worker // config.VLLM_OFFLOAD_STEP_GB * config.VLLM_OFFLOAD_STEP_GB
 
     @staticmethod
     def supported_kv_cache_dtype(runtime_backend: str) -> str:
@@ -93,7 +270,7 @@ class VllmEngine(InferenceEngine):
 
     @property
     def launcher_extra_args(self) -> list[str]:
-        return list(self._launcher_extra_args)
+        return list(self._launcher_extra_args) if self._uses_launcher else []
 
     # ── model resolution ──
 
@@ -125,6 +302,35 @@ class VllmEngine(InferenceEngine):
     def _snapshot_dir(self, tag: str) -> Path | None:
         repo = self._repo(tag)
         return hf_cache_snapshot_dir(self._cache_home, repo) if repo else None
+
+    def _standalone_chat_template(self, tag: str) -> tuple[str | None, str | None]:
+        snapshot = self._snapshot_dir(tag)
+        path = snapshot / "chat_template.jinja" if snapshot else None
+        if path is None or not path.is_file():
+            return None, None
+        try:
+            template = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            return None, str(exc)
+        return template, None
+
+    def _chat_template_argument(self, tag: str) -> str | None:
+        snapshot = self._snapshot_dir(tag)
+        try:
+            tokenizer_data = json.loads(
+                (snapshot / "tokenizer_config.json").read_text(encoding="utf-8")
+            ) if snapshot else {}
+        except (OSError, json.JSONDecodeError):
+            return None
+        if tokenizer_data.get("chat_template"):
+            return None
+        template, error = self._standalone_chat_template(tag)
+        if error is not None or template is None:
+            return None
+        path = snapshot / "chat_template.jinja" if snapshot else None
+        if self._uses_launcher:
+            return template
+        return str(path.resolve()) if path else None
 
     # ── per-request prefill timing ──
 
@@ -226,7 +432,7 @@ class VllmEngine(InferenceEngine):
         return self._executable
 
     def runtime_launcher(self) -> str | None:
-        return self._launcher
+        return self._launcher if self._uses_launcher else None
 
     def external_server_url(self) -> str | None:
         return self._server_url
@@ -240,6 +446,11 @@ class VllmEngine(InferenceEngine):
     def bench_executable(self) -> str | None:
         """`vllm bench` needs the real binary — a launcher only wraps `vllm serve`."""
         return self._executable
+
+    def bench_gpu_memory_utilization(self) -> float:
+        if self._gpu_memory_utilization == 0.70:
+            return config.VLLMBENCH_GB10_GPU_MEMORY_UTILIZATION
+        return min(self._gpu_memory_utilization, config.VLLMBENCH_GPU_MEMORY_UTILIZATION)
 
     def ensure_running(self) -> bool:
         """Preflight only — the real spawn is lazy, per tag, in _ensure_model."""
@@ -257,7 +468,7 @@ class VllmEngine(InferenceEngine):
             Shared.err(f"vLLM model cache not found at {self._cache_home} — "
                        "run setup_check.py to download at least one model first")
             return False
-        Shared.ok(f"vLLM found at {self._launcher or self._executable} — models load on demand per test")
+        Shared.ok(f"vLLM found at {self._local_runtime} — models load on demand per test")
         return True
 
     def start(self, *, gpu_visible: bool = True, timeout: int = 15) -> bool:  # pragma: no cover — thin wrapper
@@ -284,10 +495,10 @@ class VllmEngine(InferenceEngine):
     def _stop_process(self, timeout: int = 15) -> None:  # pragma: no cover — kills real processes
         """Signal the whole process group, so the EngineCore child dies with the server."""
         proc = self._proc
-        launcher_was_running = self._launcher is not None and proc is not None
+        launcher_was_running = self._uses_launcher and proc is not None
         if proc is not None and proc.poll() is None:
             # Container launchers handle an interactive interrupt by stopping their container.
-            self._signal_group(signal.SIGINT if self._launcher else signal.SIGTERM)
+            self._signal_group(signal.SIGINT if self._uses_launcher else signal.SIGTERM)
             try:
                 proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
@@ -305,6 +516,8 @@ class VllmEngine(InferenceEngine):
         self._loaded_embedding = None
         self._loaded_n_parallel = 1
         self._loaded_tool_parser = None
+        self._loaded_mtp_config = None
+        self._loaded_cpu_offload_gb = 0
 
     def _wait_for_launcher_shutdown(self, timeout: int) -> None:
         """Wait for a launcher-owned container to stop serving after its wrapper exits."""
@@ -353,11 +566,14 @@ class VllmEngine(InferenceEngine):
         snapshot = self._snapshot_dir(tag)
         if snapshot is None:
             raise ValueError(f"cannot identify local model artifact for resume: {tag}")
-        paths = sorted(snapshot.glob("*.safetensors")) + [snapshot / "config.json"]
+        paths = sorted(snapshot.glob("*.safetensors")) + [
+            snapshot / "config.json", snapshot / "tokenizer_config.json",
+            snapshot / "chat_template.jinja",
+        ]
         return tuple(path.resolve() for path in paths if path.exists())
 
     def resume_runtime_paths(self) -> dict[str, Path]:
-        runtime = self._launcher or self._executable
+        runtime = self._local_runtime
         if runtime is None:
             raise ValueError("cannot identify vLLM runtime for resume")
         return {"vllm": Path(runtime).resolve()}
@@ -367,6 +583,47 @@ class VllmEngine(InferenceEngine):
             return self._external_server_has_tag(tag)
         repo = self._repo(tag)
         return repo is not None and hf_cache_model_complete(self._cache_home, repo)
+
+    def model_paths(self, tag: str) -> tuple[Path, ...]:
+        snapshot = self._snapshot_dir(tag)
+        if snapshot is None:
+            return ()
+        patterns = ("*.safetensors", "*.bin", "*.pt")
+        return tuple(sorted(path for pattern in patterns for path in snapshot.glob(pattern)))
+
+    def model_artifacts_are_local(self) -> bool:
+        return self._server_url is None
+
+    def can_reset_model_state(self) -> bool:
+        return self._server_url is None
+
+    def compatibility_metadata(self, tag: str) -> tuple[dict, str | None]:
+        snapshot = self._snapshot_dir(tag)
+        if snapshot is None:
+            return {}, "The local model snapshot was not found."
+        try:
+            config_data = json.loads((snapshot / "config.json").read_text(encoding="utf-8"))
+            tokenizer_data = json.loads(
+                (snapshot / "tokenizer_config.json").read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError) as exc:
+            return {}, str(exc)
+        chat_template = tokenizer_data.get("chat_template")
+        if not chat_template:
+            chat_template, template_error = self._standalone_chat_template(tag)
+            if template_error is not None:
+                return {}, template_error
+        architecture = next(iter(config_data.get("architectures") or []), None)
+        context = next((
+            config_data.get(key) or (config_data.get("text_config") or {}).get(key)
+            for key in ("max_position_embeddings", "max_seq_len", "n_positions")
+            if config_data.get(key) or (config_data.get("text_config") or {}).get(key)
+        ), None)
+        return {
+            "general.architecture": architecture,
+            "tokenizer.chat_template": chat_template,
+            "model.context_length": context,
+        }, None
 
     def list_installed_models(self) -> list[dict]:
         """Catalog and registered custom tags available from the server or cache."""
@@ -452,8 +709,9 @@ class VllmEngine(InferenceEngine):
         """Serve `n_parallel` concurrent sequences at `per_slot_ctx` tokens each.
         --max-model-len is per sequence, so it is NOT scaled by n_parallel."""
         try:
+            load_timeout = offload_calibration_timeout(self.LOAD_TIMEOUT, timeout)
             self._ensure_model(tag, per_slot_ctx, n_parallel=n_parallel,
-                                deadline=time.perf_counter() + timeout)
+                                deadline=time.perf_counter() + load_timeout)
             return True
         except Exception as e:
             Shared.warn(f"Failed to load {tag} for {n_parallel}-way concurrency "
@@ -470,38 +728,49 @@ class VllmEngine(InferenceEngine):
         return min(num_ctx + config.VLLM_CTX_TOLERANCE, self.max_context_length(tag))
 
     def server_command(self, repo: str, num_ctx: int | None, *, embedding: bool = False,
-                       n_parallel: int = 1, tool_parser: str | None = None) -> list[str]:
-        """Argv serving `repo`. A platform launcher (AMD's vllm-launch) is preferred
-        over bare `vllm serve` because it carries that platform's environment."""
+                       n_parallel: int = 1, tool_parser: str | None = None,
+                       cpu_offload_gb: int = 0,
+                       chat_template: str | None = None,
+                       mtp_config: dict | None = None) -> list[str]:
+        """Argv serving `repo` from the managed runtime, with a platform launcher fallback."""
         options = ["--served-model-name", repo,
+                    "--generation-config", "vllm",
                     "--max-num-seqs", str(n_parallel),
-                    "--gpu-memory-utilization", str(config.VLLM_GPU_MEMORY_UTILIZATION)]
-        if self._kv_cache_dtype != "auto":
+                    "--gpu-memory-utilization", str(self._gpu_memory_utilization)]
+        if self._kv_cache_dtype != "auto" and not embedding:
             options += ["--kv-cache-dtype", self._kv_cache_dtype]
         if num_ctx is not None:
             options += ["--max-model-len", str(num_ctx)]
+        if cpu_offload_gb:
+            options += ["--cpu-offload-gb", str(cpu_offload_gb)]
+        if chat_template:
+            options += ["--chat-template", chat_template]
         if embedding:
             # --task was replaced by --runner; pooling is the embedding runner.
             options += ["--runner", "pooling"]
         if tool_parser:
             # tool_calls stay empty unless the frontend parser is enabled explicitly.
             options += ["--enable-auto-tool-choice", "--tool-call-parser", tool_parser]
+        if mtp_config:
+            options += ["--speculative-config", json.dumps(mtp_config, separators=(",", ":"))]
+        if self._executable:
+            return [self._executable, "serve", repo, "--host", "127.0.0.1",
+                    "--port", str(config.VLLM_PORT), *options]
         if self._launcher:
             return [self._launcher, "-p", str(config.VLLM_PORT), "-m", repo, *options]
-        if not self._executable:
-            raise RuntimeError("no vLLM runtime found — run setup_check.py or install vLLM")
-        return [self._executable, "serve", repo, "--host", "127.0.0.1",
-                "--port", str(config.VLLM_PORT), *options]
+        raise RuntimeError("no vLLM runtime found — run setup_check.py or install vLLM")
 
     def _ensure_model(self, tag: str, num_ctx: int | None, *, embedding: bool = False,
                        n_parallel: int = 1, deadline: float | None = None,
                        tool_parser: str | None = None) -> None:
         """Ensure vLLM is serving `tag`, respawning on any mismatch — one model per process."""
-        want = (tag, num_ctx, embedding, n_parallel, tool_parser)
+        mtp_config = self._native_mtp_config(tag, embedding=embedding)
+        want = (tag, num_ctx, embedding, n_parallel, tool_parser, mtp_config)
 
         def ready():
             have = (self._loaded_tag, self._loaded_num_ctx, self._loaded_embedding,
-                    self._loaded_n_parallel, self._loaded_tool_parser)
+                    self._loaded_n_parallel, self._loaded_tool_parser,
+                    self._loaded_mtp_config)
             return want == have and self._proc is not None and self._proc.poll() is None
 
         if ready():
@@ -518,6 +787,10 @@ class VllmEngine(InferenceEngine):
                 # serves one fixed model, so reject requests that would mislabel its results.
                 if not self.available():
                     raise RuntimeError(f"vLLM server at {self._server_url} is not reachable")
+                if mtp_config:
+                    raise RuntimeError(
+                        "native MTP cannot be verified or configured on an external vLLM server"
+                    )
                 model_ids = self._served_model_ids()
                 if model_ids is None:
                     raise RuntimeError(
@@ -531,6 +804,8 @@ class VllmEngine(InferenceEngine):
                 self._loaded_model_id = model_id
                 self._loaded_embedding, self._loaded_n_parallel = embedding, n_parallel
                 self._loaded_tool_parser = tool_parser
+                self._loaded_mtp_config = None
+                self._loaded_cpu_offload_gb = 0
                 return
 
             if not self._gpu_visible:
@@ -544,54 +819,91 @@ class VllmEngine(InferenceEngine):
                     f"{repo} not found in {self._cache_home} — "
                     "download it first with: python -m scripts.setup.setup_check")
 
-            self.stop()
-            args = self.server_command(repo, self.context_limit(tag, num_ctx),
-                                        embedding=embedding, n_parallel=n_parallel,
-                                        tool_parser=tool_parser)
-            log_fh = tempfile.NamedTemporaryFile(mode="w", suffix="-vllm-server.log", delete=False)
-            self._log_path = Path(log_fh.name)
-            try:
-                # Own process group: vLLM forks an EngineCore child that holds the
-                # weights and KV cache, and signalling only the API server orphans it.
-                if os.name == "nt":
-                    proc = subprocess.Popen(
-                        args, stdout=log_fh, stderr=subprocess.STDOUT,
-                        env=self.runtime_environment(),
-                        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
-                else:
-                    proc = subprocess.Popen(
-                        args, stdout=log_fh, stderr=subprocess.STDOUT,
-                        env=self.runtime_environment(),
-                        start_new_session=True)
-            except FileNotFoundError:
-                log_fh.close()
-                raise RuntimeError(f"'{args[0]}' not found in PATH") from None
-            log_fh.close()
-            setattr(proc, "own_process_group", True)   # see Shared.shutdown_managed
-            self._proc = proc
-            Shared._managed_procs.append(proc)
-
-            t0 = time.perf_counter()
-            while time.perf_counter() - t0 < self.LOAD_TIMEOUT:
+            context_limit = self.context_limit(tag, num_ctx)
+            offload_key = self._offload_key(tag, repo)
+            cpu_offload_gb = self._cpu_offload_gb.get(offload_key, 0)
+            host_limit_gb = self._host_offload_limit_gb()
+            if cpu_offload_gb > host_limit_gb:
+                raise RuntimeError(
+                    f"cached vLLM CPU offload for {tag} is {cpu_offload_gb} GiB per worker, "
+                    f"but current free host RAM permits at most {host_limit_gb} GiB")
+            offload_attempts = 0
+            while True:
+                self.stop()
                 if deadline is not None and time.perf_counter() >= deadline:
-                    self._stop_process()
-                    raise EngineTimeout(f"loading {tag} exceeded the request wall-clock timeout")
-                if self.available():
-                    self._loaded_tag = tag
-                    self._loaded_model_id = repo
-                    self._loaded_num_ctx = num_ctx
-                    self._loaded_embedding = embedding
-                    self._loaded_n_parallel = n_parallel
-                    self._loaded_tool_parser = tool_parser
-                    return
-                if proc.poll() is not None:
-                    raise RuntimeError(f"vLLM exited unexpectedly (code {proc.returncode}) "
-                                        f"loading {tag} — last output:\n"
-                                        f"{self.tail_log(self.SPAWN_LOG_LINES)}")
-                time.sleep(1)
+                    raise EngineTimeout(
+                        offload_timeout_message(tag, cpu_offload_gb, offload_attempts))
+                if cpu_offload_gb:
+                    Shared.warn(f"Loading {tag} with {cpu_offload_gb} GiB CPU offload")
+                args = self.server_command(
+                    repo, context_limit, embedding=embedding, n_parallel=n_parallel,
+                    tool_parser=tool_parser, cpu_offload_gb=cpu_offload_gb,
+                    chat_template=self._chat_template_argument(tag),
+                    mtp_config=mtp_config,
+                )
+                log_fh = tempfile.NamedTemporaryFile(
+                    mode="w", suffix="-vllm-server.log", delete=False)
+                self._log_path = Path(log_fh.name)
+                try:
+                    # Own process group: the EngineCore child holds the weights and cache.
+                    popen_kwargs = {
+                        "stdout": log_fh, "stderr": subprocess.STDOUT,
+                        "env": self.runtime_environment(),
+                    }
+                    if os.name == "nt":
+                        popen_kwargs["creationflags"] = getattr(
+                            subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                    else:
+                        popen_kwargs["start_new_session"] = True
+                    proc = subprocess.Popen(args, **popen_kwargs)
+                except FileNotFoundError:
+                    log_fh.close()
+                    raise RuntimeError(f"'{args[0]}' not found in PATH") from None
+                log_fh.close()
+                setattr(proc, "own_process_group", True)   # see Shared.shutdown_managed
+                self._proc = proc
+                Shared._managed_procs.append(proc)
 
-            self._stop_process()
-            raise RuntimeError(f"vLLM did not become healthy within {self.LOAD_TIMEOUT}s loading {tag}")
+                attempt_started = time.perf_counter()
+                attempt_timeout = attempt_started + self.LOAD_TIMEOUT
+                attempt_deadline = load_attempt_deadline(
+                    attempt_started, deadline, self.LOAD_TIMEOUT)
+                while time.perf_counter() < attempt_deadline:
+                    if self.available():
+                        self._loaded_tag = tag
+                        self._loaded_model_id = repo
+                        self._loaded_num_ctx = num_ctx
+                        self._loaded_embedding = embedding
+                        self._loaded_n_parallel = n_parallel
+                        self._loaded_tool_parser = tool_parser
+                        self._loaded_mtp_config = mtp_config
+                        self._loaded_cpu_offload_gb = cpu_offload_gb
+                        if cpu_offload_gb and self._cpu_offload_gb.get(offload_key) != cpu_offload_gb:
+                            self._cpu_offload_gb[offload_key] = cpu_offload_gb
+                            self._save_offload_cache()
+                        return
+                    if proc.poll() is not None:
+                        output = self.tail_log(self.SPAWN_LOG_LINES)
+                        retry_gb = next_cpu_offload_gb(output, cpu_offload_gb)
+                        reason = offload_stop_reason(
+                            retry_gb, host_limit_gb, offload_attempts)
+                        if reason is not None:
+                            raise RuntimeError(
+                                f"vLLM exited unexpectedly (code {proc.returncode}) loading {tag}; "
+                                f"{reason} — last output:\n{output}")
+                        assert retry_gb is not None
+                        Shared.warn(
+                            f"vLLM measured insufficient KV-cache memory; retrying {tag} "
+                            f"with {retry_gb} GiB CPU offload")
+                        cpu_offload_gb = retry_gb
+                        offload_attempts += 1
+                        break
+                    time.sleep(1)
+                else:
+                    self._stop_process()
+                    raise load_timeout_error(
+                        tag, cpu_offload_gb, offload_attempts, self.LOAD_TIMEOUT,
+                        deadline is not None and deadline <= attempt_timeout)
 
     def runtime_environment(self) -> dict:
         """Environment shared by serving and offline vLLM commands."""
@@ -605,7 +917,7 @@ class VllmEngine(InferenceEngine):
             token = token_file.read_text(encoding="utf-8").strip()
             if token:
                 env["HF_TOKEN"] = token
-        if (self._launcher is None and self._server_url is None
+        if (not self._uses_launcher and self._server_url is None
                 and Shared.detect_wsl(platform.system(), platform.release())):
             env.setdefault("VLLM_WSL2_ENABLE_PIN_MEMORY", "1")
         return env
@@ -628,19 +940,21 @@ class VllmEngine(InferenceEngine):
                  num_ctx: int | None = None, n_parallel: int = 1) -> GenerationMeasurement:
         """Generate via /v1/completions; n_parallel must match prepare_concurrency."""
         operation_start = time.perf_counter()
+        load_timeout = offload_calibration_timeout(self.LOAD_TIMEOUT, self.LOAD_TIMEOUT)
         self._ensure_model(
             tag, num_ctx, n_parallel=n_parallel,
-            deadline=operation_start + self.LOAD_TIMEOUT,
+            deadline=operation_start + load_timeout,
         )
         model_load_sec = time.perf_counter() - operation_start
 
         payload = {
+            **self.sampling_payload(),
             "model": self._loaded_model_id or self._repo(tag),
             "prompt": prompt,
             "max_tokens": config.GENERATE_MAX_TOKENS,
-            "temperature": 0.0,
             "stream": True,
             "stream_options": {"include_usage": True},
+            "cache_salt": secrets.token_urlsafe(32),
         }
         prefill_before = self._prefill_reading()
         request_start = time.perf_counter()
@@ -661,22 +975,16 @@ class VllmEngine(InferenceEngine):
                     response_parts.append(text)
                 if choice.get("finish_reason") is not None:
                     finish_reason = choice["finish_reason"]
-                usage = chunk.get("usage") or {}
-                if usage.get("completion_tokens") is not None:
-                    tokens = usage["completion_tokens"]
-                if usage.get("prompt_tokens") is not None:
-                    prompt_tokens = usage["prompt_tokens"]
+                tokens, prompt_tokens = openai_api.streamed_usage(
+                    chunk, tokens, prompt_tokens,
+                )
                 if time.perf_counter() > deadline:
                     raise EngineTimeout(f"vllm_generate exceeded {timeout}s wall-clock timeout",
                                         partial_text="".join(response_parts))
 
         total = time.perf_counter() - request_start
         prefill_sec = self.prefill_seconds_from_delta(prefill_before, self._prefill_reading())
-        if ttft is None:
-            ttft = total
-        decode_seconds = max(total - ttft, 0)
-        raw_tps = tokens / decode_seconds if decode_seconds else 0
-        tps = openai_api.sanitize_tps(raw_tps, tokens, ttft, total)
+        ttft, decode_seconds, raw_tps, tps = openai_api.stream_timing(total, ttft, tokens)
         return GenerationMeasurement(
             client_ttft_sec=ttft,
             generated_tokens=tokens,
@@ -689,15 +997,16 @@ class VllmEngine(InferenceEngine):
             finish_reason=finish_reason,
             model_load_sec=model_load_sec,
             server_tps_implausible=tps != raw_tps,
+            cpu_offload_gb=self._loaded_cpu_offload_gb,
         )
 
     def _chat_request(self, tag: str, messages: list, tools: list | None,
                       deadline: float, num_predict: int,
                       check_loop: bool, budget_nudged: bool) -> dict:
         payload = {
+            **self.sampling_payload(),
             "model": self._loaded_model_id or self._repo(tag),
             "messages": messages,
-            "temperature": 0.0,
             "stream": True,
             "stream_options": {"include_usage": True},
         }
@@ -739,11 +1048,9 @@ class VllmEngine(InferenceEngine):
                 if tool_calls:
                     openai_api.accumulate_tool_fragments(tool_fragments, tool_calls)
 
-                usage = chunk.get("usage") or {}
-                if usage.get("completion_tokens") is not None:
-                    tokens = usage["completion_tokens"]
-                if usage.get("prompt_tokens") is not None:
-                    prompt_eval_count = usage["prompt_tokens"]
+                tokens, prompt_eval_count = openai_api.streamed_usage(
+                    chunk, tokens, prompt_eval_count,
+                )
 
                 now = time.perf_counter()
                 response_text = "".join(response_parts) or "".join(reasoning_parts)
@@ -762,11 +1069,7 @@ class VllmEngine(InferenceEngine):
                             partial_text=response_text, budget_nudged=budget_nudged)
 
         total = time.perf_counter() - request_start
-        if ttft is None:
-            ttft = total
-        decode_seconds = max(total - ttft, 0)
-        raw_tps = tokens / decode_seconds if decode_seconds else 0
-        tps = openai_api.sanitize_tps(raw_tps, tokens, ttft, total)
+        ttft, decode_seconds, raw_tps, tps = openai_api.stream_timing(total, ttft, tokens)
         return {
             "ttft": ttft,
             "server_prompt_sec": None,
@@ -791,8 +1094,9 @@ class VllmEngine(InferenceEngine):
                 f"no vLLM tool-call parser is configured for {tag}; vLLM returns no tool_calls "
                 "without --tool-call-parser, so a tool result here would be wrong, not zero")
         operation_start = time.perf_counter()
+        load_timeout = offload_calibration_timeout(self.LOAD_TIMEOUT, self.LOAD_TIMEOUT)
         self._ensure_model(
-            tag, num_ctx, deadline=operation_start + self.LOAD_TIMEOUT,
+            tag, num_ctx, deadline=operation_start + load_timeout,
             tool_parser=tool_parser,
         )
         model_load_sec = time.perf_counter() - operation_start
@@ -808,22 +1112,28 @@ class VllmEngine(InferenceEngine):
         )
         return first, second, budget_nudged, model_load_sec
 
+    def _chat_measurement(self, tag: str, messages: list, tools: list | None,
+                          timeout: int, num_ctx: int | None, num_predict: int,
+                          check_loop: bool, token_budget: int | None) -> ChatMeasurement:
+        first, second, budget_nudged, model_load_sec = self._chat_with_optional_finalize(
+            tag, messages, tools, timeout, num_ctx, num_predict, check_loop, token_budget)
+        return chat_measurement(
+            first, second, budget_nudged, model_load_sec, openai_api.sanitize_tps,
+            self._loaded_cpu_offload_gb,
+        )
+
     def chat(self, tag: str, messages: list, timeout: int = 600,
              num_ctx: int | None = None, num_predict: int = 1024,
              check_loop: bool = False, token_budget: int | None = None) -> ChatMeasurement:
-        first, second, budget_nudged, model_load_sec = self._chat_with_optional_finalize(
-            tag, messages, None, timeout, num_ctx, num_predict, check_loop, token_budget)
-        return chat_measurement(
-            first, second, budget_nudged, model_load_sec, openai_api.sanitize_tps,
+        return self._chat_measurement(
+            tag, messages, None, timeout, num_ctx, num_predict, check_loop, token_budget,
         )
 
     def chat_tools(self, tag: str, messages: list, tools: list, timeout: int = 600,
                    num_ctx: int | None = None, num_predict: int = 1024,
                    check_loop: bool = False, token_budget: int | None = None) -> ChatMeasurement:
-        first, second, budget_nudged, model_load_sec = self._chat_with_optional_finalize(
-            tag, messages, tools, timeout, num_ctx, num_predict, check_loop, token_budget)
-        return chat_measurement(
-            first, second, budget_nudged, model_load_sec, openai_api.sanitize_tps,
+        return self._chat_measurement(
+            tag, messages, tools, timeout, num_ctx, num_predict, check_loop, token_budget,
         )
 
     def embed(self, tag: str, inputs: list[str], timeout: int = 120) -> EmbeddingMeasurement:

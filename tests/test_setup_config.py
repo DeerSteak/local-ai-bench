@@ -9,6 +9,7 @@ from scripts.setup.setup_config import (
     configured_vllm_launcher_args,
     configured_vllm_path,
     load_setup_config,
+    vllm_setup_config,
     write_setup_config,
 )
 
@@ -87,6 +88,16 @@ def test_vllm_runtime_round_trips(tmp_path):
     assert configured_vllm_path(data, "launcher") == "/usr/bin/vllm-launch"
     assert configured_vllm_path(data, "server_url") == "http://localhost:8001"
     assert configured_vllm_launcher_args(data) == ["--gpu-memory-utilization", "0.85"]
+
+
+def test_vllm_setup_handoff_is_shared_and_normalizes_cache_path(tmp_path):
+    assert vllm_setup_config(
+        executable="/env/bin/vllm", launcher=None, server_url=None,
+        launcher_extra_args=["--enforce-eager"], hf_home=tmp_path / "cache",
+    ) == {
+        "executable": "/env/bin/vllm", "launcher": None, "server_url": None,
+        "launcher_extra_args": ["--enforce-eager"], "hf_home": str(tmp_path / "cache"),
+    }
 
 
 def test_absent_vllm_records_an_empty_block(tmp_path):

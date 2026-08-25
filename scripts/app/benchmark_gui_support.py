@@ -13,22 +13,42 @@ GPU_SPLIT_MODE_LABELS = {
     "layer": "Layer split (recommended)",
     "tensor": "Tensor parallel (experimental)",
 }
-
+MTP_MODE_LABELS = {"off": "Off", "on": "On", "both": "Both"}
 
 def gpu_split_mode_labels(modes) -> tuple[str, ...]:
     return tuple(GPU_SPLIT_MODE_LABELS[mode] for mode in modes)
 
 
 def gpu_split_mode_value(label: str) -> str:
+    if label in GPU_SPLIT_MODE_LABELS:
+        return label
     for mode, candidate in GPU_SPLIT_MODE_LABELS.items():
         if candidate == label:
             return mode
     raise ValueError(f"Unknown GPU mode: {label}")
 
 
+def mtp_mode_value(label: str) -> str:
+    if label in MTP_MODE_LABELS:
+        return label
+    for mode, candidate in MTP_MODE_LABELS.items():
+        if candidate == label:
+            return mode
+    raise ValueError(f"Unknown MTP mode: {label}")
+
+
 def effective_gui_options(state: dict | None) -> dict:
     options = state.get("gui_options") if state else None
-    return dict(options) if options is not None else dict(GUI_OPTION_DEFAULTS)
+    effective = dict(options) if options is not None else dict(GUI_OPTION_DEFAULTS)
+    try:
+        effective["gpu_split_mode"] = gpu_split_mode_value(effective["gpu_split_mode"])
+    except (KeyError, TypeError, ValueError):
+        effective["gpu_split_mode"] = "layer"
+    try:
+        effective["mtp"] = mtp_mode_value(effective["mtp"])
+    except (KeyError, TypeError, ValueError):
+        effective["mtp"] = "off"
+    return effective
 
 
 def build_discovery_report(*, platform_name: str, architecture: str, ram_gb: float,
@@ -110,8 +130,11 @@ def update_progress_metrics(metrics: dict, event: dict) -> dict:
             "complete", "skipped", "failed", "interrupted"}:
         identity = (event["stage"], progress_model_identity(event))
         finished = set(updated["finished_models"])
+        newly_finished = identity not in finished
         finished.add(identity)
         updated["finished_models"] = finished
+        if newly_finished and isinstance(event.get("elapsed_seconds"), (int, float)):
+            updated["last_completion_elapsed"] = event["elapsed_seconds"]
         if event.get("usable"):
             usable = set(updated["usable_models"])
             usable.add(identity)
@@ -129,10 +152,15 @@ def progress_summary_rows(metrics: dict) -> dict[str, str]:
     }
 
 
-def estimate_remaining_seconds(elapsed: float, completed: int, total: int) -> int | None:
+def estimate_remaining_seconds(elapsed: float, completed: int, total: int,
+                               last_completion_elapsed: float | None = None) -> int | None:
     if elapsed < 0 or completed <= 0 or total <= completed:
         return 0 if total > 0 and completed >= total else None
-    return round((elapsed / completed) * (total - completed))
+    calibrated_at = elapsed if last_completion_elapsed is None else last_completion_elapsed
+    if calibrated_at < 0 or calibrated_at > elapsed:
+        return None
+    projected_remaining = (calibrated_at / completed) * (total - completed)
+    return max(0, round(projected_remaining - (elapsed - calibrated_at)))
 
 
 def workload_preflight_errors(tests: list[str], tools: dict[str, str | None],
@@ -281,7 +309,12 @@ def build_plan_preview(*, engine: str, tests: list[str], entries, options: dict,
         f"Prompt cap: {max_prompt_tokens or 'No cap'}",
         f"llama-bench generation sizes: {', '.join(map(str, tg_tokens)) if tg_tokens else 'Defaults'}",
         f"CPU only: {'Yes' if options['cpu_only'] else 'No'}",
+        f"Native MTP: {MTP_MODE_LABELS[options['mtp']]}",
         f"Offline: {'Yes' if options['offline'] else 'No'}",
+        f"Memory telemetry: {'On' if options['memory_telemetry'] else 'Off'}",
+        f"Power telemetry: {'On' if options['power_telemetry'] else 'Off'}",
+        f"Sustained soak: {options['sustained_duration']} seconds per model",
+        f"Ambient temperature: {options['ambient_temp_c'] if options['ambient_temp_c'] is not None else 'Not recorded'}",
         f"Force slow models: {'Yes' if options['force_all'] else 'No'}",
         f"Retry prior crashes: {'Yes' if options['retry_crashed_models'] else 'No'}",
         f"Broad cases: {model_passes} model-workload passes; contexts, questions, and levels expand within them.",
@@ -301,7 +334,7 @@ def plan_preview_sections(preview: str) -> list[tuple[str, list[str]]]:
         ("Measurement settings", {
             "Warmups", "Measured runs", "Run timeout", "Accuracy timeout",
             "Accuracy token budget", "Prompt cap", "llama-bench generation sizes",
-            "CPU only", "Offline", "Force slow models",
+            "CPU only", "Native MTP", "Offline", "Force slow models",
         }),
         ("Scope and duration", {"Broad cases", "Model loads", "Duration range", "Processes"}),
         ("Output and environment", {"Results", "ComfyUI", "Disk use", "Network use"}),

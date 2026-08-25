@@ -3,9 +3,10 @@
 from copy import deepcopy
 
 from scripts.workloads.models import EMBED_MODELS, IMAGE_MODELS, LLM_MODELS
+from scripts.workloads.model_variants import expanded_variant_catalog
 
 
-CATALOG_VERSION = "1"
+CATALOG_VERSION = "3"
 
 HARDWARE_CATALOG = (
     {"id": "apple-mac-mini-m4-pro-2024", "vendor": "Apple", "product": "Mac mini (M4 Pro, 2024)", "kind": "system", "memory_architecture": "unified", "memory_gb_options": [24, 48, 64], "accelerator": "Apple M4 Pro GPU", "source": "https://www.apple.com/mac-mini/specs/", "qualification": "unqualified"},
@@ -18,7 +19,8 @@ def model_catalog():
     """Return catalog records derived from the benchmark's model definitions."""
     records = []
     groups = (
-        ("llm", LLM_MODELS, ["llm", "conversation", "accuracy", "concurrency", "llamabench"]),
+        ("llm", expanded_variant_catalog(LLM_MODELS),
+         ["llm", "conversation", "accuracy", "concurrency", "llamabench"]),
         ("embedding", EMBED_MODELS, ["embedding"]),
         ("image", IMAGE_MODELS, ["image"]),
     )
@@ -31,6 +33,7 @@ def model_catalog():
                 "download_size": model.get("download_size"),
                 "memory_requirement": "measured_or_estimated_at_runtime",
                 "context_limit": "detected_from_artifact_or_runtime",
+                "distribution": "download_by_reference",
                 "runtimes": ["llama.cpp"] if family != "image" else ["ComfyUI"],
                 "license": {"status": "unverified", "identifier": None, "source": None},
                 "workloads": workloads, "source_repository": model.get("hf_repo"),
@@ -44,11 +47,16 @@ def catalog_bundle():
 
 
 def recommendation_eligible(model):
-    """Require verified licensing before a model can drive a supported recommendation."""
-    return model.get("license", {}).get("status") == "verified"
+    """Require license review only for artifacts distributed with the application."""
+    return (
+        model.get("distribution") == "download_by_reference"
+        or model.get("license", {}).get("status") == "verified"
+    )
 
 
 def _quantization(model):
+    if isinstance(model.get("quantization"), str):
+        return model["quantization"].lower()
     text = f"{model.get('tag', '')} {model.get('hf_file', '')}".upper()
     for name in ("UD-Q4_K_M", "Q4_K_M", "F16", "FP16"):
         if name in text:

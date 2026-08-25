@@ -12,6 +12,7 @@ import { flattenLlamaBenchData } from "./llamabench";
 import { flattenLlamaBenchConcData } from "./llamabenchconc";
 import { flattenLLMData } from "./llm";
 import { parseResultsJSON } from "./shared";
+import { flattenSustainedData } from "./sustained";
 import { flattenVllmBenchData } from "./vllmbench";
 
 const samplesDir = resolve(process.cwd(), "../samples");
@@ -36,6 +37,7 @@ describe("sample result compatibility", () => {
       ["llamabench", () => flattenLlamaBenchData([file])],
       ["llamabenchconc", () => flattenLlamaBenchConcData([file])],
       ["vllmbench", () => flattenVllmBenchData([file])],
+      ["sustained", () => flattenSustainedData([file])],
       ...ACCURACY_TESTS.map(test => [test, () => flattenAccuracyData([file], test)] as [string, () => unknown[]]),
     ];
     for (const [section, buildRows] of builders) {

@@ -52,7 +52,7 @@ class EngineUpdateActions:
         if platform.system() == "Windows":
             return update_windows_llamacpp(
                 config.LLAMACPP_DIR, detect_nvidia_max_cuda_version(), control=control,
-                release_fetcher=release_fetcher,
+                release_fetcher=release_fetcher, intel_xpu=self.hardware_backend == "xpu",
             )
         return rebuild_managed_llamacpp(
             config.LLAMACPP_DIR, status.backend, control=control, log=control.log,

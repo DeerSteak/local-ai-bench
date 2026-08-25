@@ -1,11 +1,13 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.runtime.engines.base import GenerationMeasurement
 from scripts.results.event_store import EventStore
 from scripts.results.llm_event_stage import (
     LLMEventStage, event_store_path, export_llm_section, measurement_from_payload,
-    measurement_payload,
+    measurement_payload, result_path_from_event_store,
 )
 from scripts.results.run_plan import RunPlan
 
@@ -44,6 +46,10 @@ def test_measurement_event_payload_excludes_response_content_and_round_trips():
 
 def test_event_store_path_is_predictable_beside_result(tmp_path):
     assert event_store_path(tmp_path / "results.json") == tmp_path / "results.events.sqlite3"
+    assert result_path_from_event_store(tmp_path / "results.events.sqlite3") == \
+        tmp_path / "results.json"
+    with pytest.raises(ValueError, match="must end"):
+        result_path_from_event_store(tmp_path / "events.sqlite3")
 
 
 def test_existing_runner_stage_and_independent_export_reuse_the_journal_job(tmp_path):
@@ -57,6 +63,46 @@ def test_existing_runner_stage_and_independent_export_reuse_the_journal_job(tmp_
     finally:
         runner.close()
     assert export_llm_section(path, plan.job_id)["model"]["2K"]["tps_mean"] == 50
+
+
+def test_case_telemetry_survives_journal_reopen_and_projection(tmp_path):
+    memory = {
+        "windows": [{"name": "measured", "sample_count": 1}],
+        "summary": {"process_rss_gb": {"peak_gb": 4.0}},
+        "headroom": {"absolute_gb": 8.0, "fraction": 0.5, "state": "comfortable"},
+        "provenance": {"interval_sec": 1.0, "failed_samples": 0},
+    }
+    power = {
+        "status": "recorded", "source": "powermetrics", "scope": "processor_package",
+        "energy_joules": 12.5, "idle_baseline_watts": 4.0,
+    }
+
+    class Telemetry:
+        last_power = power
+
+        def begin_model_load(self):
+            pass
+
+        def begin_measured(self, subwindow="measured"):
+            pass
+
+        def finish_case(self, ceiling_gb=None):
+            return memory
+
+    path = tmp_path / "events.sqlite3"
+    plan = make_plan()
+    stage = LLMEventStage(path, plan, lambda _: None, telemetry=Telemetry())
+    stage.record_case(MODEL, 2048, "2K", [measurement(0.2, 100, 50)], "ok", 1)
+    stage.close()
+    projected = export_llm_section(path, plan.job_id)["model"]["2K"]["memory"]
+    assert {key: projected[key] for key in memory} == memory
+    assert projected["case_id"].startswith("case_")
+    projected_power = export_llm_section(path, plan.job_id)["model"]["2K"]["power"]
+    assert {key: projected_power[key] for key in power} == power
+    assert projected_power["case_id"] == projected["case_id"]
+    assert projected_power["efficiency"] == {
+        "unit": "tokens_per_joule", "work_count": 100, "per_joule": 8,
+    }
 
 
 def test_conversation_stage_shares_job_but_projects_only_its_cases(tmp_path):
