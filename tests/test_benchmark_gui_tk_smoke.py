@@ -69,7 +69,14 @@ def test_benchmark_gui_builds_all_tabs_and_controller_wiring(monkeypatch):
         observed["tabs"] = [notebook.tab(tab, "text") for tab in notebook.tabs()]
         observed["bindings"] = {
             sequence: bool(root.bind_all(sequence))
-            for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>")
+            for sequence in (
+                "<MouseWheel>", "<Button-4>", "<Button-5>", "<Tab>",
+                "<Shift-Tab>", "<ISO_Left_Tab>",
+            )
+        }
+        observed["space_bindings"] = {
+            widget_class: bool(root.bind_class(widget_class, "<space>"))
+            for widget_class in ("TButton", "TCheckbutton", "TRadiobutton")
         }
         root.destroy()
 
@@ -79,5 +86,9 @@ def test_benchmark_gui_builds_all_tabs_and_controller_wiring(monkeypatch):
     assert observed == {
         "title": f"Local AI Bench v{config.VERSION}",
         "tabs": ["Configuration", "Run Log", "Result History", "Engine Management"],
-        "bindings": {"<MouseWheel>": True, "<Button-4>": True, "<Button-5>": True},
+        "bindings": {
+            "<MouseWheel>": True, "<Button-4>": True, "<Button-5>": True,
+            "<Tab>": True, "<Shift-Tab>": True, "<ISO_Left_Tab>": True,
+        },
+        "space_bindings": {"TButton": True, "TCheckbutton": True, "TRadiobutton": True},
     }

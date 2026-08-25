@@ -126,6 +126,7 @@ from scripts.app.benchmark_gui_support import (
     update_progress_metrics,
     workload_preflight_errors,
 )
+from scripts.app.benchmark_gui_accessibility import configure_keyboard_accessibility
 
 
 def launch_controlled_process(command: list[str], **kwargs):
@@ -494,6 +495,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     style.configure("Title.TLabel", font=("TkDefaultFont", 21, "bold"))
     style.configure("Section.TLabel", font=("TkDefaultFont", 12, "bold"))
     style.configure("Start.TButton", font=("TkDefaultFont", 12, "bold"), padding=(18, 9))
+    configure_keyboard_accessibility(root, ttk)
     history_font = tkfont.nametofont("TkDefaultFont")
     style.configure(
         "History.Treeview",
