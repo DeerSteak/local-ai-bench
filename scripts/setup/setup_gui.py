@@ -49,6 +49,14 @@ def display_wizard_page(pages, index: int) -> None:
             page.grid_remove()
 
 
+def focus_scroll_fraction(*, widget_top: int, widget_bottom: int, view_top: int,
+                          view_bottom: int, content_height: int) -> float | None:
+    if content_height <= 0 or (widget_top >= view_top and widget_bottom <= view_bottom):
+        return None
+    target = widget_top if widget_top < view_top else widget_bottom - (view_bottom - view_top)
+    return max(0.0, min(1.0, target / content_height))
+
+
 def model_row_label(model: dict, engines, memory_ceiling_gb: float | None) -> str:
     """One model row: per-engine sizes, plus a warning per engine it won't fit."""
     report = engine_fit_report(model, engines, memory_ceiling_gb)
@@ -687,10 +695,31 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
                 collect_controls(child)
 
         collect_controls(pages[index])
-        configure_explicit_tab_order(sorted(
-            [*controls, back_button, next_button, cancel_button],
+        page_controls = sorted(
+            controls,
             key=lambda widget: (widget.winfo_rooty(), widget.winfo_rootx()),
-        ))
+        )
+        configure_explicit_tab_order([
+            *page_controls, back_button, next_button, cancel_button,
+        ])
+        if pages[index] is models_page:
+            def reveal_model_control(event) -> None:
+                region = canvas.bbox("all")
+                if region is None:
+                    return
+                widget_top = event.widget.winfo_rooty() - model_list.winfo_rooty()
+                fraction = focus_scroll_fraction(
+                    widget_top=widget_top,
+                    widget_bottom=widget_top + event.widget.winfo_height(),
+                    view_top=int(canvas.canvasy(0)),
+                    view_bottom=int(canvas.canvasy(canvas.winfo_height())),
+                    content_height=region[3] - region[1],
+                )
+                if fraction is not None:
+                    canvas.yview_moveto(fraction)
+
+            for control in page_controls:
+                control.bind("<FocusIn>", reveal_model_control, add="+")
 
     def page_enabled() -> list[bool]:
         image_selected = any(model_vars[model["short"]].get() for model in IMAGE_MODELS)

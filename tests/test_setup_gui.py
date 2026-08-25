@@ -15,6 +15,7 @@ from scripts.setup.setup_gui import (
     default_model_selection,
     display_wizard_page,
     hf_token_review_label,
+    focus_scroll_fraction,
     license_button_label,
     mousewheel_scroll_units,
     refresh_tk_layout,
@@ -100,6 +101,18 @@ def test_display_wizard_page_unmaps_every_inactive_page():
     display_wizard_page(pages, 1)
 
     assert [page.visible for page in pages] == [False, True, False]
+
+
+def test_focus_scroll_fraction_moves_only_for_clipped_controls():
+    assert focus_scroll_fraction(
+        widget_top=20, widget_bottom=40, view_top=0, view_bottom=100, content_height=500,
+    ) is None
+    assert focus_scroll_fraction(
+        widget_top=140, widget_bottom=160, view_top=0, view_bottom=100, content_height=500,
+    ) == pytest.approx(0.12)
+    assert focus_scroll_fraction(
+        widget_top=20, widget_bottom=40, view_top=100, view_bottom=200, content_height=500,
+    ) == pytest.approx(0.04)
 
 
 @pytest.mark.parametrize(
@@ -248,6 +261,15 @@ def test_setup_wizard_installs_keyboard_navigation(monkeypatch):
         pytest.skip(f"Tk display unavailable: {exc}")
     probe.destroy()
     observed = {}
+    tab_orders = []
+    configure_tab_order = setup_gui.configure_explicit_tab_order
+
+    def capture_tab_order(widgets):
+        controls = list(widgets)
+        tab_orders.append([str(widget.cget("text")) for widget in controls])
+        configure_tab_order(controls)
+
+    monkeypatch.setattr(setup_gui, "configure_explicit_tab_order", capture_tab_order)
 
     def descendants(widget):
         children = list(widget.winfo_children())
@@ -284,6 +306,10 @@ def test_setup_wizard_installs_keyboard_navigation(monkeypatch):
         observed["inactive_controls_unmapped"] = any(
             not widget.winfo_ismapped() for widget in checkbuttons
         )
+        observed["model_chain_footer"] = tab_orders[-1][-3:]
+        observed["model_controls_before_footer"] = all(
+            label not in {"Back", "Next", "Cancel"} for label in tab_orders[-1][:-3]
+        )
 
     monkeypatch.setattr(tk.Tk, "mainloop", inspect_instead_of_mainloop)
 
@@ -296,6 +322,8 @@ def test_setup_wizard_installs_keyboard_navigation(monkeypatch):
         "navigation": {"Back", "Next", "Cancel"},
         "visible_labelled_models": True,
         "inactive_controls_unmapped": True,
+        "model_chain_footer": ["Back", "Next", "Cancel"],
+        "model_controls_before_footer": True,
     }
 
 

@@ -98,6 +98,7 @@ def configure_keyboard_accessibility(root, ttk) -> None:
     root.bind_all("<ISO_Left_Tab>", lambda event: focus_relative(event.widget, reverse=True))
     for widget_class in ("TButton", "TCheckbutton", "TRadiobutton"):
         root.bind_class(widget_class, "<space>", lambda event: invoke_control(event.widget))
+        root.bind_class(widget_class, "<KeyRelease-space>", lambda _event: "break")
     root.bind_class("TNotebook", "<space>", lambda event: focus_relative(event.widget, reverse=False))
     root.bind_class("TNotebook", "<FocusIn>", lambda event: mark_notebook_focus(event.widget), add="+")
     root.bind_class("TNotebook", "<FocusOut>", lambda event: clear_notebook_focus(event.widget), add="+")
