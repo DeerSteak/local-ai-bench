@@ -32,3 +32,15 @@ def test_sbom_output_is_deterministic(tmp_path):
     write_sbom(root, first)
     write_sbom(root, second)
     assert first.read_bytes() == second.read_bytes()
+
+
+def test_sbom_uses_reviewed_license_only_for_exact_python_version(tmp_path):
+    root = make_repo(tmp_path)
+    (root / "requirements.txt").write_text(
+        "requests==2.34.2\npy7zr==1.1.3\n", encoding="utf-8",
+    )
+    packages = {item["name"]: item for item in generate_sbom(root)["packages"]}
+    assert packages["requests"]["license"] == "Apache-2.0"
+    assert packages["requests"]["resolved"].endswith("/requests/2.34.2/")
+    assert packages["py7zr"]["license"] == "LGPL-2.1-or-later"
+    assert "LGPL" in packages["py7zr"]["review_note"]
