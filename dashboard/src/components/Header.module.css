@@ -110,6 +110,8 @@
   transition: all .2s;
   min-width: 240px;
   cursor: pointer;
+  background: transparent;
+  font: inherit;
 }
 
 .dropZone.over {

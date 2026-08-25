@@ -68,6 +68,8 @@ export default function Dashboard() {
 
   const chartRef = useRef<HTMLDivElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
+  const selectionInputRef = useRef<HTMLInputElement>(null);
+  const recommendationInputRef = useRef<HTMLInputElement>(null);
 
   const allModels = useMemo(() => getAllLLMModels(files), [files]);
   const allImageModels = useMemo(() => getAllImageModels(files), [files]);
@@ -486,10 +488,10 @@ export default function Dashboard() {
             <div className={styles.workspaceNote}>Selection, baseline, filters, labels, and exact result identities are exported together.</div>
           </div>
           <div className={styles.workspaceActions}>
-            <label className="pill inactive">Import selection
-              <input type="file" accept="application/json,.json" hidden
-                onChange={event => loadWorkspaceSelection(event.target.files?.[0])} />
-            </label>
+            <button type="button" className="pill inactive"
+              onClick={() => selectionInputRef.current?.click()}>Import selection</button>
+            <input ref={selectionInputRef} type="file" accept="application/json,.json" hidden
+              onChange={event => loadWorkspaceSelection(event.target.files?.[0])} />
             <button className="pill inactive" onClick={exportWorkspaceSelection}>Selection JSON</button>
             <button className="pill active" disabled={workspaceExporting != null}
               onClick={() => exportWorkspaceArtifact("html")}>HTML report</button>
@@ -509,11 +511,10 @@ export default function Dashboard() {
           <div className={styles.workspaceDecision}>
             <button className="pill active" disabled={!workspacePolicy && !workspaceRecommendation}
               onClick={evaluateWorkspaceDecision}>Apply decision inputs</button>
-            <label className="pill inactive">
-              Attach recommendation
-              <input type="file" accept="application/json,.json" hidden
-                onChange={event => loadWorkspaceRecommendation(event.target.files?.[0])} />
-            </label>
+            <button type="button" className="pill inactive"
+              onClick={() => recommendationInputRef.current?.click()}>Attach recommendation</button>
+            <input ref={recommendationInputRef} type="file" accept="application/json,.json" hidden
+              onChange={event => loadWorkspaceRecommendation(event.target.files?.[0])} />
             {workspaceRecommendation && <button className="pill inactive"
               onClick={() => setWorkspaceRecommendation(null)}>Remove recommendation</button>}
             <strong>Acceptance: {workspaceEvaluation?.decision

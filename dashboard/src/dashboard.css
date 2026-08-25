@@ -10,6 +10,12 @@
 
 * { box-sizing: border-box; }
 
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid #0969da;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 2px #ffffff;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;
@@ -22,6 +28,7 @@
   font-family: 'IBM Plex Mono', monospace;
 }
 .pill:hover { opacity: .85; }
+.pill:focus-visible { opacity: 1; }
 .pill.active { border-color: #0969da; background: #dff0ff; color: #0969da; }
 .pill.inactive { border-color: #d0d7de; background: #f6f8fa; color: #57606a; }
 
