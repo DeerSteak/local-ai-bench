@@ -28,6 +28,10 @@ import VariantComparisonPanel from "./components/VariantComparisonPanel";
 import { dashboardHostname } from "./utils/specCard";
 import { buildRunCardFilename } from "./utils/specCard";
 import { useAutoEnabledSelection } from "./hooks/useAutoEnabledSelection";
+import {
+  buildWorkspaceSelection, downloadBlob, downloadWorkspaceSelection,
+  isWorkspaceSelection, requestWorkspaceEvaluation, requestWorkspaceExport,
+} from "./utils/workspace";
 
 export default function Dashboard() {
   const [files, setFiles] = useState<DisplayFile[]>([]);
@@ -50,6 +54,11 @@ export default function Dashboard() {
   const [trialSet, setTrialSet] = useState<{ name: string, data: import("./utils/shared").JsonRecord } | null>(null);
   const [recommendation, setRecommendation] = useState<{ name: string, data: import("./utils/shared").JsonRecord } | null>(null);
   const [variantComparison, setVariantComparison] = useState<{ name: string, data: import("./utils/shared").JsonRecord } | null>(null);
+  const [workspaceExporting, setWorkspaceExporting] = useState<string | null>(null);
+  const [workspacePolicyText, setWorkspacePolicyText] = useState("");
+  const [workspacePolicy, setWorkspacePolicy] = useState<import("./utils/shared").JsonRecord | null>(null);
+  const [workspaceEvaluation, setWorkspaceEvaluation] = useState<import("./utils/shared").JsonRecord | null>(null);
+  const [workspaceRecommendation, setWorkspaceRecommendation] = useState<import("./utils/shared").JsonRecord | null>(null);
 
   const filesRef = useRef(files);
   const sectionRef = useRef(section);
@@ -59,6 +68,8 @@ export default function Dashboard() {
 
   const chartRef = useRef<HTMLDivElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
+  const selectionInputRef = useRef<HTMLInputElement>(null);
+  const recommendationInputRef = useRef<HTMLInputElement>(null);
 
   const allModels = useMemo(() => getAllLLMModels(files), [files]);
   const allImageModels = useMemo(() => getAllImageModels(files), [files]);
@@ -129,6 +140,8 @@ export default function Dashboard() {
     const entry: DisplayFile = {
       id: `${file.name}-${Date.now()}`,
       name: file.name,
+      sourceSha256: file.sha256 as string,
+      sourceText: file.sourceText as string,
       hostname: baseHostname,
       engine:   data.engine || null,
       engineVersion: data.engine_version || null,
@@ -320,6 +333,127 @@ export default function Dashboard() {
     setSortConfig(prev => prev.key === key ? { key, dir: (prev.dir * -1) as 1 | -1 } : { key, dir: 1 });
   };
 
+  const currentWorkspaceSelection = useCallback(() => buildWorkspaceSelection(
+    files, baselineId, {
+      section,
+      accuracy_test: accuracyTest,
+      enabled_models: [...enabledModels].sort(),
+      enabled_image_models: [...enabledImageModels].sort(),
+      enabled_embedding_models: [...enabledEmbedModels].sort(),
+      hostname_overrides: hostnameOverrides,
+    }, workspacePolicy, workspaceRecommendation,
+  ), [
+    files, baselineId, section, accuracyTest, enabledModels, enabledImageModels,
+    enabledEmbedModels, hostnameOverrides, workspacePolicy, workspaceRecommendation,
+  ]);
+
+  const exportWorkspaceSelection = useCallback(() => {
+    try {
+      const selection = currentWorkspaceSelection();
+      downloadWorkspaceSelection(selection);
+      setFileError("");
+    } catch (error) {
+      setFileError(error instanceof Error ? error.message : String(error));
+    }
+  }, [currentWorkspaceSelection]);
+
+  const exportWorkspaceArtifact = useCallback(async (format: "html" | "pdf" | "bundle") => {
+    if (workspaceExporting) return;
+    setWorkspaceExporting(format);
+    try {
+      const exported = await requestWorkspaceExport(currentWorkspaceSelection(), files, format);
+      downloadBlob(exported.blob, exported.filename);
+      setFileError("");
+    } catch (error) {
+      setFileError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setWorkspaceExporting(null);
+    }
+  }, [currentWorkspaceSelection, files, workspaceExporting]);
+
+  const updateWorkspacePolicy = useCallback((text: string) => {
+    setWorkspacePolicyText(text);
+    if (!text.trim()) {
+      setWorkspacePolicy(null);
+      setWorkspaceEvaluation(null);
+      return;
+    }
+    try {
+      const value: unknown = JSON.parse(text);
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error("Acceptance policy must be a JSON object.");
+      }
+      setWorkspacePolicy(value as import("./utils/shared").JsonRecord);
+      setFileError("");
+    } catch (error) {
+      setWorkspacePolicy(null);
+      setWorkspaceEvaluation(null);
+      setFileError(error instanceof Error ? error.message : String(error));
+    }
+  }, []);
+
+  const loadWorkspaceRecommendation = useCallback(async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const value: unknown = JSON.parse(await file.text());
+      if (!isRecommendationArtifact(value)) throw new Error("Recommendation artifact is invalid.");
+      setWorkspaceRecommendation(value);
+      setFileError("");
+    } catch (error) {
+      setWorkspaceRecommendation(null);
+      setFileError(error instanceof Error ? error.message : String(error));
+    }
+  }, []);
+
+  const loadWorkspaceSelection = useCallback(async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const value: unknown = JSON.parse(await file.text());
+      if (!isWorkspaceSelection(value)) throw new Error("Workspace selection is invalid.");
+      const loaded = files.map(result => result.sourceSha256).sort();
+      const selected = value.results.map(result => result.sha256).sort();
+      if (JSON.stringify(loaded) !== JSON.stringify(selected)) {
+        throw new Error("Load the exact result files recorded by this workspace selection first.");
+      }
+      setSection(value.view.section);
+      setAccuracyTest(value.view.accuracy_test);
+      setHostnameOverrides(value.view.hostname_overrides);
+      const baseline = files.find(result => result.sourceSha256 === value.baseline_sha256);
+      setBaselineId(baseline?.id == null ? null : String(baseline.id));
+      for (const [enabled, expected, toggle] of [
+        [enabledModels, new Set(value.view.enabled_models), toggleModel],
+        [enabledImageModels, new Set(value.view.enabled_image_models), toggleImageModel],
+        [enabledEmbedModels, new Set(value.view.enabled_embedding_models), toggleEmbedModel],
+      ] as const) {
+        for (const item of new Set([...enabled, ...expected])) {
+          if (enabled.has(item) !== expected.has(item)) toggle(item);
+        }
+      }
+      setWorkspacePolicy(value.acceptance_policy);
+      setWorkspacePolicyText(value.acceptance_policy
+        ? JSON.stringify(value.acceptance_policy, null, 2) : "");
+      setWorkspaceRecommendation(value.recommendation);
+      setWorkspaceEvaluation(null);
+      setFileError("");
+    } catch (error) {
+      setFileError(error instanceof Error ? error.message : String(error));
+    }
+  }, [
+    files, enabledModels, enabledImageModels, enabledEmbedModels,
+    toggleModel, toggleImageModel, toggleEmbedModel,
+  ]);
+
+  const evaluateWorkspaceDecision = useCallback(async () => {
+    try {
+      const result = await requestWorkspaceEvaluation(currentWorkspaceSelection(), files);
+      setWorkspaceEvaluation(result.acceptance);
+      setFileError("");
+    } catch (error) {
+      setWorkspaceEvaluation(null);
+      setFileError(error instanceof Error ? error.message : String(error));
+    }
+  }, [currentWorkspaceSelection, files]);
+
   const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(true); }, []);
   const handleDragLeave = useCallback(() => setDragOver(false), []);
   const handleLogoDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setLogoDragOver(true); }, []);
@@ -346,6 +480,55 @@ export default function Dashboard() {
       {trialSet ? <TrialSetPanel name={trialSet.name} artifact={trialSet.data} />
         : recommendation ? <RecommendationPanel name={recommendation.name} artifact={recommendation.data} />
           : variantComparison ? <VariantComparisonPanel name={variantComparison.name} artifact={variantComparison.data} /> : <>
+
+      {files.length > 0 && <div className="card" style={{ marginBottom: 20 }}>
+        <div className={styles.workspaceHeader}>
+          <div>
+            <div className={styles.workspaceEyebrow}>Decision workspace</div>
+            <div className={styles.workspaceNote}>Selection, baseline, filters, labels, and exact result identities are exported together.</div>
+          </div>
+          <div className={styles.workspaceActions}>
+            <button type="button" className="pill inactive"
+              onClick={() => selectionInputRef.current?.click()}>Import selection</button>
+            <input ref={selectionInputRef} type="file" accept="application/json,.json" hidden
+              onChange={event => loadWorkspaceSelection(event.target.files?.[0])} />
+            <button className="pill inactive" onClick={exportWorkspaceSelection}>Selection JSON</button>
+            <button className="pill active" disabled={workspaceExporting != null}
+              onClick={() => exportWorkspaceArtifact("html")}>HTML report</button>
+            <button className="pill active" disabled={workspaceExporting != null}
+              onClick={() => exportWorkspaceArtifact("pdf")}>PDF report</button>
+            <button className="pill active" disabled={workspaceExporting != null}
+              onClick={() => exportWorkspaceArtifact("bundle")}>Bundle</button>
+          </div>
+        </div>
+        <div className={styles.workspaceEditors}>
+          <label className={styles.workspaceEditor}>
+            <span>Acceptance policy JSON</span>
+            <textarea value={workspacePolicyText}
+              placeholder="Paste or edit a versioned acceptance policy"
+              onChange={event => updateWorkspacePolicy(event.target.value)} />
+          </label>
+          <div className={styles.workspaceDecision}>
+            <button className="pill active" disabled={!workspacePolicy && !workspaceRecommendation}
+              onClick={evaluateWorkspaceDecision}>Apply decision inputs</button>
+            <button type="button" className="pill inactive"
+              onClick={() => recommendationInputRef.current?.click()}>Attach recommendation</button>
+            <input ref={recommendationInputRef} type="file" accept="application/json,.json" hidden
+              onChange={event => loadWorkspaceRecommendation(event.target.files?.[0])} />
+            {workspaceRecommendation && <button className="pill inactive"
+              onClick={() => setWorkspaceRecommendation(null)}>Remove recommendation</button>}
+            <strong>Acceptance: {workspaceEvaluation?.decision
+              ? String(workspaceEvaluation.decision).replaceAll("_", " ") : "Not evaluated"}</strong>
+            {Array.isArray(workspaceEvaluation?.rules) && <span>
+              {workspaceEvaluation.rules.map(rule => `${rule.id}: ${rule.status}`).join(" · ")}
+            </span>}
+          </div>
+        </div>
+      </div>}
+
+      {files.length > 0 && workspaceRecommendation && <RecommendationPanel
+        name="Workspace recommendation" artifact={workspaceRecommendation}
+      />}
 
       <Controls
         section={section} setSection={setSection}

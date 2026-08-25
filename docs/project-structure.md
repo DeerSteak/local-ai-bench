@@ -115,12 +115,15 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `results/vendor_diagnostic_cli.py` | Reviewed diagnostic creation and source-pair verification commands |
 | `results/result_bundle.py` | Deterministic portable result bundles, digest verification, safe import, methodology checks, and aggregate reproduction |
 | `results/result_bundle_cli.py` | Command-line `export`, `verify`, and `import` interface for portable result bundles |
+| `results/workspace_selection.py` | Digest-bound unified workspace selection artifact validation |
+| `results/workspace_export.py` / `results/workspace_export_cli.py` | Deterministic reports and multi-result bundles from one workspace selection |
 | `results/decision_report.py` | Deterministic self-contained HTML/PDF decision-report model plus acceptance and recommendation-artifact rendering |
 | `results/decision_report_cli.py` | Command-line decision-report generator for validated result JSON and source-verified recommendation artifacts |
 | `results/acceptance_policy.py` | Validates and evaluates versioned per-case evidence-threshold policies |
 | `results/acceptance_policy_cli.py` | Machine-readable command-line acceptance evaluator with distinct decision exit codes |
 | `results/support_bundle.py` | Allowlisted, deterministic support diagnostics with private-path and credential redaction |
 | `app/benchmark_launcher.py` | Automatic GUI/terminal benchmark frontend dispatcher |
+| `app/workspace_server.py` | Authenticated loopback static dashboard and bounded workspace-export endpoint |
 | `results/run_plan.py` / `results/canonical_json.py` | Immutable execution plans plus the single canonical JSON and digest contract for durable identities |
 | `workloads/methodology_profile.py` | Resolves the neutral profile and records selected workloads' effective runtime settings |
 | `results/event_store.py` | Transactional append-only SQLite job events, immutable plan loading, digest verification, and rebuildable projections |

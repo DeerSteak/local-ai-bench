@@ -1,5 +1,7 @@
 # Decision Reports
 
+Milestone 11 workspace reports can also be generated from a digest-bound `workspace_selection` artifact with `python -m scripts.results.workspace_export_cli`. The recorded baseline selects the report's primary result, the embedded acceptance policy and authoritative recommendation are applied without a second selection step, and the HTML/PDF report lists every selected result identity. A changed or missing source result fails the export rather than producing a report whose evidence differs from the workspace view.
+
 Local AI Bench can turn a result JSON file into deterministic, self-contained HTML and PDF decision reports. Reports summarize run identity, stage coverage, measured performance, accuracy, and sample validity without inventing a composite score or treating missing evidence as zero.
 
 Current results also identify the active methodology profile and enumerate the effective runtime optimizations resolved for the selected workload paths. Older results label the profile as unrecorded instead of guessing.

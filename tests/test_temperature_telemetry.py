@@ -6,6 +6,7 @@ from scripts.runtime.telemetry import (
     TemperatureAvailability, TemperatureReading,
     TelemetrySample, TelemetrySampler, discover_temperature_source,
     aggregate_apple_hid_temperatures,
+    memory_block, power_block,
     parse_hwmon_temperature, parse_nvidia_telemetry, parse_nvidia_temperatures,
     parse_rocm_temperatures,
     temperature_availability_dict, temperature_block,
@@ -243,30 +244,53 @@ def test_polling_source_reads_cpu_and_rocm_channels_from_one_capture():
     assert source.read() == TemperatureReading(66, 55, 72)
 
 
-def test_temperature_block_preserves_aligned_timestamps_and_missing_channels():
+def test_memory_power_and_temperature_blocks_preserve_one_timeline():
     samples = [
-        TelemetrySample(0, "measured:0", power_watts=100, gpu_die_c=60),
-        TelemetrySample(1.25, "measured:0", power_watts=95, gpu_die_c=70),
+        TelemetrySample(
+            0, "measured:0", host_ram_used_gb=8, process_rss_gb=2,
+            power_watts=100, gpu_die_c=60,
+        ),
+        TelemetrySample(
+            1.25, "measured:0", host_ram_used_gb=9, process_rss_gb=3,
+            power_watts=95, gpu_die_c=None,
+        ),
     ]
-    block = temperature_block(
-        samples, 0.5, TemperatureAvailability(True, {"gpu_die_c": "nvidia-smi"}),
-        {"cpu_package_c": 2, "gpu_hotspot_c": 2},
+    memory = memory_block(
+        samples, 0.5, 0, {}, {
+            "host_ram_used_gb": "psutil", "process_rss_gb": "psutil",
+        },
     )
-    assert block["status"] == "recorded"
-    assert block["windows"][0]["duration_sec"] == 1.25
-    assert block["windows"][0]["channels"]["gpu_die_c"] == {
-        "peak_c": 70, "mean_c": 65, "final_c": 70, "valid_samples": 2,
+    power = power_block(
+        samples, 0.5, PowerAvailability(True, "nvidia-smi", "accelerator"), 0,
+    )
+    temperature = temperature_block(
+        samples, 0.5, TemperatureAvailability(True, {"gpu_die_c": "nvidia-smi"}),
+        {"gpu_die_c": 1},
+    )
+
+    timelines = [
+        [sample["timestamp_sec"] for sample in block["windows"][0]["samples"]]
+        for block in (memory, power, temperature)
+    ]
+    assert timelines == [[0, 1.25]] * 3
+    assert [block["windows"][0]["sample_count"]
+            for block in (memory, power, temperature)] == [2, 2, 2]
+    assert [block["windows"][0]["duration_sec"]
+            for block in (memory, power, temperature)] == [1.25, 1.25, 1.25]
+    assert temperature["status"] == "recorded"
+    assert temperature["windows"][0]["channels"]["gpu_die_c"] == {
+        "peak_c": 60, "mean_c": 60, "final_c": 60, "valid_samples": 1,
     }
-    assert block["windows"][0]["samples"] == [
+    assert temperature["windows"][0]["samples"] == [
         {"timestamp_sec": 0, "soc_package_c": None, "cpu_package_c": None, "gpu_die_c": 60,
          "gpu_hotspot_c": None},
-        {"timestamp_sec": 1.25, "soc_package_c": None, "cpu_package_c": None, "gpu_die_c": 70,
+        {"timestamp_sec": 1.25, "soc_package_c": None, "cpu_package_c": None, "gpu_die_c": None,
          "gpu_hotspot_c": None},
     ]
-    assert block["provenance"]["channels"] == {
+    assert temperature["provenance"]["channels"] == {
         "soc_package_c": {"source": "unsupported", "failed_samples": 0},
         "cpu_package_c": {"source": "unsupported", "failed_samples": 0},
-        "gpu_die_c": {"source": "nvidia-smi", "failed_samples": 0},
+        "gpu_die_c": {"source": "nvidia-smi", "failed_samples": 1},
         "gpu_hotspot_c": {"source": "unsupported", "failed_samples": 0},
     }
 

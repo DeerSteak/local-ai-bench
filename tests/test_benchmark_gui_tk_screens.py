@@ -5,7 +5,9 @@ import pytest
 from scripts.app.benchmark_frontend import MenuEntry, TEST_DEFINITIONS, TG_TOKEN_OPTIONS
 from scripts.app.benchmark_gui_screens.configuration import build_configuration_screen
 from scripts.app.benchmark_gui_screens.engines import build_engine_screen
-from scripts.app.benchmark_gui_screens.history import build_history_screen
+from scripts.app.benchmark_gui_screens.history import (
+    build_history_screen, extend_history_selection, toggle_focused_history_item,
+)
 from scripts.app.benchmark_gui_screens.progress import ProgressScreen, progress_entries_for_engine
 from scripts.app.benchmark_gui_screens.run_log import build_run_log_screen
 from scripts.app.benchmark_gui_screens.run_log_actions import RunLogActions
@@ -115,6 +117,37 @@ def test_configuration_screen_groups_llamacpp_quantizations(tk_shell):
     assert screen.variant_parent_widgets == {}
 
 
+def test_configuration_checkbox_text_is_part_of_focusable_control(tk_shell):
+    root, notebook, tk, ttk = tk_shell
+    tests = [
+        MenuEntry(name, label, family, "Tests", enabled)
+        for name, label, family, enabled in TEST_DEFINITIONS
+    ]
+    models = [MenuEntry(
+        "demo:q4", "Demo — Q4 (~1 GB)", "llm", "Small", True,
+        base_model="demo", base_label="Demo", variant="Q4", default_variant=True,
+    )]
+    screen = build_configuration_screen(
+        notebook, tk=tk, ttk=ttk,
+        discovery={
+            "system": "Test", "models": "1", "storage": "100 GB",
+            "memory_risk": "Low", "runtime": "Available", "comfyui": "Available",
+            "issues": [],
+        },
+        advanced_var=tk.BooleanVar(root), preset_var=tk.StringVar(root, value="Custom"),
+        project_status=tk.StringVar(root, value="No project"), preset_names=["Custom"],
+        test_vars={entry.value: tk.BooleanVar(root, value=True) for entry in tests},
+        test_defaults={entry.value: True for entry in tests}, custom_tests=tests,
+        model_vars={"demo:q4": tk.BooleanVar(root, value=True)},
+        model_defaults={"demo:q4": True}, custom_models=models,
+        cap_var=tk.StringVar(root, value="No cap"),
+        tg_vars={value: tk.BooleanVar(root, value=True) for value in TG_TOKEN_OPTIONS},
+    )
+
+    assert screen.test_widgets["llm"].cget("text") == "Single-shot LLM"
+    assert screen.model_widgets["demo:q4"].cget("text") == "Q4 (~1 GB)"
+
+
 def test_run_log_screen_constructs_and_navigates_back(tk_shell):
     root, notebook, tk, ttk = tk_shell
     configuration = ttk.Frame(notebook)
@@ -148,6 +181,19 @@ def test_history_screen_constructs_selectable_result_table(tk_shell):
     assert screen.tree.selection() == (item,)
     assert screen.status_filter.get() == "all"
     assert screen.engine_filter.get() == "all"
+
+
+def test_history_keyboard_selection_can_extend_and_toggle(tk_shell):
+    _root, notebook, tk, ttk = tk_shell
+    screen = build_history_screen(notebook, tk=tk, ttk=ttk)
+    items = [screen.tree.insert("", "end", values=(index,)) for index in range(3)]
+    screen.tree.focus(items[0])
+    screen.tree.selection_set(items[0])
+
+    assert extend_history_selection(screen.tree, 1) == "break"
+    assert screen.tree.selection() == (items[0], items[1])
+    assert toggle_focused_history_item(screen.tree) == "break"
+    assert screen.tree.selection() == (items[0],)
 
 
 def test_history_rows_keep_dark_text_on_light_fills_in_dark_mode(tk_shell):

@@ -80,7 +80,11 @@ describe("readNamedJSONSource", () => {
       text: async () => { reads += 1; return '{"profile":{}}'; },
     });
     expect(reads).toBe(1);
-    expect(parsed).toEqual({ name: "result.json", data: { profile: {} }, error: null });
+    expect(parsed).toEqual({
+      name: "result.json", data: { profile: {} }, error: null,
+      sha256: "ffd1c358b691c508257683c797aeaae82cf366975148bfc3b08a3d45bb61fe19",
+      sourceText: '{"profile":{}}',
+    });
   });
 
   it("retains read failures without retrying the source", async () => {
@@ -92,6 +96,7 @@ describe("readNamedJSONSource", () => {
     expect(reads).toBe(1);
     expect(parsed).toEqual({
       name: "broken.json", data: null, error: "Could not read this file.",
+      sha256: null, sourceText: null,
     });
   });
 });

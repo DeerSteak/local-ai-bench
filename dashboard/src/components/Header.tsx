@@ -98,7 +98,8 @@ export default function Header({ files, dragOver, onDrop, onDragOver, onDragLeav
           onChange={onFileInput}
           style={{ display: "none" }}
         />
-        <div
+        <button
+          type="button"
           onDrop={onDrop}
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
@@ -106,7 +107,7 @@ export default function Header({ files, dragOver, onDrop, onDragOver, onDragLeav
           className={`${styles.dropZone} ${dragOver ? styles.over : ""}`}
         >
           <div className={styles.dropZoneText}>{dropText}</div>
-        </div>
+        </button>
         {fileError && <div className={styles.fileError} role="alert">{fileError}</div>}
         {files.map((file, i) => {
           const color = FILE_COLORS[i % FILE_COLORS.length];
@@ -121,7 +122,8 @@ export default function Header({ files, dragOver, onDrop, onDragOver, onDragLeav
                 </span>
               )}
               <span className={styles.fileName} title={file.name}>{file.name}</span>
-              <button onClick={() => onRemoveFile(file.id)} title="Remove file" className={styles.removeBtn}>✕</button>
+              <button type="button" onClick={() => onRemoveFile(file.id)}
+                aria-label={`Remove ${file.name}`} title="Remove file" className={styles.removeBtn}>✕</button>
             </div>
           );
         })}

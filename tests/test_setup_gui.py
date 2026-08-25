@@ -13,7 +13,9 @@ from scripts.setup.setup_gui import (
     sudo_notice,
     model_row_label,
     default_model_selection,
+    display_wizard_page,
     hf_token_review_label,
+    focus_scroll_fraction,
     license_button_label,
     mousewheel_scroll_units,
     refresh_tk_layout,
@@ -81,6 +83,36 @@ def test_page_navigation_holds_position_when_nothing_remains():
     assert next_page_index(0, -1, [True, True]) == 0
     assert next_page_index(1, 1, [True, True]) == 1
     assert next_page_index(0, 1, [True, False, False]) == 0
+
+
+def test_display_wizard_page_unmaps_every_inactive_page():
+    class Page:
+        def __init__(self):
+            self.visible = True
+
+        def grid(self):
+            self.visible = True
+
+        def grid_remove(self):
+            self.visible = False
+
+    pages = [Page(), Page(), Page()]
+
+    display_wizard_page(pages, 1)
+
+    assert [page.visible for page in pages] == [False, True, False]
+
+
+def test_focus_scroll_fraction_moves_only_for_clipped_controls():
+    assert focus_scroll_fraction(
+        widget_top=20, widget_bottom=40, view_top=0, view_bottom=100, content_height=500,
+    ) is None
+    assert focus_scroll_fraction(
+        widget_top=140, widget_bottom=160, view_top=0, view_bottom=100, content_height=500,
+    ) == pytest.approx(0.12)
+    assert focus_scroll_fraction(
+        widget_top=20, widget_bottom=40, view_top=100, view_bottom=200, content_height=500,
+    ) == pytest.approx(0.04)
 
 
 @pytest.mark.parametrize(
@@ -216,6 +248,83 @@ def test_scheduled_tk_layout_refresh_does_not_flush_synchronously():
     schedule_tk_layout_refresh(Widget())
 
     assert calls == ["scheduled"]
+
+
+def test_setup_wizard_installs_keyboard_navigation(monkeypatch):
+    tk = pytest.importorskip("tkinter")
+    ttk = pytest.importorskip("tkinter.ttk")
+    from scripts.setup import setup_gui
+
+    try:
+        probe = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"Tk display unavailable: {exc}")
+    probe.destroy()
+    observed = {}
+    tab_orders = []
+    configure_tab_order = setup_gui.configure_explicit_tab_order
+
+    def capture_tab_order(widgets):
+        controls = list(widgets)
+        tab_orders.append([str(widget.cget("text")) for widget in controls])
+        configure_tab_order(controls)
+
+    monkeypatch.setattr(setup_gui, "configure_explicit_tab_order", capture_tab_order)
+
+    def descendants(widget):
+        children = list(widget.winfo_children())
+        return [*children, *(item for child in children for item in descendants(child))]
+
+    def inspect_instead_of_mainloop(root):
+        root.update_idletasks()
+        widgets = descendants(root)
+        observed["bindings"] = {
+            sequence: bool(root.bind_all(sequence))
+            for sequence in ("<Tab>", "<Shift-Tab>", "<ISO_Left_Tab>")
+        }
+        observed["space_bindings"] = {
+            widget_class: bool(root.bind_class(widget_class, "<space>"))
+            for widget_class in ("TButton", "TCheckbutton", "TRadiobutton")
+        }
+        observed["navigation"] = {
+            widget.cget("text") for widget in widgets
+            if isinstance(widget, ttk.Button) and widget.cget("text") in {"Back", "Next", "Cancel"}
+        }
+        next_button = next(
+            widget for widget in widgets
+            if isinstance(widget, ttk.Button) and widget.cget("text") == "Next"
+        )
+        next_button.invoke()
+        root.update_idletasks()
+        checkbuttons = [
+            widget for widget in widgets
+            if isinstance(widget, ttk.Checkbutton) and widget.cget("text")
+        ]
+        observed["visible_labelled_models"] = bool(
+            [widget for widget in checkbuttons if widget.winfo_ismapped()]
+        )
+        observed["inactive_controls_unmapped"] = any(
+            not widget.winfo_ismapped() for widget in checkbuttons
+        )
+        observed["model_chain_footer"] = tab_orders[-1][-3:]
+        observed["model_controls_before_footer"] = all(
+            label not in {"Back", "Next", "Cancel"} for label in tab_orders[-1][:-3]
+        )
+
+    monkeypatch.setattr(tk.Tk, "mainloop", inspect_instead_of_mainloop)
+
+    assert setup_gui.run_setup_wizard(
+        memory_ceiling_gb=32.0, detected_comfyui=None, cleanup_names=[],
+    ) is None
+    assert observed == {
+        "bindings": {"<Tab>": True, "<Shift-Tab>": True, "<ISO_Left_Tab>": True},
+        "space_bindings": {"TButton": True, "TCheckbutton": True, "TRadiobutton": True},
+        "navigation": {"Back", "Next", "Cancel"},
+        "visible_labelled_models": True,
+        "inactive_controls_unmapped": True,
+        "model_chain_footer": ["Back", "Next", "Cancel"],
+        "model_controls_before_footer": True,
+    }
 
 
 def test_engine_checkbox_label_marks_experimental_and_unavailable_engines():

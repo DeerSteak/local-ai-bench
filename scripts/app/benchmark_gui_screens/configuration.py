@@ -97,20 +97,17 @@ class ConfigurationScreen:
             indent = 32 if entry.base_model and self.variant_children_visible else 12
             option_row.grid(row=row, column=0, sticky="ew", padx=(indent, 0), pady=2)
             option_row.columnconfigure(1, weight=1)
-            widget = self.ttk.Checkbutton(
-                option_row, variable=self.model_vars[entry.value],
-                command=self.sync_variant_parents if entry.base_model else None,
-            )
-            widget.grid(row=0, column=0, sticky="nw")
             label_text = (
                 entry.label.removeprefix(f"{entry.base_label} — ")
                 if self.variant_children_visible and entry.base_model
                 else entry.base_label or entry.label if entry.base_model
                 else entry.label
             )
-            label = self.ttk.Label(option_row, text=label_text, wraplength=280)
-            label.grid(row=0, column=1, sticky="w", padx=(2, 0))
-            label.bind("<Button-1>", lambda _event, control=widget: control.invoke())
+            widget = self.ttk.Checkbutton(
+                option_row, text=label_text, variable=self.model_vars[entry.value],
+                command=self.sync_variant_parents if entry.base_model else None,
+            )
+            widget.grid(row=0, column=0, columnspan=2, sticky="nw")
             self.ttk.Button(
                 self.model_rows, text="Reset", width=6,
                 command=lambda key=entry.value: self.model_vars[key].set(self.model_defaults[key]),
@@ -223,17 +220,14 @@ def _build_tests(ttk, parent, tests, variables, defaults):
         option_row = ttk.Frame(box)
         option_row.grid(row=row, column=0, sticky="ew", pady=2)
         option_row.columnconfigure(1, weight=1)
-        widget = ttk.Checkbutton(option_row, variable=variables[name])
-        widget.grid(row=0, column=0, sticky="nw")
         text = label if entry.available else f"{label} (model not installed)"
-        option_label = ttk.Label(option_row, text=text, wraplength=280)
-        option_label.grid(row=0, column=1, sticky="w", padx=(2, 0))
-        option_label.bind("<Button-1>", lambda _event, control=widget: control.invoke())
+        widget = ttk.Checkbutton(option_row, text=text, variable=variables[name])
+        widget.grid(row=0, column=0, columnspan=2, sticky="nw")
         ttk.Button(
             box, text="Reset", width=6,
             command=lambda key=name: variables[key].set(defaults[key]),
         ).grid(row=row, column=1, sticky="e", padx=(8, 0))
-        widgets[name], labels[name] = widget, option_label
+        widgets[name], labels[name] = widget, widget
     return box, widgets, labels
 
 

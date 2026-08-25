@@ -30,6 +30,7 @@ class ReportModel:
     recommendation_verdict: str
     recommendation_constraints: tuple[tuple[str, str], ...]
     recommendation_candidates: tuple[tuple[str, str, str, str], ...]
+    workspace_selection: tuple[tuple[str, str, str], ...]
 
 
 def _text(value, fallback="Not recorded") -> str:
@@ -84,7 +85,8 @@ def _recommendation_rows(artifact: dict | None) -> tuple[str, tuple, tuple]:
 
 def build_report_model(result: dict, policy: dict | None = None,
                        recommendation: dict | None = None,
-                       recommendation_source: dict | None = None) -> ReportModel:
+                       recommendation_source: dict | None = None,
+                       workspace_selection: dict | None = None) -> ReportModel:
     if not isinstance(result, dict):
         raise ValueError("result must be a JSON object")
     validate_json_data(result)
@@ -193,6 +195,16 @@ def build_report_model(result: dict, policy: dict | None = None,
             recommendation, source_result=recommendation_source or result)
     recommendation_verdict, recommendation_constraints, recommendation_candidates = \
         _recommendation_rows(recommendation)
+    selection_rows = ()
+    if workspace_selection is not None:
+        from scripts.results.workspace_selection import validate_workspace_selection
+
+        validate_workspace_selection(workspace_selection)
+        baseline = workspace_selection["baseline_sha256"]
+        selection_rows = tuple((
+            "Baseline" if item["sha256"] == baseline else "Selected",
+            item["name"], item["sha256"],
+        ) for item in workspace_selection["results"])
     return ReportModel(
         title=f"Local AI Bench Decision Report - {hostname}", metadata=metadata,
         readiness=readiness, readiness_detail=readiness_detail,
@@ -202,6 +214,7 @@ def build_report_model(result: dict, policy: dict | None = None,
         recommendation_verdict=recommendation_verdict,
         recommendation_constraints=recommendation_constraints,
         recommendation_candidates=recommendation_candidates,
+        workspace_selection=selection_rows,
     )
 
 
@@ -242,6 +255,7 @@ th,td{{padding:8px 10px;border-bottom:1px solid #d7dde5;text-align:left}}th{{bac
 <h2>Recommendation: {html.escape(model.recommendation_verdict)}</h2>
 {_html_table(("Constraint", "Value"), model.recommendation_constraints)}
 {_html_table(("Group", "Candidate", "Reason or objective", "Evidence"), model.recommendation_candidates)}
+<h2>Workspace selection</h2>{_html_table(("Role", "Result", "SHA-256"), model.workspace_selection)}
 <h2>Interpretation limits</h2><div class="limitations">This report presents measured evidence, not a hidden composite score or a universal recommendation. Compare only compatible methodology, model artifacts, runtimes, cache semantics, and effective settings. Missing or invalid data is not zero. Review raw samples, exclusion reasons, and the verified result bundle before making a purchase, launch, or capacity decision.</div>
 <footer>Generated deterministically from a Local AI Bench result. No external assets, scripts, telemetry, or network resources are embedded.</footer>
 </body></html>"""
@@ -249,11 +263,12 @@ th,td{{padding:8px 10px;border-bottom:1px solid #d7dde5;text-align:left}}th{{bac
 
 def write_html_report(result: dict, path: Path, policy: dict | None = None,
                       recommendation: dict | None = None,
-                      recommendation_source: dict | None = None) -> Path:
+                      recommendation_source: dict | None = None,
+                      workspace_selection: dict | None = None) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(render_html(build_report_model(
-        result, policy, recommendation, recommendation_source,
+        result, policy, recommendation, recommendation_source, workspace_selection,
     )), encoding="utf-8", newline="\n")
     return path
 
@@ -265,14 +280,17 @@ def report_output_paths(html_path: Path) -> tuple[Path, Path]:
 
 def write_pdf_report(result: dict, path: Path, policy: dict | None = None,
                      recommendation: dict | None = None,
-                     recommendation_source: dict | None = None) -> Path:
+                     recommendation_source: dict | None = None,
+                     workspace_selection: dict | None = None) -> Path:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.lib.units import inch
     from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-    model = build_report_model(result, policy, recommendation, recommendation_source)
+    model = build_report_model(
+        result, policy, recommendation, recommendation_source, workspace_selection,
+    )
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     styles = getSampleStyleSheet()
@@ -329,6 +347,9 @@ def write_pdf_report(result: dict, path: Path, policy: dict | None = None,
     add_table(
         "Recommendation candidates", ("Group", "Candidate", "Reason or objective", "Evidence"),
         model.recommendation_candidates,
+    )
+    add_table(
+        "Workspace selection", ("Role", "Result", "SHA-256"), model.workspace_selection,
     )
     story.extend([Spacer(1, 12), Paragraph("Interpretation limits", styles["Heading2"]), Paragraph(
         "This report presents measured evidence, not a hidden composite score or a universal recommendation. "

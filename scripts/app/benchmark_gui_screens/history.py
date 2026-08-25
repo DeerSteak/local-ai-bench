@@ -11,6 +11,35 @@ HISTORY_HEADING_BACKGROUND = "#dce8f3"
 HISTORY_SELECTED_BACKGROUND = "#245b85"
 
 
+def toggle_focused_history_item(tree) -> str:
+    item = tree.focus()
+    if not item:
+        children = tree.get_children()
+        if not children:
+            return "break"
+        item = children[0]
+        tree.focus(item)
+    if item in tree.selection():
+        tree.selection_remove(item)
+    else:
+        tree.selection_add(item)
+    tree.see(item)
+    return "break"
+
+
+def extend_history_selection(tree, direction: int) -> str:
+    children = list(tree.get_children())
+    if not children:
+        return "break"
+    current = tree.focus()
+    index = children.index(current) if current in children else 0
+    target = children[max(0, min(len(children) - 1, index + direction))]
+    tree.focus(target)
+    tree.selection_add(target)
+    tree.see(target)
+    return "break"
+
+
 @dataclass
 class HistoryScreen:
     frame: Any
@@ -52,7 +81,7 @@ def build_history_screen(notebook, *, tk, ttk) -> HistoryScreen:
     engine_combo.pack(side="left", padx=(8, 14))
     tree = ttk.Treeview(
         frame, columns=("date", "system", "status", "engine", "profile", "models"),
-        show="headings", selectmode="extended", style="History.Treeview",
+        show="headings", selectmode="extended", style="History.Treeview", takefocus=True,
     )
     style = ttk.Style(tree)
     style.configure(
@@ -87,6 +116,9 @@ def build_history_screen(notebook, *, tk, ttk) -> HistoryScreen:
         tree.column(column, width=width, anchor="w")
     scrollbar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
     tree.configure(yscrollcommand=scrollbar.set)
+    tree.bind("<space>", lambda _event: toggle_focused_history_item(tree))
+    tree.bind("<Shift-Up>", lambda _event: extend_history_selection(tree, -1))
+    tree.bind("<Shift-Down>", lambda _event: extend_history_selection(tree, 1))
     tree.grid(row=2, column=0, sticky="nsew")
     scrollbar.grid(row=2, column=1, sticky="ns")
     actions = ttk.Frame(frame)
@@ -95,7 +127,9 @@ def build_history_screen(notebook, *, tk, ttk) -> HistoryScreen:
     review_actions.pack(fill="x")
     recovery_actions = ttk.Frame(actions)
     recovery_actions.pack(fill="x", pady=(8, 0))
-    message = tk.StringVar(value="History has not been loaded.")
+    message = tk.StringVar(
+        value="History has not been loaded. Keyboard: Shift+Up/Down extends selection; Space toggles a row.",
+    )
     ttk.Label(frame, textvariable=message).grid(row=4, column=0, sticky="w", pady=(8, 0))
     return HistoryScreen(
         frame, filters, query, status_filter, engine_filter, engine_combo, tree,

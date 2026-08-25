@@ -315,7 +315,7 @@ It ranks below memory only because it needs elevated permissions on some platfor
 - [x] Missing permissions are detected by telemetry source discovery and reported before the run starts, with the reason recorded in the results; item 2's preflight displays the same result when present.
 - [x] Unavailable power never fails a run and never records zero; it records unavailable with a reason.
 - [x] Integration uses real sample timestamps, verified by a test with deliberately uneven spacing.
-- [ ] Power, memory, and temperature samples share one timeline and one set of timestamps.
+- [x] Power, memory, and temperature samples share one timeline and one set of timestamps.
 - [x] Each power source and sampling interval passes the shared observer-effect policy or receives the resulting opt-in/unsupported methodology status.
 - [x] Power-source discovery works without item 2; preflight only presents the result when available.
 - [x] Power telemetry passes the shared privacy and outbound policy.
@@ -595,14 +595,14 @@ It is last because it is the largest build for the least new capability — it c
 
 ## Acceptance criteria
 
-- [ ] Selecting runs, viewing charts and raw samples, setting a baseline, evaluating policy, reading the recommendation, and generating report and bundle happen without leaving one surface.
-- [ ] One selection state drives every consumer; a test asserts report and bundle output derives from the same state as the displayed view.
-- [ ] The exported artifact records the selection state that produced it.
-- [ ] Compatibility and methodology warnings appear at selection time, not at export.
-- [ ] Acceptance policy is persistent and editable in place, with results updating.
-- [ ] The standalone dashboard continues to work unchanged for headless and sample review.
-- [ ] No chart logic is duplicated; both surfaces consume the same `utils/*.ts` modules.
-- [ ] The workspace operates fully offline.
+- [x] Selecting runs, viewing charts and raw samples, setting a baseline, evaluating policy, reading the recommendation, and generating report and bundle happen without leaving one surface.
+- [x] One selection state drives every consumer; a test asserts report and bundle output derives from the same state as the displayed view.
+- [x] The exported artifact records the selection state that produced it.
+- [x] Compatibility and methodology warnings appear at selection time, not at export.
+- [x] Acceptance policy is persistent and editable in place, with results updating.
+- [x] The standalone dashboard continues to work unchanged for headless and sample review.
+- [x] No chart logic is duplicated; both surfaces consume the same `utils/*.ts` modules.
+- [x] The workspace operates fully offline.
 
 ---
 

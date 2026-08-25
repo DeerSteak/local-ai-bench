@@ -27,6 +27,9 @@ from scripts.setup.model_inventory import (
     engine_fit_report, engine_fit_warnings, fits_any_engine, format_engine_sizes,
 )
 from scripts.app.tk_utils import mousewheel_scroll_units, refresh_tk_layout
+from scripts.app.benchmark_gui_accessibility import (
+    configure_explicit_tab_order, configure_keyboard_accessibility,
+)
 
 
 LLM_GROUPS = (
@@ -36,6 +39,22 @@ LLM_GROUPS = (
     ("Large LLMs", expanded_variant_catalog(LLM_MODELS_LARGE)),
 )
 HF_LOGIN_URL = "https://huggingface.co/login"
+
+
+def display_wizard_page(pages, index: int) -> None:
+    for page_index, page in enumerate(pages):
+        if page_index == index:
+            page.grid()
+        else:
+            page.grid_remove()
+
+
+def focus_scroll_fraction(*, widget_top: int, widget_bottom: int, view_top: int,
+                          view_bottom: int, content_height: int) -> float | None:
+    if content_height <= 0 or (widget_top >= view_top and widget_bottom <= view_bottom):
+        return None
+    target = widget_top if widget_top < view_top else widget_bottom - (view_bottom - view_top)
+    return max(0.0, min(1.0, target / content_height))
 
 
 def model_row_label(model: dict, engines, memory_ceiling_gb: float | None) -> str:
@@ -241,6 +260,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     root.minsize(720, 580)
     root.columnconfigure(0, weight=1)
     root.rowconfigure(0, weight=1)
+    configure_keyboard_accessibility(root, ttk)
 
     def bring_to_front() -> None:
         root.lift()
@@ -416,19 +436,17 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             option_row.columnconfigure(1, weight=1)
             checkbutton = (
                 ttk.Checkbutton(
-                    option_row, variable=model_vars[key], command=sync_variant_parents,
+                    option_row, text=model_row_label(model, initial_engines, memory_ceiling_gb),
+                    variable=model_vars[key], command=sync_variant_parents,
                 )
-                if base_model else ttk.Checkbutton(option_row, variable=model_vars[key])
+                if base_model else ttk.Checkbutton(
+                    option_row, text=model_row_label(model, initial_engines, memory_ceiling_gb),
+                    variable=model_vars[key],
+                )
             )
-            checkbutton.grid(row=0, column=0, sticky="nw")
-            label = ttk.Label(
-                option_row, text=model_row_label(model, initial_engines, memory_ceiling_gb),
-                wraplength=520,
-            )
-            label.grid(row=0, column=1, sticky="w", padx=(2, 0))
-            label.bind("<Button-1>", lambda _event, control=checkbutton: control.invoke())
+            checkbutton.grid(row=0, column=0, columnspan=2, sticky="nw")
             if "download_size" in model:
-                labelled_models[key] = (label, model)
+                labelled_models[key] = (checkbutton, model)
             if base_model:
                 variant_child_rows[key] = (option_row, row)
             license_url = model.get("license_url")
@@ -659,12 +677,49 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
         page_index = index
         if pages[index] is models_page:
             refresh_model_rows()
-        pages[index].tkraise()
+        display_wizard_page(pages, index)
         back_button.configure(state="disabled" if index == 0 else "normal")
         next_button.configure(text="Install" if index == len(pages) - 1 else "Next")
         if index == len(pages) - 1:
             refresh_review()
         refresh_tk_layout(root)
+        controls = []
+
+        def collect_controls(widget) -> None:
+            for child in widget.winfo_children():
+                if isinstance(child, (
+                    ttk.Button, ttk.Checkbutton, ttk.Radiobutton, ttk.Entry, ttk.Combobox,
+                    tk.Text,
+                )):
+                    controls.append(child)
+                collect_controls(child)
+
+        collect_controls(pages[index])
+        page_controls = sorted(
+            controls,
+            key=lambda widget: (widget.winfo_rooty(), widget.winfo_rootx()),
+        )
+        configure_explicit_tab_order([
+            *page_controls, back_button, next_button, cancel_button,
+        ])
+        if pages[index] is models_page:
+            def reveal_model_control(event) -> None:
+                region = canvas.bbox("all")
+                if region is None:
+                    return
+                widget_top = event.widget.winfo_rooty() - model_list.winfo_rooty()
+                fraction = focus_scroll_fraction(
+                    widget_top=widget_top,
+                    widget_bottom=widget_top + event.widget.winfo_height(),
+                    view_top=int(canvas.canvasy(0)),
+                    view_bottom=int(canvas.canvasy(canvas.winfo_height())),
+                    content_height=region[3] - region[1],
+                )
+                if fraction is not None:
+                    canvas.yview_moveto(fraction)
+
+            for control in page_controls:
+                control.bind("<FocusIn>", reveal_model_control, add="+")
 
     def page_enabled() -> list[bool]:
         image_selected = any(model_vars[model["short"]].get() for model in IMAGE_MODELS)

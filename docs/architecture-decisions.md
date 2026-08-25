@@ -16,6 +16,15 @@ A new base class, manager, provider, repository, event bus, dependency-injection
 
 ## Active decisions
 
+### AD-020 — Keep the dashboard as the unified decision workspace
+
+- Status: accepted
+- Requirement: one selection must drive charts, compatibility warnings, policy, recommendation, report, and bundle output without duplicating chart logic or adding an online dependency.
+- Decision: extend the existing React dashboard into the workspace and exchange one digest-bound `workspace_selection` artifact with Python report and bundle functions. The artifact records selected result names and SHA-256 identities, baseline, view filters, policy, and authoritative recommendation without private source paths. The standalone launcher remains supported and stages local files for the same dashboard build.
+- Rejected alternative: reimplement charts in Tk or embed a platform-specific webview. Both create a second rendering path; the webview also adds a cross-platform runtime and shutdown boundary before solving shared state.
+- Qualification boundary: automated tests cover selection validation, export provenance, standalone loading, and offline assets. Human Slice D qualification still verifies Windows, macOS, and Linux launch, accessibility, packaging size, clean shutdown, and file handoff.
+- Evidence: `scripts/results/workspace_selection.py`, `dashboard/src/utils/workspace.ts`, and their contract tests.
+
 ### AD-001 — Preserve 4.1 application version during the reliability program
 
 - Status: accepted
