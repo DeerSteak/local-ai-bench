@@ -1,0 +1,64 @@
+{
+  "accessibility_and_usability": {
+    "status": "passed",
+    "approved_by": "project maintainer",
+    "approved_at": "2026-08-24",
+    "evidence": [
+      "VERSION_6_PLAN.md#acceptance-criteria",
+      "docs/setup.md#what-the-setup-scripts-do"
+    ]
+  },
+  "telemetry_qualification": {
+    "memory": {
+      "status": "passed",
+      "protocol": "paired_observer_v1",
+      "interval_sec": 0.5,
+      "trial_pairs": 20,
+      "sources": ["process RSS", "host memory", "accelerator memory"],
+      "platform_classes": ["discrete GPU", "unified memory"],
+      "approved_by": "project maintainer",
+      "approved_at": "2026-08-24",
+      "evidence": [
+        "docs/qualification/memory-macos-m4-pro-500ms.md",
+        "docs/qualification/memory-windows-rtx-5090-500ms.md",
+        "docs/qualification/memory-wsl-rtx-5090-500ms.md"
+      ]
+    },
+    "power": {
+      "status": "passed",
+      "protocol": "paired_observer_v1",
+      "interval_sec": 0.5,
+      "trial_pairs": 20,
+      "sources": ["macOS powermetrics", "nvidia-smi", "rocm-smi"],
+      "platform_classes": ["unified memory", "Linux small system"],
+      "approved_by": "project maintainer",
+      "approved_at": "2026-08-24",
+      "evidence": [
+        "docs/qualification/power-macos-m5-pro.md",
+        "docs/qualification/sustained-linux-small-systems.md"
+      ]
+    },
+    "temperature": {
+      "status": "passed",
+      "protocol": "paired_observer_v1",
+      "interval_sec": 0.5,
+      "trial_pairs": 20,
+      "sources": ["hwmon", "nvidia-smi", "rocm-smi"],
+      "platform_classes": ["Linux small system"],
+      "approved_by": "project maintainer",
+      "approved_at": "2026-08-24",
+      "evidence": ["docs/qualification/sustained-linux-small-systems.md"]
+    },
+    "combined": {
+      "status": "passed",
+      "protocol": "paired_observer_v1",
+      "interval_sec": 0.5,
+      "trial_pairs": 20,
+      "sources": ["memory", "power", "temperature", "throughput"],
+      "platform_classes": ["Linux small system"],
+      "approved_by": "project maintainer",
+      "approved_at": "2026-08-24",
+      "evidence": ["docs/qualification/sustained-linux-small-systems.md"]
+    }
+  }
+}

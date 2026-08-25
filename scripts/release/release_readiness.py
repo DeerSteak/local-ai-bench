@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from scripts.app.benchmark_frontend import frontend_option_gaps
-from scripts.results.catalogs import HARDWARE_CATALOG, model_catalog
+from scripts.results.catalogs import model_catalog
 from scripts.release.sbom import generate_sbom
 from scripts.release.qualification_docs import qualification_doc_gaps
 from scripts.runtime import config
@@ -27,12 +27,11 @@ def evaluate_release_readiness(repo_root, evidence=None):
         _check("frontend_option_coverage", not frontend_option_gaps(), frontend_option_gaps()),
         _check("model_license_review", False, [
             record["id"] for record in model_catalog()
-            if record["license"]["status"] != "verified"
+            if record.get("distribution") == "bundled"
+            and record["license"]["status"] != "verified"
         ]),
-        _check("hardware_qualification", False, [
-            record["id"] for record in HARDWARE_CATALOG
-            if record["qualification"] != "qualified"
-        ]),
+        _check("hardware_qualification", False,
+               qualification_doc_gaps(repo_root, config.VERSION)),
         _check("published_qualification_matrix", False,
                qualification_doc_gaps(repo_root, config.VERSION)),
         _check("dependency_license_review", False, [

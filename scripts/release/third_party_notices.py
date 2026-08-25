@@ -21,14 +21,15 @@ def generate_notices(sbom):
         "",
         f"Unresolved license records: **{len(unresolved)}**",
         "",
-        "| Ecosystem | Package | Version | Scope | Declared license | Source |",
-        "|---|---|---|---|---|---|",
+        "| Ecosystem | Package | Version | Scope | Declared license | Source | Review note |",
+        "|---|---|---|---|---|---|---|",
     ]
     for item in packages:
         lines.append("| " + " | ".join([
             _cell(item.get("ecosystem")), _cell(item.get("name")),
             _cell(item.get("version") or "unversioned"), _cell(item.get("scope")),
             _cell(item.get("license") or "NOASSERTION"), _cell(item.get("resolved") or "not recorded"),
+            _cell(item.get("review_note") or ""),
         ]) + " |")
     if unresolved:
         lines += ["", "## Release blockers", ""]

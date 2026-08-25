@@ -17,6 +17,12 @@ def test_notices_list_dependencies_and_explicit_license_blockers():
     assert "`pypi:unknown` has no reviewed license assertion" in output
 
 
+def test_notices_expose_license_review_notes():
+    sbom = sample_sbom()
+    sbom["packages"][1]["review_note"] = "Preserve notices."
+    assert "Preserve notices." in generate_notices(sbom)
+
+
 def test_notices_are_deterministic_and_escape_table_content():
     sbom = sample_sbom()
     sbom["packages"][0]["name"] = "unknown|package"

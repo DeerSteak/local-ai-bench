@@ -35,7 +35,7 @@ Evidence confidence is labeled:
 - **Verified** — supported methodology, complete required coverage, verified source/bundle identity, and required valid evidence.
 - **Limited** — compatible first-party evidence with declared partial coverage, low repetition count, or an unqualified environment; useful for narrowing choices but not a supported final recommendation.
 - **Community preview** — externally submitted evidence that has not passed the supported verification/moderation policy; visibly separated and disabled from supported rankings by default.
-- **Insufficient** — missing, invalid, incompatible, expired, license-unknown where commercial use matters, or outside the supported catalog.
+- **Insufficient** — missing, invalid, incompatible, expired, a bundled artifact without verified distribution rights, or outside the supported catalog.
 
 ## Memory fit and headroom
 

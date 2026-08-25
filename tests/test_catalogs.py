@@ -16,10 +16,13 @@ def test_model_catalog_covers_benchmark_catalog_with_stable_ids():
     assert len(records) == expected
     assert len({record["id"] for record in records}) == expected
     assert all(record["workloads"] and record["runtimes"] for record in records)
+    assert all(record["distribution"] == "download_by_reference" for record in records)
 
 
-def test_unknown_license_blocks_supported_recommendation():
+def test_download_by_reference_does_not_block_supported_recommendation():
     record = model_catalog()[0]
+    assert recommendation_eligible(record) is True
+    record["distribution"] = "bundled"
     assert recommendation_eligible(record) is False
     record["license"] = {"status": "verified", "identifier": "example"}
     assert recommendation_eligible(record) is True

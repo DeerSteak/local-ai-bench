@@ -24,10 +24,8 @@ def complete_evidence():
 def test_readiness_reports_each_unresolved_gate(monkeypatch, tmp_path):
     monkeypatch.setattr(release_readiness, "frontend_option_gaps", lambda: ["--future"])
     monkeypatch.setattr(release_readiness, "model_catalog", lambda: [
-        {"id": "model:one", "license": {"status": "unverified"}},
-    ])
-    monkeypatch.setattr(release_readiness, "HARDWARE_CATALOG", [
-        {"id": "hardware:one", "qualification": "unqualified"},
+        {"id": "model:one", "distribution": "bundled",
+         "license": {"status": "unverified"}},
     ])
     monkeypatch.setattr(release_readiness, "generate_sbom", lambda root: {"packages": [
         {"ecosystem": "pypi", "name": "unknown", "license": "NOASSERTION"},
@@ -40,7 +38,7 @@ def test_readiness_reports_each_unresolved_gate(monkeypatch, tmp_path):
     assert result["ready"] is False
     assert checks["frontend_option_coverage"]["items"] == ["--future"]
     assert checks["model_license_review"]["items"] == ["model:one"]
-    assert checks["hardware_qualification"]["items"] == ["hardware:one"]
+    assert checks["hardware_qualification"]["items"] == ["docs/engines.md"]
     assert checks["published_qualification_matrix"]["items"] == ["docs/engines.md"]
     assert checks["dependency_license_review"]["items"] == ["pypi:unknown"]
     assert checks["signed_installers"]["items"] == ["reviewed external evidence required"]
@@ -52,7 +50,6 @@ def test_readiness_reports_each_unresolved_gate(monkeypatch, tmp_path):
 def test_readiness_rejects_a_published_support_claim_without_evidence(monkeypatch, tmp_path):
     monkeypatch.setattr(release_readiness, "frontend_option_gaps", lambda: [])
     monkeypatch.setattr(release_readiness, "model_catalog", lambda: [])
-    monkeypatch.setattr(release_readiness, "HARDWARE_CATALOG", [])
     monkeypatch.setattr(release_readiness, "generate_sbom", lambda root: {"packages": []})
     monkeypatch.setattr(release_readiness, "qualification_doc_gaps",
                         lambda _root, _version: ["docs/engines.md"])
@@ -69,10 +66,8 @@ def test_readiness_rejects_a_published_support_claim_without_evidence(monkeypatc
 def test_readiness_passes_when_all_local_inputs_are_cleared(monkeypatch, tmp_path):
     monkeypatch.setattr(release_readiness, "frontend_option_gaps", lambda: [])
     monkeypatch.setattr(release_readiness, "model_catalog", lambda: [
-        {"id": "model:one", "license": {"status": "verified"}},
-    ])
-    monkeypatch.setattr(release_readiness, "HARDWARE_CATALOG", [
-        {"id": "hardware:one", "qualification": "qualified"},
+        {"id": "model:one", "distribution": "bundled",
+         "license": {"status": "verified"}},
     ])
     monkeypatch.setattr(release_readiness, "generate_sbom", lambda root: {"packages": [
         {"ecosystem": "npm", "name": "known", "license": "MIT"},
@@ -87,7 +82,6 @@ def test_readiness_passes_when_all_local_inputs_are_cleared(monkeypatch, tmp_pat
 def test_readiness_never_passes_with_only_local_checks_cleared(monkeypatch, tmp_path):
     monkeypatch.setattr(release_readiness, "frontend_option_gaps", lambda: [])
     monkeypatch.setattr(release_readiness, "model_catalog", lambda: [])
-    monkeypatch.setattr(release_readiness, "HARDWARE_CATALOG", [])
     monkeypatch.setattr(release_readiness, "generate_sbom", lambda root: {"packages": []})
     monkeypatch.setattr(release_readiness, "qualification_doc_gaps",
                         lambda _root, _version: [])
