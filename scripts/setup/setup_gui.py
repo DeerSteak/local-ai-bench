@@ -27,7 +27,9 @@ from scripts.setup.model_inventory import (
     engine_fit_report, engine_fit_warnings, fits_any_engine, format_engine_sizes,
 )
 from scripts.app.tk_utils import mousewheel_scroll_units, refresh_tk_layout
-from scripts.app.benchmark_gui_accessibility import configure_keyboard_accessibility
+from scripts.app.benchmark_gui_accessibility import (
+    configure_explicit_tab_order, configure_keyboard_accessibility,
+)
 
 
 LLM_GROUPS = (
@@ -37,6 +39,14 @@ LLM_GROUPS = (
     ("Large LLMs", expanded_variant_catalog(LLM_MODELS_LARGE)),
 )
 HF_LOGIN_URL = "https://huggingface.co/login"
+
+
+def display_wizard_page(pages, index: int) -> None:
+    for page_index, page in enumerate(pages):
+        if page_index == index:
+            page.grid()
+        else:
+            page.grid_remove()
 
 
 def model_row_label(model: dict, engines, memory_ceiling_gb: float | None) -> str:
@@ -659,12 +669,28 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
         page_index = index
         if pages[index] is models_page:
             refresh_model_rows()
-        pages[index].tkraise()
+        display_wizard_page(pages, index)
         back_button.configure(state="disabled" if index == 0 else "normal")
         next_button.configure(text="Install" if index == len(pages) - 1 else "Next")
         if index == len(pages) - 1:
             refresh_review()
         refresh_tk_layout(root)
+        controls = []
+
+        def collect_controls(widget) -> None:
+            for child in widget.winfo_children():
+                if isinstance(child, (
+                    ttk.Button, ttk.Checkbutton, ttk.Radiobutton, ttk.Entry, ttk.Combobox,
+                    tk.Text,
+                )):
+                    controls.append(child)
+                collect_controls(child)
+
+        collect_controls(pages[index])
+        configure_explicit_tab_order(sorted(
+            [*controls, back_button, next_button, cancel_button],
+            key=lambda widget: (widget.winfo_rooty(), widget.winfo_rootx()),
+        ))
 
     def page_enabled() -> list[bool]:
         image_selected = any(model_vars[model["short"]].get() for model in IMAGE_MODELS)

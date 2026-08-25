@@ -18,6 +18,38 @@ def invoke_control(widget) -> str:
     return "break"
 
 
+def focus_in_order(widgets, current, *, reverse: bool) -> str:
+    available = [
+        widget for widget in widgets
+        if widget.winfo_viewable() and not (
+            hasattr(widget, "instate") and widget.instate(("disabled",))
+        )
+    ]
+    if not available:
+        return "break"
+    index = available.index(current) if current in available else (-1 if not reverse else 0)
+    target = available[(index + (-1 if reverse else 1)) % len(available)]
+    target.focus_set()
+    return "break"
+
+
+def configure_explicit_tab_order(widgets) -> None:
+    ordered = list(widgets)
+    for widget in ordered:
+        widget.configure(takefocus=True)
+        widget.bind(
+            "<Tab>", lambda event, controls=ordered: focus_in_order(
+                controls, event.widget, reverse=False,
+            ),
+        )
+        for sequence in ("<Shift-Tab>", "<ISO_Left_Tab>"):
+            widget.bind(
+                sequence, lambda event, controls=ordered: focus_in_order(
+                    controls, event.widget, reverse=True,
+                ),
+            )
+
+
 def mark_notebook_focus(notebook) -> None:
     clear_notebook_focus(notebook)
     selected = notebook.select()

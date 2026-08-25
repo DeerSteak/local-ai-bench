@@ -13,6 +13,7 @@ from scripts.setup.setup_gui import (
     sudo_notice,
     model_row_label,
     default_model_selection,
+    display_wizard_page,
     hf_token_review_label,
     license_button_label,
     mousewheel_scroll_units,
@@ -81,6 +82,24 @@ def test_page_navigation_holds_position_when_nothing_remains():
     assert next_page_index(0, -1, [True, True]) == 0
     assert next_page_index(1, 1, [True, True]) == 1
     assert next_page_index(0, 1, [True, False, False]) == 0
+
+
+def test_display_wizard_page_unmaps_every_inactive_page():
+    class Page:
+        def __init__(self):
+            self.visible = True
+
+        def grid(self):
+            self.visible = True
+
+        def grid_remove(self):
+            self.visible = False
+
+    pages = [Page(), Page(), Page()]
+
+    display_wizard_page(pages, 1)
+
+    assert [page.visible for page in pages] == [False, True, False]
 
 
 @pytest.mark.parametrize(
@@ -249,11 +268,22 @@ def test_setup_wizard_installs_keyboard_navigation(monkeypatch):
             widget.cget("text") for widget in widgets
             if isinstance(widget, ttk.Button) and widget.cget("text") in {"Back", "Next", "Cancel"}
         }
-        model_controls = [
+        next_button = next(
+            widget for widget in widgets
+            if isinstance(widget, ttk.Button) and widget.cget("text") == "Next"
+        )
+        next_button.invoke()
+        root.update_idletasks()
+        checkbuttons = [
             widget for widget in widgets
             if isinstance(widget, ttk.Checkbutton) and widget.cget("text")
         ]
-        observed["labelled_models"] = bool(model_controls)
+        observed["visible_labelled_models"] = bool(
+            [widget for widget in checkbuttons if widget.winfo_ismapped()]
+        )
+        observed["inactive_controls_unmapped"] = any(
+            not widget.winfo_ismapped() for widget in checkbuttons
+        )
 
     monkeypatch.setattr(tk.Tk, "mainloop", inspect_instead_of_mainloop)
 
@@ -264,7 +294,8 @@ def test_setup_wizard_installs_keyboard_navigation(monkeypatch):
         "bindings": {"<Tab>": True, "<Shift-Tab>": True, "<ISO_Left_Tab>": True},
         "space_bindings": {"TButton": True, "TCheckbutton": True, "TRadiobutton": True},
         "navigation": {"Back", "Next", "Cancel"},
-        "labelled_models": True,
+        "visible_labelled_models": True,
+        "inactive_controls_unmapped": True,
     }
 
 

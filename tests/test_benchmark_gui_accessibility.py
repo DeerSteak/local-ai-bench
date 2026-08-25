@@ -1,5 +1,6 @@
 from scripts.app.benchmark_gui_accessibility import (
-    clear_notebook_focus, focus_relative, invoke_control, mark_notebook_focus,
+    clear_notebook_focus, configure_explicit_tab_order, focus_in_order, focus_relative,
+    invoke_control, mark_notebook_focus,
 )
 
 
@@ -72,3 +73,43 @@ def test_notebook_focus_marker_is_added_and_removed():
 
     clear_notebook_focus(notebook)
     assert notebook.tabs["tab-1"] == "Configuration"
+
+
+class OrderedWidget(FakeWidget):
+    def __init__(self, *, visible=True, disabled=False):
+        super().__init__(disabled=disabled)
+        self.visible = visible
+        self.options = {}
+        self.bindings = {}
+
+    def winfo_viewable(self):
+        return self.visible
+
+    def configure(self, **options):
+        self.options.update(options)
+
+    def bind(self, sequence, callback):
+        self.bindings[sequence] = callback
+
+
+def test_explicit_tab_order_skips_hidden_and_disabled_controls():
+    first = OrderedWidget()
+    hidden = OrderedWidget(visible=False)
+    disabled = OrderedWidget(disabled=True)
+    last = OrderedWidget()
+
+    assert focus_in_order([first, hidden, disabled, last], first, reverse=False) == "break"
+    assert last.focused
+    last.focused = False
+    assert focus_in_order([first, hidden, disabled, last], first, reverse=True) == "break"
+    assert last.focused
+
+
+def test_explicit_tab_order_marks_and_binds_every_control():
+    widgets = [OrderedWidget(), OrderedWidget()]
+
+    configure_explicit_tab_order(widgets)
+
+    assert all(widget.options == {"takefocus": True} for widget in widgets)
+    assert all(set(widget.bindings) == {"<Tab>", "<Shift-Tab>", "<ISO_Left_Tab>"}
+               for widget in widgets)
