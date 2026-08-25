@@ -58,7 +58,7 @@ A recommendation artifact produced by `python -m scripts.results.recommendation_
 | llama-bench | Opt-in — two line charts per model: Decode Throughput across prefilled prompt depths, with one line per tg size and system; and Prompt Processing Throughput across pp sizes, with one line per system. See [Workloads](workloads.md#llama-bench) |
 | llama-bench Concurrency | Opt-in — aggregate decode throughput from `llama-batched-bench`, charted across parallel sequence counts with one chart per model and tg size. See [Workloads](workloads.md#llama-bench-concurrency) |
 
-The **Models** filter and **Machine** labels are shared between the LLM, LLM Conversation, Sustained Load, Concurrency, Accuracy, llama-bench, and llama-bench Concurrency sections, so switching between them keeps the same models/files selected.
+The **Models** filter and **Machine** labels are shared between the LLM, LLM Conversation, Sustained Load, Concurrency, Accuracy, llama-bench, and llama-bench Concurrency sections, so switching between them keeps the same models/files selected. Sortable raw-table headers are keyboard-focusable buttons; Enter or Space changes their sort, and assistive technology receives the active ascending or descending state.
 
 ## Chart Style and Group By
 

@@ -19,8 +19,16 @@ function SortTh({ label, sortKey, sortConfig, onCycleSort }: {
   const active = sortConfig.key === sortKey;
   const arrow = active ? (sortConfig.dir === 1 ? " ↑" : " ↓") : " ↕";
   return (
-    <th onClick={() => onCycleSort(sortKey)} className={`${styles.th} ${active ? styles.sorted : ""}`}>
-      {label}<span className={styles.sortArrow}>{arrow}</span>
+    <th scope="col" aria-sort={active ? (sortConfig.dir === 1 ? "ascending" : "descending") : "none"}
+      className={`${styles.th} ${active ? styles.sorted : ""}`}>
+      <button type="button" className={styles.sortButton} onClick={() => onCycleSort(sortKey)}
+        onKeyDown={event => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          onCycleSort(sortKey);
+        }}>
+        {label}<span aria-hidden="true" className={styles.sortArrow}>{arrow}</span>
+      </button>
     </th>
   );
 }
