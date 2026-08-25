@@ -497,29 +497,35 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
                 root.after(0, lambda error=exc: probe_finished(model, error=error))
         threading.Thread(target=worker, daemon=True).start()
 
-    refresh_button = ttk.Button(header, text="Refresh", command=refresh)
-    refresh_button.pack(side="right")
-    copy_button = ttk.Button(header, text="Copy Diagnostics", command=copy_diagnostics, state="disabled")
-    copy_button.pack(side="right", padx=(0, 8))
-    cancel_button = ttk.Button(header, text="Cancel Operation", command=cancel_update, state="disabled")
-    cancel_button.pack(side="right", padx=(0, 8))
-    if vllm_updater is not None:
-        ttk.Button(
-            header, text="Update vLLM",
-            command=lambda: update_engine(
-                "vllm", "vLLM", vllm_updater,
-                "Build and validate a new vLLM environment, then replace the current one?",
-            ),
-        ).pack(side="right", padx=(0, 8))
+    header_actions = ttk.Frame(header)
+    header_actions.pack(side="right")
+    refresh_button = ttk.Button(header_actions, text="Refresh", command=refresh)
+    refresh_button.pack(side="left")
+    copy_button = ttk.Button(
+        header_actions, text="Copy Diagnostics", command=copy_diagnostics, state="disabled",
+    )
+    copy_button.pack(side="left", padx=(8, 0))
     if llamacpp_updater is not None:
         ttk.Button(
-            header, text="Update / Rebuild llama.cpp",
+            header_actions, text="Update / Rebuild llama.cpp",
             command=lambda: update_engine(
                 "llamacpp", "llama.cpp", llamacpp_updater,
                 llamacpp_update_prompt or "Update the selected llama.cpp installation?",
                 allow_system=platform.system() == "Darwin",
             ),
-        ).pack(side="right", padx=(0, 8))
+        ).pack(side="left", padx=(8, 0))
+    if vllm_updater is not None:
+        ttk.Button(
+            header_actions, text="Update vLLM",
+            command=lambda: update_engine(
+                "vllm", "vLLM", vllm_updater,
+                "Build and validate a new vLLM environment, then replace the current one?",
+            ),
+        ).pack(side="left", padx=(8, 0))
+    cancel_button = ttk.Button(
+        header_actions, text="Cancel Operation", command=cancel_update, state="disabled",
+    )
+    cancel_button.pack(side="left", padx=(8, 0))
     render(state["snapshot"])
     refresh()
     return EngineManagementController(

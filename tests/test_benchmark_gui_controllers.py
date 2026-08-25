@@ -43,6 +43,7 @@ class FakeTree:
         self.rows = {}
         self.deleted = []
         self.selected: tuple[str, ...] = ()
+        self.focused = ""
 
     def get_children(self):
         return tuple(self.rows)
@@ -58,6 +59,9 @@ class FakeTree:
 
     def selection(self):
         return self.selected
+
+    def focus(self, item):
+        self.focused = item
 
     def index(self, item):
         return self.selected.index(item)
@@ -181,7 +185,11 @@ def test_history_controller_filters_and_maps_visible_rows(monkeypatch):
     assert controller.entries["visible"] == visible
     assert controller.item_paths == {"row-0": Path("result.json")}
     assert tree.rows["row-0"]["tags"] == ("history_even",)
-    assert screen.message.get() == "Showing 1 of 1 local results."
+    assert tree.focused == "row-0"
+    assert screen.message.get() == (
+        "Showing 1 of 1 local results. Keyboard: Shift+Up/Down extends selection; "
+        "Space toggles a row."
+    )
 
 
 def test_history_delete_refuses_while_process_is_active(monkeypatch):

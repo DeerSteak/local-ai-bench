@@ -49,6 +49,10 @@ def test_benchmark_gui_builds_all_tabs_and_controller_wiring(monkeypatch):
         "scripts.app.benchmark_gui_screens.history_actions.discover_results",
         lambda _path: ([], []),
     )
+    monkeypatch.setattr(
+        benchmark_gui, "refresh_tk_layout",
+        lambda _root: observed.__setitem__("initial_layout_refreshed", True),
+    )
 
     class ImmediateThread:
         def __init__(self, *, target, daemon):
@@ -65,6 +69,14 @@ def test_benchmark_gui_builds_all_tabs_and_controller_wiring(monkeypatch):
     def inspect_instead_of_mainloop(root):
         root.update_idletasks()
         notebook = next(child for child in root.winfo_children() if isinstance(child, ttk.Notebook))
+        engine_tab = root.nametowidget(notebook.tabs()[3])
+        engine_buttons = [
+            widget for widget in descendants(engine_tab)
+            if isinstance(widget, ttk.Button) and widget.cget("text") in {
+                "Refresh", "Copy Diagnostics", "Update / Rebuild llama.cpp",
+                "Update vLLM", "Cancel Operation",
+            }
+        ]
         observed["title"] = root.title()
         observed["tabs"] = [notebook.tab(tab, "text") for tab in notebook.tabs()]
         observed["bindings"] = {
@@ -78,6 +90,9 @@ def test_benchmark_gui_builds_all_tabs_and_controller_wiring(monkeypatch):
             widget_class: bool(root.bind_class(widget_class, "<space>"))
             for widget_class in ("TButton", "TCheckbutton", "TRadiobutton")
         }
+        observed["engine_actions"] = [
+            widget.cget("text") for widget in sorted(engine_buttons, key=lambda item: item.winfo_rootx())
+        ]
         root.destroy()
 
     monkeypatch.setattr(tk.Tk, "mainloop", inspect_instead_of_mainloop)
@@ -91,4 +106,14 @@ def test_benchmark_gui_builds_all_tabs_and_controller_wiring(monkeypatch):
             "<Tab>": True, "<Shift-Tab>": True, "<ISO_Left_Tab>": True,
         },
         "space_bindings": {"TButton": True, "TCheckbutton": True, "TRadiobutton": True},
+        "engine_actions": [
+            "Refresh", "Copy Diagnostics", "Update / Rebuild llama.cpp",
+            "Update vLLM", "Cancel Operation",
+        ],
+        "initial_layout_refreshed": True,
     }
+
+
+def descendants(widget):
+    children = list(widget.winfo_children())
+    return [*children, *(item for child in children for item in descendants(child))]

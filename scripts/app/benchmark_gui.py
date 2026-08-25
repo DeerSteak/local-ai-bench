@@ -69,7 +69,7 @@ from scripts.setup.setup_config import (
     load_setup_config,
 )
 from scripts.setup.vllm_install import fetch_vllm_versions, is_dgx_spark
-from scripts.app.tk_utils import schedule_tk_layout_refresh
+from scripts.app.tk_utils import refresh_tk_layout, schedule_tk_layout_refresh
 from scripts.app.result_actions import (
     completed_result_paths, record_result_path, result_paths_for_log, write_run_logs,
 )
@@ -1322,6 +1322,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     loading.destroy()
     root.protocol("WM_DELETE_WINDOW", close_window)
     update_advanced()
+    refresh_tk_layout(root)
 
     def poll_runtime_profiles():
         try:

@@ -1,4 +1,6 @@
-from scripts.app.benchmark_gui_accessibility import focus_relative, invoke_control
+from scripts.app.benchmark_gui_accessibility import (
+    clear_notebook_focus, focus_relative, invoke_control, mark_notebook_focus,
+)
 
 
 class FakeWidget:
@@ -46,3 +48,27 @@ def test_invoke_control_activates_enabled_control_only():
     assert invoke_control(disabled) == "break"
     assert enabled.invocations == 1
     assert disabled.invocations == 0
+
+
+class FakeNotebook:
+    def __init__(self):
+        self.tabs = {"tab-1": "Configuration"}
+        self._keyboard_focus_tab = None
+
+    def select(self):
+        return "tab-1"
+
+    def tab(self, selected, option=None, **kwargs):
+        if "text" in kwargs:
+            self.tabs[selected] = kwargs["text"]
+        return self.tabs[selected] if option == "text" else None
+
+
+def test_notebook_focus_marker_is_added_and_removed():
+    notebook = FakeNotebook()
+
+    mark_notebook_focus(notebook)
+    assert notebook.tabs["tab-1"] == "▶ Configuration"
+
+    clear_notebook_focus(notebook)
+    assert notebook.tabs["tab-1"] == "Configuration"
