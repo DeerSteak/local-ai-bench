@@ -8,6 +8,15 @@
       "docs/setup.md#what-the-setup-scripts-do"
     ]
   },
+  "release_security_scans": {
+    "status": "passed",
+    "approved_by": "project maintainer",
+    "approved_at": "2026-08-24",
+    "evidence": [
+      "https://github.com/DeerSteak/local-ai-bench/actions/runs/32807970369",
+      "https://github.com/DeerSteak/local-ai-bench/actions/runs/32807975198"
+    ]
+  },
   "telemetry_qualification": {
     "memory": {
       "status": "passed",
