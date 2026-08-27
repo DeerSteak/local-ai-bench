@@ -45,7 +45,7 @@ Support is derived from the recorded qualification results below. Runtime suppor
 - [Adding a new engine](#adding-a-new-engine)
 - [Testing](#testing)
 
-This project has two inference engines: llama.cpp and vLLM. Ollama was removed earlier, after a head-to-head comparison on this project's hardware found llama.cpp marginally faster with no measurable downside — the `InferenceEngine` interface it left behind is what let vLLM plug in without touching a single workload module. `--engine` takes a name or `all` (see [Selecting an engine](#selecting-an-engine)). The two engines run different weight files for the same catalog tag — see [Workloads](workloads.md#per-engine-weights) and [Limitations](limitations.md#cross-engine-comparison).
+This project exposes three engine identities: native llama.cpp, llama.cpp Vulkan, and vLLM. The two llama.cpp identities use independent runtimes over the same GGUF files, which makes native-versus-Vulkan results a same-weight backend comparison. Ollama was removed earlier, after a head-to-head comparison on this project's hardware found llama.cpp marginally faster with no measurable downside — the `InferenceEngine` interface it left behind is what let additional engines plug in without changing workload modules. `--engine` takes a name or `all` (see [Selecting an engine](#selecting-an-engine)). vLLM runs different weight files for the same catalog tag — see [Workloads](workloads.md#per-engine-weights) and [Limitations](limitations.md#cross-engine-comparison).
 
 ## Why an interface
 

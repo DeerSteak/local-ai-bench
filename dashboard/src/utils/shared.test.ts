@@ -5,7 +5,7 @@ import {
   getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning,
   getNoRepackMethodologyWarning,
   getMemoryTelemetryMethodologyWarning,
-  sanitizeForFilename, applyEngineLabels, backendLabel, engineLabel, filesForSection, fmt, getCrossEngineWeightsWarning,
+  sanitizeForFilename, applyEngineLabels, backendLabel, engineFamily, engineLabel, filesForSection, fmt, getCrossEngineWeightsWarning,
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier, getSkipInfo, prepareOrderedBarGroupData,
   sortBarData, sortRows, deriveTtftUnit, hasValueOrStatus, configsWithValues,
@@ -193,6 +193,11 @@ describe("getNoRepackMethodologyWarning", () => {
     expect(getNoRepackMethodologyWarning([enabled, disabled])).toContain("weight-repacking");
   });
 
+  it("includes Vulkan llama.cpp in repack comparisons", () => {
+    const vulkan = { ...disabled, engine: "llamacpp-vulkan" };
+    expect(getNoRepackMethodologyWarning([enabled, vulkan])).toContain("weight-repacking");
+  });
+
   it("treats a missing legacy setting as repacking enabled", () => {
     const legacy = { data: { run: { effective_config: {} } } };
     expect(getNoRepackMethodologyWarning([legacy, disabled])).toContain("weight-repacking");
@@ -292,6 +297,16 @@ describe("applyEngineLabels", () => {
     expect(applyEngineLabels(files)[0].hostname).toBe("host-a\nllama.cpp -nr 7000");
   });
 
+  it("labels Vulkan as its own llama.cpp engine identity", () => {
+    const files: ResultsFile[] = [{
+      id: 1, hostname: "host-a", backend: "vulkan", engine: "llamacpp-vulkan",
+      engineVersion: "7000",
+      data: { run: { effective_config: { llamacpp_no_repack: true, mtp_enabled: true } } },
+    }];
+    expect(applyEngineLabels(files)[0].hostname)
+      .toBe("host-a\nVulkan / llama.cpp Vulkan -nr MTP on 7000");
+  });
+
   it("distinguishes native MTP results for every compatible engine", () => {
     const files: ResultsFile[] = [
       {
@@ -386,11 +401,21 @@ describe("backendLabel", () => {
 });
 
 describe("engineLabel", () => {
-  it.each([["llamacpp", "llama.cpp"], ["vllm", "vLLM"]])(
+  it.each([
+    ["llamacpp", "llama.cpp"], ["llamacpp-vulkan", "llama.cpp Vulkan"], ["vllm", "vLLM"],
+  ])(
     "formats %s for display", (engine, expected) => {
       expect(engineLabel(engine)).toBe(expected);
     },
   );
+});
+
+describe("engineFamily", () => {
+  it("groups native and Vulkan llama.cpp while preserving other engines", () => {
+    expect(engineFamily("llamacpp")).toBe("llamacpp");
+    expect(engineFamily("llamacpp-vulkan")).toBe("llamacpp");
+    expect(engineFamily("vllm")).toBe("vllm");
+  });
 });
 
 describe("measuredCategoryAxisWidth", () => {
@@ -657,6 +682,17 @@ describe("getCrossEngineWeightsWarning", () => {
   it("stays silent for a single engine", () => {
     expect(getCrossEngineWeightsWarning([file("vllm"), file("vllm")])).toBe("");
     expect(getCrossEngineWeightsWarning([file("llamacpp")])).toBe("");
+  });
+
+  it("stays silent for native versus Vulkan llama.cpp because they share GGUF weights", () => {
+    expect(getCrossEngineWeightsWarning([
+      file("llamacpp"), file("llamacpp-vulkan"),
+    ])).toBe("");
+  });
+
+  it("warns when Vulkan llama.cpp is compared with vLLM", () => {
+    expect(getCrossEngineWeightsWarning([file("llamacpp-vulkan"), file("vllm")]))
+      .toContain("do not measure the same weights");
   });
 
   it("stays silent when no file records an engine", () => {
