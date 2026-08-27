@@ -49,6 +49,14 @@ def test_quantization_variants_are_visible_with_only_default_preselected():
                for model in gemma_variants)
 
 
+def test_vulkan_and_native_llamacpp_share_variant_and_size_presentation():
+    model = next(model for _, models in LLM_GROUPS for model in models)
+    assert default_model_selection(128.0, ["llamacpp-vulkan"]) == \
+        default_model_selection(128.0, ["llamacpp"])
+    assert model_row_label(model, ["llamacpp", "llamacpp-vulkan"], 128.0) == \
+        model_row_label(model, ["llamacpp"], 128.0)
+
+
 def test_gui_plan_requires_valid_existing_comfyui_path(tmp_path):
     assert validate_gui_plan({"comfyui_mode": "download", "image_shorts": ["flux"]}) == []
     assert validate_gui_plan({

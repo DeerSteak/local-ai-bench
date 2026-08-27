@@ -31,6 +31,7 @@ SETUP_CONFIG_PATH = SCRIPT_DIR / "local_ai_bench_config.json"
 # Vendored llama.cpp location (Linux source build / Windows prebuilt zip); macOS's brew
 # install goes on PATH instead. LlamaCppEngine._binary_path checks both.
 LLAMACPP_DIR = SCRIPT_DIR / "llama.cpp"
+LLAMACPP_VULKAN_DIR = SCRIPT_DIR / "llama.cpp-vulkan"
 
 # Own venv: vLLM pins a torch build that would collide with bench-env's.
 VLLM_VENV = SCRIPT_DIR / "vllm-env"

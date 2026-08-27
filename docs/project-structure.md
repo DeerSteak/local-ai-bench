@@ -202,6 +202,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `setup/setup_console.py` | Terminal status formatting, hyperlinks, and confirmation prompts |
 | `setup/setup_discovery.py` | Read-only host identity and memory discovery for setup |
 | `setup/llamacpp_install.py` | llama.cpp tool discovery and platform-specific installation execution |
+| `setup/vulkan_install.py` | Linux Vulkan build-prerequisite discovery, package planning, and execution |
 | `setup/hf_credentials.py` | Hugging Face token discovery, prompting, caching, and optional persistence |
 | `setup/comfyui_assets.py` | Selected checkpoint, encoder, and VAE provisioning for ComfyUI |
 | `setup/comfyui_runtime.py` | ComfyUI Python requirements, managed model paths, and accelerator-specific PyTorch preparation |

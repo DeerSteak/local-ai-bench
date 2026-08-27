@@ -6,9 +6,9 @@ import tempfile
 from pathlib import Path
 
 
-# 3 adds the optional "vllm" block; older files stay loadable and simply lack it.
-SCHEMA_VERSION = 3
-SUPPORTED_SCHEMA_VERSIONS = {1, 2, SCHEMA_VERSION}
+# 4 adds the optional Vulkan llama.cpp toolset; older files simply lack it.
+SCHEMA_VERSION = 4
+SUPPORTED_SCHEMA_VERSIONS = {1, 2, 3, SCHEMA_VERSION}
 
 
 def load_setup_config(path: Path) -> dict:
@@ -22,6 +22,7 @@ def load_setup_config(path: Path) -> dict:
 
 def write_setup_config(path: Path, *, comfyui_dir: Path | None,
                        llamacpp_tools: dict[str, str | None],
+                       llamacpp_vulkan_tools: dict[str, str | None] | None = None,
                        gpu_devices: list[dict] | None = None,
                        vllm: dict | None = None) -> None:
     """Atomically write durable setup paths without credentials."""
@@ -29,6 +30,7 @@ def write_setup_config(path: Path, *, comfyui_dir: Path | None,
         "schema_version": SCHEMA_VERSION,
         "comfyui": {"program_dir": str(comfyui_dir.resolve()) if comfyui_dir else None},
         "llama_cpp": llamacpp_tools,
+        "llama_cpp_vulkan": llamacpp_vulkan_tools or {},
         "gpu": {"devices": gpu_devices or []},
         "vllm": vllm or {},
     }
@@ -66,6 +68,11 @@ def configured_comfyui_dir(data: dict) -> str | None:
 
 def configured_llamacpp_tool(data: dict, base_name: str) -> str | None:
     value = data.get("llama_cpp", {}).get(base_name)
+    return value if isinstance(value, str) and value else None
+
+
+def configured_llamacpp_vulkan_tool(data: dict, base_name: str) -> str | None:
+    value = data.get("llama_cpp_vulkan", {}).get(base_name)
     return value if isinstance(value, str) and value else None
 
 

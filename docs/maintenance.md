@@ -14,7 +14,7 @@ Signed in-place upgrade and rollback remain stable-release blockers. They requir
 
 ## Uninstall
 
-`build_uninstall_plan()` previews exact repository-owned paths. The default removes only `bench-env/` and managed runtime source/install directories (`ComfyUI/` and `llama.cpp/` when present). It preserves downloaded models, results, `local_ai_bench_config.json`, `hf.txt`, projects, presets, and the source tree. Models, results, and credentials require separate explicit choices.
+`build_uninstall_plan()` previews exact repository-owned paths. The default removes only `bench-env/` and managed runtime source/install directories (`ComfyUI/`, `llama.cpp/`, and `llama.cpp-vulkan/` when present). It preserves downloaded models, results, `local_ai_bench_config.json`, `hf.txt`, projects, presets, and the source tree. Models, results, and credentials require separate explicit choices.
 
 `execute_uninstall_plan()` accepts only immediate children from a fixed managed-name allowlist and requires the exact typed confirmation `REMOVE LOCAL AI BENCH COMPONENTS`. It rejects unrelated directories and never follows a plan target outside the validated repository root. The GUI/packaged maintenance surface should present this plan and preservation list before enabling removal.
 

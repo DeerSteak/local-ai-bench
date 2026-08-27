@@ -22,7 +22,7 @@ from scripts.workloads.model_variants import (
     variant_selection_target,
 )
 from scripts.runtime.comfyui_installation import normalize_comfyui_dir
-from scripts.setup.engine_selection import LLAMACPP, VLLM
+from scripts.setup.engine_selection import LLAMACPP, VLLM, model_engine_names
 from scripts.setup.model_inventory import (
     engine_fit_report, engine_fit_warnings, fits_any_engine, format_engine_sizes,
 )
@@ -59,7 +59,7 @@ def focus_scroll_fraction(*, widget_top: int, widget_bottom: int, view_top: int,
 
 def model_row_label(model: dict, engines, memory_ceiling_gb: float | None) -> str:
     """One model row: per-engine sizes, plus a warning per engine it won't fit."""
-    report = engine_fit_report(model, engines, memory_ceiling_gb)
+    report = engine_fit_report(model, model_engine_names(list(engines)), memory_ceiling_gb)
     if not report:  # image checkpoints carry no per-engine weights
         return f"{model['label']}  {model.get('download_size', '')}".rstrip()
     label = f"{model['label']}  {format_engine_sizes(report)}"
@@ -72,6 +72,7 @@ def default_model_selection(memory_ceiling_gb: float | None,
                             engines=(LLAMACPP,)) -> dict[str, bool]:
     """Memory-aware defaults, matching terminal setup. Checked if it fits any engine."""
     selected: dict[str, bool] = {}
+    engines = model_engine_names(list(engines))
     for _, models in LLM_GROUPS:
         for model in models:
             selected[model["tag"]] = (not model.get("variant") or model.get("default", False)) and fits_any_engine(
@@ -459,7 +460,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     sync_variant_parents()
 
     def apply_variant_engine_mode(engines: list[str]) -> None:
-        llamacpp_only = engines == [LLAMACPP]
+        llamacpp_only = bool(engines) and model_engine_names(engines) == [LLAMACPP]
         if not llamacpp_only:
             collapsed = collapse_variant_selection(
                 [model for variants in variant_groups.values() for model in variants],

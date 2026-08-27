@@ -459,6 +459,25 @@ def test_select_windows_assets_prefers_compatible_cuda_pair():
     ]
 
 
+def test_select_windows_assets_can_force_vulkan_with_cuda_available():
+    assets = [
+        {"name": "llama-b1-bin-win-cuda-12.4-x64.zip"},
+        {"name": "cudart-llama-bin-win-cuda-12.4-x64.zip"},
+        {"name": "llama-b1-bin-win-vulkan-x64.zip"},
+    ]
+    selected = select_windows_llamacpp_assets(
+        {"assets": assets}, "12.4", vulkan=True,
+    )
+    assert [asset["name"] for asset in selected] == [
+        "llama-b1-bin-win-vulkan-x64.zip",
+    ]
+
+
+def test_windows_release_selection_rejects_sycl_vulkan_conflict():
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        select_windows_llamacpp_assets({"assets": []}, None, intel_xpu=True, vulkan=True)
+
+
 def test_select_windows_assets_uses_sycl_exclusively_for_intel_xpu():
     assets = [
         {"name": "llama-b1-bin-win-sycl-x64.zip"},

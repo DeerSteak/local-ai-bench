@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-MANAGED_NAMES = ("bench-env", "ComfyUI", "llama.cpp", "models")
+MANAGED_NAMES = ("bench-env", "ComfyUI", "llama.cpp", "llama.cpp-vulkan", "models")
 PRESERVED_NAMES = ("models", "results", "local_ai_bench_config.json", "hf.txt")
 
 
@@ -20,7 +20,7 @@ def build_uninstall_plan(repo_root, *, remove_models=False, remove_results=False
                          remove_credentials=False):
     """Describe only repository-owned targets; execution requires explicit confirmation."""
     root = _validated_root(repo_root)
-    names = ["bench-env", "ComfyUI", "llama.cpp"]
+    names = ["bench-env", "ComfyUI", "llama.cpp", "llama.cpp-vulkan"]
     if remove_models:
         names.append("models")
     if remove_results:

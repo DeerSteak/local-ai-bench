@@ -84,7 +84,8 @@ from scripts.setup.setup_console import (
     BOLD, CYAN, GREEN, RESET, YELLOW, confirm, fail, info, link, ok, section, warn,
 )
 from scripts.setup.engine_selection import (
-    LLAMACPP, VLLM, apply_engine_preset, build_engine_entries, engines_needing_install,
+    LLAMACPP, LLAMACPP_VULKAN, VLLM, apply_engine_preset, build_engine_entries,
+    engines_needing_install, llamacpp_vulkan_setup_state, model_engine_names,
     needs_python_headers, qualification_engines_needing_install, qualification_setup_failed,
     select_engines,
     selected_engine_names,
@@ -96,6 +97,10 @@ from scripts.setup.vllm_install import (
     read_launcher_extra_args, redact_launcher_extra_args, vllm_cache_home, vllm_platform_support,
     PINNED_PYTHON, python_bootstrap_plan, resolve_python, run_python_bootstrap,
     vllm_runtime_expectations, vllm_runtime_import_error,
+)
+from scripts.setup.vulkan_install import (
+    missing_vulkan_build_requirements, run_vulkan_build_install,
+    vulkan_build_install_plan,
 )
 from scripts.app.interface_mode import select_interface_mode
 from scripts.release.qualification_targets import qualification_host_error, qualification_target
@@ -148,6 +153,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
     # Repo root, one level up — sourced from config.py rather than redefined here.
     SCRIPT_DIR   = config.SCRIPT_DIR
     LLAMACPP_DIR = config.LLAMACPP_DIR
+    LLAMACPP_VULKAN_DIR = config.LLAMACPP_VULKAN_DIR
 
     _arg_parser = argparse.ArgumentParser(description="local-ai-bench setup")
     _arg_parser.add_argument("--comfyui", help="Path to an existing ComfyUI or portable root")
@@ -476,6 +482,19 @@ def main() -> None:  # pragma: no cover - real interactive installer
             info=info, warn=warn, fail=record_failure, ok=ok,
         )
 
+    def install_llamacpp_vulkan():
+        def record_failure(message: str) -> None:
+            _llamacpp_install_failures.append(message)
+            fail(message)
+
+        return llamacpp_install.install(
+            LLAMACPP_VULKAN_DIR, SCRIPT_DIR, os_name,
+            nvidia=nvidia_ok, rocm=rocm_ok, intel_xpu=intel_linux or intel_windows,
+            compute_capability=nvidia_compute_cap,
+            max_cuda_version=nvidia_max_cuda_version,
+            info=info, warn=warn, fail=record_failure, ok=ok, vulkan=True,
+        )
+
     # ── 4a. llama.cpp detection (read-only) ────────────────────────────────────────
 
     section("llama.cpp")
@@ -539,6 +558,32 @@ def main() -> None:  # pragma: no cover - real interactive installer
         warn("llama-batched-bench not found (llama-server is installed, but without llama-batched-bench) — "
              "rerun setup after a fresh llama.cpp install, or build it yourself, to use "
              "the llamabenchconc test")
+
+    vulkan_tools = llamacpp_install.find_tools(LLAMACPP_VULKAN_DIR, os_name)
+    LLAMACPP_VULKAN_BIN = vulkan_tools["llama-server"]
+    _installed_vulkan_backend = (
+        probe_llamacpp_backend(LLAMACPP_VULKAN_BIN) if LLAMACPP_VULKAN_BIN else None
+    )
+    _managed_vulkan_ready = llamacpp_install.managed_toolset_ready(
+        LLAMACPP_VULKAN_DIR, os_name,
+    )
+    _vulkan_state = llamacpp_vulkan_setup_state(
+        os_name, platform.machine(), runtime_present=LLAMACPP_VULKAN_BIN is not None,
+        backend=_installed_vulkan_backend, toolset_ready=_managed_vulkan_ready,
+    )
+    llamacpp_vulkan_found = _vulkan_state["found"]
+    LLAMACPP_VULKAN_BENCH_BIN = vulkan_tools["llama-bench"]
+    LLAMACPP_VULKAN_BATCHED_BENCH_BIN = vulkan_tools["llama-batched-bench"]
+    llamacpp_vulkan_supported = _vulkan_state["supported"]
+    _vulkan_note = _vulkan_state["note"]
+    if _vulkan_state["problem"]:
+        if _vulkan_state["problem"] == "wrong_backend":
+            warn(llamacpp_backend_rebuild_warning(
+                _installed_vulkan_backend, "vulkan", qualification=False,
+            ))
+        else:
+            warn("llama.cpp Vulkan is missing llama-bench or llama-batched-bench — "
+                 "select it to repair the managed toolset")
 
     # ── 4b. vLLM detection (read-only) ─────────────────────────────────────────────
 
@@ -669,6 +714,9 @@ def main() -> None:  # pragma: no cover - real interactive installer
 
     engine_entries = build_engine_entries(
         vllm_support=vllm_support, vllm_found=vllm_found, llamacpp_found=llamacpp_found,
+        llamacpp_vulkan_supported=llamacpp_vulkan_supported,
+        llamacpp_vulkan_found=llamacpp_vulkan_found,
+        llamacpp_vulkan_note=_vulkan_note,
         vllm_note=vllm_note,
     )
     if args.qualification:
@@ -695,6 +743,13 @@ def main() -> None:  # pragma: no cover - real interactive installer
     if _interface != "gui" and not args.qualification:
         select_engines(engine_entries)
 
+    _preview_vulkan_missing = (
+        missing_vulkan_build_requirements()
+        if os_name == "Linux" and LLAMACPP_VULKAN in selected_engine_names(engine_entries)
+        else ()
+    )
+    _preview_vulkan_plan = vulkan_build_install_plan(_preview_vulkan_missing)
+
     section("Setup Plan")
     print(f"  {BOLD}local-ai-bench{RESET} needs a few things before it can run benchmarks.\n")
     print("  This will:")
@@ -704,6 +759,15 @@ def main() -> None:  # pragma: no cover - real interactive installer
     if needs_llamacpp_install and LLAMACPP in selected_engine_names(engine_entries):
         build_note = " (source build — can take several minutes)" if os_name == "Linux" else ""
         print(f"    • Install llama.cpp{build_note}, including llama-bench and llama-batched-bench")
+    if LLAMACPP_VULKAN in engines_needing_install(engine_entries):
+        build_note = " (source build — can take several minutes)" if os_name == "Linux" else ""
+        print(f"    • Install llama.cpp Vulkan{build_note}, including native benchmark tools")
+        if _preview_vulkan_missing and _preview_vulkan_plan:
+            print("    • Install Vulkan build prerequisites:")
+            for _command in _preview_vulkan_plan:
+                print(f"      {shlex.join(_command)}")
+        elif _preview_vulkan_missing:
+            print(f"    • Stop before the Vulkan build: missing {', '.join(_preview_vulkan_missing)}")
     if _detected_comfyui:
         print(f"    • Reuse ComfyUI at {COMFYUI_DIR}")
     if _interface != "gui" and VLLM in engines_needing_install(engine_entries):
@@ -743,6 +807,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
         sys.exit(0)
 
     selected_engines = selected_engine_names(engine_entries)
+    selected_model_engines = model_engine_names(selected_engines)
     _qualification_vllm_runtime_error = None
     _expected_vllm_device, _expected_vllm_runtime = vllm_runtime_expectations(
         vllm_support.method,
@@ -763,6 +828,11 @@ def main() -> None:  # pragma: no cover - real interactive installer
             llamacpp_runtime_ready=_managed_llamacpp_ready,
         ) if args.qualification else engines_needing_install(engine_entries)
     )
+    _vulkan_missing = (
+        missing_vulkan_build_requirements()
+        if os_name == "Linux" and LLAMACPP_VULKAN in pending_engines else ()
+    )
+    _vulkan_install_plan = vulkan_build_install_plan(_vulkan_missing)
     _engine_labels = {entry["name"]: entry["label"] for entry in engine_entries}
     ok(f"Engines selected: {', '.join(_engine_labels[name] for name in selected_engines)}")
     for _name in _engine_labels:
@@ -780,7 +850,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
         cleanup_names, vllm_cleanup_names = [], []
     elif _gui_plan is None:
         selected_llm, selected_images, selected_embed, cleanup_names, vllm_cleanup_names = select_models(
-            memory_ceiling_gb, engines=selected_engines,
+            memory_ceiling_gb, engines=selected_model_engines,
             vllm_cache_home=VLLM_CACHE_HOME, cancel=cancel_setup,
         )
     else:
@@ -924,6 +994,22 @@ def main() -> None:  # pragma: no cover - real interactive installer
         info(result.stderr.strip().splitlines()[-1] if result.stderr else "")
         sys.exit(1)
 
+    _vulkan_prerequisites_ready = True
+    if _vulkan_missing:
+        if _vulkan_install_plan is None:
+            _vulkan_prerequisites_ready = False
+            detail = ", ".join(_vulkan_missing)
+            fail(f"llama.cpp Vulkan build prerequisites are missing: {detail}")
+            issues.append("Install the Vulkan SDK build prerequisites and rerun setup")
+        else:
+            info(f"Installing llama.cpp Vulkan build prerequisites: {', '.join(_vulkan_missing)}")
+            for _command in _vulkan_install_plan:
+                info(shlex.join(_command))
+            _vulkan_prerequisites_ready = run_vulkan_build_install(_vulkan_install_plan)
+            if not _vulkan_prerequisites_ready:
+                fail("llama.cpp Vulkan build prerequisite installation failed")
+                issues.append("Install the Vulkan SDK build prerequisites and rerun setup")
+
     if LLAMACPP in pending_engines:
         llamacpp_installed = install_llamacpp()
         if llamacpp_installed:
@@ -958,6 +1044,31 @@ def main() -> None:  # pragma: no cover - real interactive installer
                 _required_llamacpp_backend,
                 _llamacpp_install_failures[-1] if _llamacpp_install_failures else None,
                 LLAMACPP_DIR,
+            ))
+
+    if LLAMACPP_VULKAN in pending_engines and _vulkan_prerequisites_ready:
+        if install_llamacpp_vulkan():
+            vulkan_tools = llamacpp_install.find_tools(LLAMACPP_VULKAN_DIR, os_name)
+            LLAMACPP_VULKAN_BIN = vulkan_tools["llama-server"]
+            LLAMACPP_VULKAN_BENCH_BIN = vulkan_tools["llama-bench"]
+            LLAMACPP_VULKAN_BATCHED_BENCH_BIN = vulkan_tools["llama-batched-bench"]
+            _vulkan_backend_error = llamacpp_backend_error(
+                LLAMACPP_VULKAN_BIN, "vulkan", context="setup",
+            )
+            if _vulkan_backend_error:
+                fail(_vulkan_backend_error)
+                issues.append(_vulkan_backend_error)
+            elif not LLAMACPP_VULKAN_BENCH_BIN or not LLAMACPP_VULKAN_BATCHED_BENCH_BIN:
+                fail("llama.cpp Vulkan installed without its required benchmark tools")
+                issues.append("Repair the managed llama.cpp Vulkan toolset")
+            else:
+                ok("llama.cpp Vulkan installed successfully")
+        else:
+            fail("llama.cpp Vulkan installation failed")
+            issues.append(llamacpp_install_action(
+                "vulkan",
+                _llamacpp_install_failures[-1] if _llamacpp_install_failures else None,
+                LLAMACPP_VULKAN_DIR,
             ))
 
     if needs_python_headers(engine_entries, missing_python_header):
@@ -1018,7 +1129,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
     remaining_gb = 0.0
 
     all_llm = selected_embed + selected_llm
-    for engine in selected_engines:
+    for engine in selected_model_engines:
         for m in all_llm:
             if not catalog_model_downloaded(
                 m, engine, models_dir=config.MODELS_DIR, vllm_cache=VLLM_CACHE_HOME,
@@ -1099,7 +1210,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
         info(f"{m['label']} — skipped (not selected)")
 
     provision_catalog_models(
-        selected_embed + selected_llm, selected_engines,
+        selected_embed + selected_llm, selected_model_engines,
         models_dir=config.MODELS_DIR, vllm_cache=VLLM_CACHE_HOME,
         load_token=load_token, issues=issues, info=info, warn=warn, fail=fail, ok=ok,
     )
@@ -1154,6 +1265,11 @@ def main() -> None:  # pragma: no cover - real interactive installer
             "llama-server": LLAMACPP_BIN,
             "llama-bench": LLAMACPP_BENCH_BIN,
             "llama-batched-bench": LLAMACPP_BATCHED_BENCH_BIN,
+        },
+        llamacpp_vulkan_tools={
+            "llama-server": LLAMACPP_VULKAN_BIN,
+            "llama-bench": LLAMACPP_VULKAN_BENCH_BIN,
+            "llama-batched-bench": LLAMACPP_VULKAN_BATCHED_BENCH_BIN,
         },
         gpu_devices=(
             [{**device, "vendor": "nvidia", "backend": "cuda"} for device in nvidia_gpus]
