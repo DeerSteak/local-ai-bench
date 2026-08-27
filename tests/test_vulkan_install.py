@@ -9,7 +9,10 @@ from scripts.setup.vulkan_install import (
 def test_requirement_probe_reports_each_missing_build_input():
     assert missing_vulkan_build_requirements(
         which=lambda _name: None, is_file=lambda _path: False,
-    ) == ("glslc", "Vulkan development headers", "SPIR-V headers")
+    ) == (
+        "git", "cmake", "C++ compiler", "glslc",
+        "Vulkan development headers", "SPIR-V headers",
+    )
 
 
 def test_requirement_probe_accepts_tools_and_headers_from_supported_prefixes():
@@ -24,7 +27,8 @@ def test_apt_plan_installs_the_complete_upstream_build_toolchain():
     )
     assert plan == (
         ("sudo", "apt-get", "update"),
-        ("sudo", "apt-get", "install", "-y", "glslc", "libvulkan-dev", "spirv-headers"),
+        ("sudo", "apt-get", "install", "-y", "git", "cmake", "build-essential",
+         "glslc", "libvulkan-dev", "spirv-headers"),
     )
 
 
@@ -32,7 +36,8 @@ def test_dnf_plan_and_unknown_package_manager_are_explicit():
     missing = ("Vulkan development headers",)
     assert vulkan_build_install_plan(
         missing, which=lambda name: "/usr/bin/dnf" if name == "dnf" else None,
-    ) == (("sudo", "dnf", "install", "-y", "glslc", "vulkan-loader-devel", "spirv-headers"),)
+    ) == (("sudo", "dnf", "install", "-y", "git", "cmake", "gcc-c++", "make",
+           "glslc", "vulkan-loader-devel", "spirv-headers"),)
     assert vulkan_build_install_plan(missing, which=lambda _name: None) is None
 
 

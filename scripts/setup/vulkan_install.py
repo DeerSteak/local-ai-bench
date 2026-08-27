@@ -14,14 +14,23 @@ SPIRV_HEADERS = (
     Path("/usr/local/include/spirv/unified1/spirv.h"),
 )
 PACKAGES = {
-    "apt-get": ("glslc", "libvulkan-dev", "spirv-headers"),
-    "dnf": ("glslc", "vulkan-loader-devel", "spirv-headers"),
+    "apt-get": (
+        "git", "cmake", "build-essential", "glslc", "libvulkan-dev", "spirv-headers",
+    ),
+    "dnf": (
+        "git", "cmake", "gcc-c++", "make", "glslc", "vulkan-loader-devel", "spirv-headers",
+    ),
 }
 
 
 def missing_vulkan_build_requirements(*, which=shutil.which,
                                       is_file=lambda path: path.is_file()) -> tuple[str, ...]:
     missing = []
+    for tool in ("git", "cmake"):
+        if which(tool) is None:
+            missing.append(tool)
+    if not any(which(tool) for tool in ("c++", "g++", "clang++")):
+        missing.append("C++ compiler")
     if which("glslc") is None:
         missing.append("glslc")
     if not any(is_file(path) for path in VULKAN_HEADERS):
