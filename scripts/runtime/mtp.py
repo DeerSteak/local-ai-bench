@@ -1,6 +1,7 @@
 """Native multi-token prediction capability and benchmark pass planning."""
 
 from collections.abc import Mapping, Sequence
+from scripts.runtime.engine_identity import engine_family
 
 
 MTP_MODES = ("off", "on", "both")
@@ -12,6 +13,7 @@ MTP_CONCURRENCY_TESTS = frozenset({"conc_tool", "conc_chat"})
 
 
 def native_mtp_config(model: dict, engine_name: str) -> dict | None:
+    engine_name = engine_family(engine_name)
     value = model.get("native_mtp")
     if not isinstance(value, dict):
         return None

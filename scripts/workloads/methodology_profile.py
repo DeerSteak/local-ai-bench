@@ -2,6 +2,7 @@
 
 from scripts.runtime import config
 from scripts.runtime.sampling import baseline_sampling_profile
+from scripts.runtime.engine_identity import engine_family
 
 
 ENGINE_STAGES = {
@@ -24,7 +25,8 @@ def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
                                 mtp_configurations: dict | None = None) -> dict:
     optimizations = []
     selected = set(tests)
-    if engine_name == "llamacpp" and selected & ENGINE_STAGES:
+    family = engine_family(engine_name)
+    if family == "llamacpp" and selected & ENGINE_STAGES:
         cache_type = (
             "f16" if not cpu_only and config.LLAMACPP_GPU_SPLIT_MODE == "tensor"
             else config.LLAMACPP_KV_CACHE_TYPE
@@ -41,7 +43,7 @@ def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
             optimizations.append("llamacpp:native_mtp=on")
     if "vllmbench" in selected:
         optimizations.append(f"vllm:bench_iters={config.VLLMBENCH_ITERS}")
-    if engine_name == "vllm" and selected & (ENGINE_STAGES | {"vllmbench"}):
+    if family == "vllm" and selected & (ENGINE_STAGES | {"vllmbench"}):
         optimizations.append(f"vllm:kv_cache={vllm_kv_cache_dtype}")
         if mtp_enabled and selected & TEXT_GENERATION_STAGES:
             optimizations.append("vllm:native_mtp=on")
@@ -73,6 +75,6 @@ def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
     }
     if mtp_enabled and selected & TEXT_GENERATION_STAGES:
         resolved["mtp_configurations"] = dict(mtp_configurations or {})
-    if engine_name in {"llamacpp", "vllm"} and selected & TEXT_GENERATION_STAGES:
-        resolved["sampling_profile"] = baseline_sampling_profile(engine_name)
+    if family in {"llamacpp", "vllm"} and selected & TEXT_GENERATION_STAGES:
+        resolved["sampling_profile"] = baseline_sampling_profile(family)
     return resolved

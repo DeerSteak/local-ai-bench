@@ -9,6 +9,7 @@ import pytest
 
 from scripts.runtime import config
 from scripts.runtime.engines.llamacpp import LlamaCppEngine
+from scripts.runtime.engines.llamacpp_vulkan import LlamaCppVulkanEngine
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
 from scripts.runtime.shared import Shared
 
@@ -67,6 +68,12 @@ def test_find_binary_returns_none_when_missing(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
     monkeypatch.setattr("scripts.workloads.llamabench_benchmark.shutil.which", lambda name: None)
     assert LlamaBenchBenchmark.find_binary() is None
+
+
+def test_find_engine_binary_uses_the_selected_llamacpp_runtime(monkeypatch):
+    engine = LlamaCppVulkanEngine()
+    monkeypatch.setattr(engine, "tool_path", lambda name: f"/vulkan/{name}")
+    assert LlamaBenchBenchmark.find_engine_binary(engine) == "/vulkan/llama-bench"
 
 
 def test_build_prefill_command_shape():

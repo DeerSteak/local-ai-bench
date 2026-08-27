@@ -8,6 +8,7 @@ from pathlib import Path
 
 from scripts.results.canonical_json import canonical_json, sha256_json
 from scripts.runtime.sampling import baseline_sampling_profile
+from scripts.runtime.engine_identity import engine_family
 from scripts.workloads.methodology_profile import TEXT_GENERATION_STAGES
 
 
@@ -351,13 +352,13 @@ class RunPlan:
                 raise ValueError("MTP mode and configurations are inconsistent")
         requires_sampling = (
             self.schema_version >= 5
-            and self.engine_name in {"llamacpp", "vllm"}
+            and engine_family(self.engine_name) in {"llamacpp", "vllm"}
             and bool(set(self.tests) & TEXT_GENERATION_STAGES)
             and "methodology_profile" in settings
         )
         if requires_sampling:
             sampling = settings.get("sampling_profile")
-            if sampling != baseline_sampling_profile(self.engine_name):
+            if sampling != baseline_sampling_profile(engine_family(self.engine_name)):
                 raise ValueError("invalid execution setting: sampling_profile")
         for key in (
             "max_prompt_tokens", "sample_size", "concurrency_tool_context",

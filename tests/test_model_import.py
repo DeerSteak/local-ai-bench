@@ -186,6 +186,8 @@ def test_vllm_prefers_canonical_index_when_multiple_are_present():
 
 def test_import_destination_requires_a_supported_engine(tmp_path):
     assert import_destination("llamacpp", "custom") == config.MODELS_DIR / "llamacpp" / "custom"
+    assert import_destination("llamacpp-vulkan", "custom") == \
+        config.MODELS_DIR / "llamacpp" / "custom"
     assert import_destination("vllm", "custom", tmp_path) == tmp_path
     assert import_destination("", "custom") is None
 
@@ -196,6 +198,7 @@ def test_import_variants_requires_an_explicit_supported_engine():
     }))
 
     assert import_variants(inspection, "llamacpp") == inspection.llama_variants
+    assert import_variants(inspection, "llamacpp-vulkan") == inspection.llama_variants
     assert import_variants(inspection, "vllm") == (inspection.vllm_variant,)
     assert import_variants(inspection, "") == ()
 
@@ -205,6 +208,7 @@ def test_supported_import_engines_respects_artifacts_and_installation():
         "config.json": 1, "model.safetensors": 10, "model.gguf": 11,
     }))
     assert supported_import_engines(inspection, ["vllm", "llamacpp"]) == ["llamacpp", "vllm"]
+    assert supported_import_engines(inspection, ["llamacpp-vulkan"]) == ["llamacpp"]
     assert supported_import_engines(inspection, ["vllm"]) == ["vllm"]
 
 

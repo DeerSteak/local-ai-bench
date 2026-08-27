@@ -68,7 +68,7 @@ On first use or when no saved selection applies, the interactive launcher's stat
 
 | Area | Initial state |
 |---|---|
-| Engine | The CLI's default registered engine (currently `llamacpp`); selectable first if multiple engines exist |
+| Engine | The CLI's default engine (`llamacpp`); installed native llama.cpp, llama.cpp Vulkan, and vLLM runtimes are selectable |
 | ComfyUI directory | The setup-managed `./ComfyUI` directory; there is no extra path prompt |
 | Single-shot LLM and conversation | Checked when an installed catalog or custom LLM is available |
 | Embeddings | Checked when an installed embedding model is available |
@@ -149,7 +149,7 @@ The GUI's **Support Bundle** action creates a separate redacted `.labsupport` ar
 | `--quick` | flag | off | CLI-only smoke-test preset using the smallest xsmall LLM, the 512/2K single-shot checkpoints, one measured run, and no warmups. It is intentionally narrower than the GUI's Quick run use-case preset and overrides workload/model/depth/run-count selectors while preserving runtime, engine, and output-path options |
 | `--dry-run` | flag | off | Resolves and prints every engine pass, model, workload, checkpoint sweep, run count, and an estimated duration, then exits after hardware profiling but before result creation or runtime startup. The ETA is the median of completed local results with an exact hardware, engine, workload, model, and runtime-shaping configuration match; when no exact history exists it is reported as unavailable |
 | `--tests` | any of `llm conv emb img mcq math reasoning code tool`, plus `acc`, `conc_tool`, `conc_chat`, `conc`, `sustained`, `llamabench`, `llamabenchconc`, and `vllmbench` | all nine (`llm conv emb img mcq math reasoning code tool`) | Space-separated list; order doesn't matter. `acc` expands to every accuracy-style test (`mcq`, `math`, `reasoning`, `code`, and `tool`) and de-duplicates against any of them also listed explicitly; `conc` expands the same way to `conc_tool conc_chat`. `sustained` is the opt-in continuous-generation soak with aligned thermal telemetry. `conc_tool`, `conc_chat`, and the native benchmark sections are also opt-in. See [Workloads](workloads.md) for their methodologies |
-| `--engine` | any registered engine name, or `all` | `llamacpp` | Which inference engine to benchmark against. `all` runs the full `--tests` suite once per registered engine (sorted order) and writes a separate results file for each (engine name appended to the filename). Only llama.cpp is registered today, so `all` behaves identically to the default until a second engine (e.g. MLX) is added. See [Engines](engines.md) |
+| `--engine` | `llamacpp`, `llamacpp-vulkan`, `vllm`, a comma-separated selection, or `all` | `llamacpp` | Which inference engine to benchmark. `all` runs once per installed engine in registry order; an explicitly selected uninstalled engine fails before profiling or output creation. Each pass writes a separate self-identifying result file. See [Engines](engines.md) |
 | `--cpu-only` | (flag) | off | Restarts the engine with GPU devices hidden for every test that goes through it (`llm`/`conv`/`mcq`/`math`/`reasoning`/`code`/`tool`/`emb`/`conc_tool`/`conc_chat`), then restores normal GPU mode afterward — useful on GPU backends unstable under one of those workloads. `llamabench` and `llamabenchconc` also honor it (passing `-ngl 0` straight to `llama-bench`/`llama-batched-bench`) without going through that engine restart |
 | `--gpu-split-mode` | `single` / `layer` / `tensor` | `layer` | Selects llama.cpp GPU execution for server-backed and native llama.cpp tests. `single` uses only the runtime's primary GPU. `layer` is the compatible multi-GPU pipeline/layer split and retains q8 KV cache plus automatic fit. `tensor` is llama.cpp's experimental tensor-parallel mode; it forces full GPU offload and f16 KV cache. The GUI offers `single` and `tensor` only when setup recorded at least two GPUs and a matching CUDA or ROCm/HIP runtime. Vulkan and unrecorded/single-GPU configurations retain `layer`; a supported topology still requires a supported model architecture |
 | `--mtp` | `off` / `on` / `both` | `off` | Controls native multi-token prediction for catalog models whose selected llama.cpp or vLLM artifact contains a confirmed predictor. `on` requires a compatible selected model for every selected engine and accepts only server-backed text workloads; selecting images, embeddings, or native engine benchmarks is an error rather than silently dropping them. `both` requires at least one compatible selected model and server-backed text workload, then writes a complete baseline result plus a distinct MTP-on result for the compatible subset, with separate progress and recovery identity; use `off` for a baseline-only selection. Native llama-bench/vLLM bench, embeddings, and images are not relabeled as MTP measurements. A configured external vLLM server cannot be used for MTP because the benchmark cannot verify or reconfigure how it was launched |
@@ -226,9 +226,11 @@ bash run_bench.sh --tests img --image-models "sd*"
 # Find the exact tag for a model you've downloaded but isn't in the catalog
 bash run_bench.sh --list-models
 
-# Run every registered engine, one pass each — writes a results file per
-# engine. Currently a no-op (only llama.cpp is registered)
+# Run every installed engine, one pass each — writes a results file per engine
 bash run_bench.sh --engine all --tests llm mcq
+
+# Compare native and Vulkan llama.cpp with the same installed GGUF files
+bash run_bench.sh --engine llamacpp,llamacpp-vulkan --tests llm llamabench
 
 # Quick dev iteration on the accuracy tests — 10 questions per bank instead
 # of the full thing; never compare this against a full-bank result

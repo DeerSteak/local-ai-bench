@@ -119,7 +119,7 @@ Preflight records this tool capability before execution as a workload-scoped che
 
 ### Per-engine weights
 
-The tier tables above give each model's identifier on both engines. The llama.cpp tag names a `Q4_K_M` GGUF, and that file is llama.cpp's alone — vLLM cannot use it, so each catalog entry carries a second set of weights (`vllm_repo`/`vllm_download_size` in `models.py`) that setup downloads separately into vLLM's own HuggingFace cache when vLLM is a selected engine (see [Setup](setup.md#choosing-engines)). Same model, same tier, different identifier and different file. This table adds each vLLM repo's quantization format and download size:
+The tier tables above give each model's identifier for the llama.cpp family and vLLM. Native and Vulkan llama.cpp use the exact same selected GGUF under `models/llamacpp/`, enabling same-weight backend comparisons. vLLM cannot use that file, so each catalog entry carries a second set of weights (`vllm_repo`/`vllm_download_size` in `models.py`) that setup downloads separately into vLLM's HuggingFace cache when vLLM is selected (see [Setup](setup.md#choosing-engines)). Same model and tier, but a different identifier and file for vLLM. This table adds each vLLM repo's quantization format and download size:
 
 | Tag | vLLM weights | Format | Size |
 |---|---|---|---|

@@ -49,6 +49,7 @@ from scripts.runtime.comfyui_installation import find_comfyui_installation, norm
 from scripts.runtime.engines import (
     engine_display_name, engine_names, get_engine, installed_engine_names,
 )
+from scripts.runtime.engine_identity import engine_family
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.setup.model_inventory import build_model_inventory
 from scripts.app.engine_management import collect_engine_management
@@ -625,7 +626,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             engine_check_vars[selection.engines[0]].set(True)
         engine_var.set(selection.value)
         engine_note.set(selection.note)
-        llamacpp_only = selection.engines == ["llamacpp"]
+        llamacpp_only = bool(selection.engines) and all(
+            engine_family(name) == "llamacpp" for name in selection.engines
+        )
         if not llamacpp_only:
             selected_tags = {
                 value for value, variable in model_vars.items() if variable.get()

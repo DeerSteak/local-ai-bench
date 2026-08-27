@@ -9,6 +9,13 @@ def test_all_expands_to_every_available_engine():
     assert resolve_engine_names("all", ["llamacpp", "mlx"]) == ["llamacpp", "mlx"]
 
 
+def test_all_expands_only_to_installed_engines_when_inventory_is_known():
+    assert resolve_engine_names(
+        "all", ["llamacpp", "llamacpp-vulkan", "vllm"],
+        installed=["llamacpp", "vllm"],
+    ) == ["llamacpp", "vllm"]
+
+
 def test_all_with_one_registered_engine_is_a_no_op():
     assert resolve_engine_names("all", ["llamacpp"]) == ["llamacpp"]
 
@@ -38,6 +45,17 @@ def test_an_unknown_engine_in_a_list_is_rejected():
         resolve_engine_names("llamacpp,mlx", ["llamacpp", "vllm"])
     with pytest.raises(ValueError):
         resolve_engine_names("", ["llamacpp"])
+
+
+def test_explicit_uninstalled_engine_and_empty_all_are_rejected():
+    import pytest
+    with pytest.raises(ValueError, match="llamacpp-vulkan is not installed"):
+        resolve_engine_names(
+            "llamacpp-vulkan", ["llamacpp", "llamacpp-vulkan"],
+            installed=["llamacpp"],
+        )
+    with pytest.raises(ValueError, match="No installed inference engines"):
+        resolve_engine_names("all", ["llamacpp-vulkan"], installed=[])
 
 
 def test_duplicates_collapse():

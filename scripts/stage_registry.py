@@ -1,6 +1,7 @@
 """Authoritative metadata for benchmark stages and their result sections."""
 
 from dataclasses import dataclass
+from scripts.runtime.engine_identity import engine_family
 
 
 @dataclass(frozen=True)
@@ -68,5 +69,5 @@ def engine_incompatible_tests(tests: list[str], engine_name: str) -> list[str]:
     return [
         key for key in tests
         if (spec := STAGE_BY_KEY.get(key)) is not None
-        and spec.native_engine is not None and spec.native_engine != engine_name
+        and spec.native_engine is not None and spec.native_engine != engine_family(engine_name)
     ]

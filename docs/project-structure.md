@@ -155,6 +155,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `runtime/llamacpp_tools.py` | System-first discovery shared by setup, llama-server, llama-bench, and llama-batched-bench |
 | `runtime/config.py` | Shared constants (URLs, paths, timeouts, run counts) |
 | `runtime/sampling.py` | Versioned semantic sampler profiles and exact llama.cpp/vLLM payload mappings |
+| `runtime/engine_identity.py` | Stable engine IDs and the adapter/model-family mapping shared by native and Vulkan llama.cpp |
 | `runtime/model_identity.py` | Filesystem-safe normalization shared by engine and setup model paths |
 | `setup/model_inventory.py` | Installed-model discovery/classification plus narrowly scoped non-catalog llama.cpp folder cleanup |
 | `setup/custom_models.py` | Gitignored engine-specific custom-model provenance registry |
@@ -174,7 +175,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `runtime/progress_events.py` | Structured cross-process progress events consumed by the graphical launcher |
 | `runtime/generation_guard.py` / `runtime/failure_handling.py` | Generation-loop detection and consistent unexpected per-model failure records |
 | `runtime/hardware.py` | GPU/system-memory detection, shared-memory classification, and model-fit estimates |
-| `runtime/engines/base.py`, `runtime/engines/llamacpp.py`, `runtime/engines/vllm.py` | Engine interface and engine-specific lifecycle/transport clients, see [Engines](engines.md) |
+| `runtime/engines/base.py`, `runtime/engines/llamacpp.py`, `runtime/engines/llamacpp_vulkan.py`, `runtime/engines/vllm.py` | Engine interface, shared llama.cpp adapter, Vulkan runtime identity, and vLLM lifecycle/transport client, see [Engines](engines.md) |
 | `runtime/engines/chat_flow.py` | Engine-neutral bounded chat finalization and measurement aggregation |
 | `workloads/llm_prefill_benchmark.py` | Single-shot LLM test |
 | `results/llm_event_stage.py` | Journal-owned generation/conversation/concurrency samples, stage/model-family isolation, and compatible JSON projections |
@@ -234,7 +235,7 @@ results/
 
 Each auxiliary name is derived from the main results filename's stem by swapping `results_` for `images_` or `answers_<test>_` (`mcq`, `math`, `reasoning`, `code`, or `tool`). If the stem does not begin with `results_`, the auxiliary prefix is prepended instead. With the default output, this preserves the hostname and timestamp across the set. If `--out` places the main JSON elsewhere, its journal, local context, images, and answer sidecars remain beside it. See [CLI Reference](cli-reference.md).
 
-`--engine all` (see [Engines](engines.md)) appends the engine name to the results filename's stem for each pass, so a run of the example above would produce `results_..._090000_llamacpp.json` (and one more per additional engine, once a second one is registered) side by side, each tagged internally with `"engine"`.
+`--engine all` (see [Engines](engines.md)) appends the engine name to the results filename's stem for each installed-engine pass, producing files such as `results_..._090000_llamacpp.json`, `results_..._090000_llamacpp-vulkan.json`, and `results_..._090000_vllm.json` side by side, each tagged internally with `"engine"`.
 
 The `answers_*.json` sidecars hold every question's answer for that accuracy test, keyed by model, each with the model's full graded response text and a `correct` flag. They stay outside the main results JSON because raw answers are much larger than summary scores and diagnostics. The main results JSON's own `incorrect` list (per model, per test) is unaffected and still covers only wrong answers.
 

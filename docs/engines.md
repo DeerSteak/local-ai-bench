@@ -130,14 +130,15 @@ A missing or unattributable reading leaves `server_prompt_sec` as `None`, and `p
 
 ## Selecting an engine
 
-`benchmark.py` takes `--engine <name>|all` (default: `llamacpp`; `all` expands to every name in `scripts/runtime/engines/__init__.py`'s registry, sorted, and runs the full `--tests` suite once per engine, back to back, writing a separate results file for each — engine name appended to the filename, and each file tagged internally with `"engine"` so it's self-identifying even if renamed):
+`benchmark.py` takes `--engine <name>|all` (default: `llamacpp`; `all` expands to every installed engine in registry order and runs the full `--tests` suite once per engine, back to back, writing a separate results file for each — engine name appended to the filename, and each file tagged internally with `"engine"` so it is self-identifying even if renamed):
 
 ```
 python -m scripts.app.benchmark --engine llamacpp --tests llm
+python -m scripts.app.benchmark --engine llamacpp,llamacpp-vulkan --tests llm llamabench
 python -m scripts.app.benchmark --engine all
 ```
 
-`llamacpp` and `vllm` are registered, so `--engine all` runs the compatible selection once per engine and normally writes two results files. They do not measure the same weights — see [Workloads](workloads.md#per-engine-weights) — and a model with no vLLM weights or no tool-call parser is skipped on that pass with a recorded reason rather than scored. Engine-native workloads such as `llamabench` and `vllmbench` run only under their matching engine; an engine pass with no compatible workloads is omitted rather than producing an empty result. Image generation doesn't depend on `--engine` (a separate ComfyUI call), so a multi-engine `all` run captures it once, on the first pass, rather than once per engine.
+`llamacpp`, `llamacpp-vulkan`, and `vllm` are registered. The two llama.cpp identities share one adapter family and the exact same GGUF files under `models/llamacpp/`, but resolve independent native and Vulkan toolsets and retain separate result files, run plans, recovery journals, crash caches, runtime identities, and effective backend profiles. This makes native-versus-Vulkan measurement on one host a same-weight backend comparison. vLLM uses different weights — see [Workloads](workloads.md#per-engine-weights) — and a model with no vLLM weights or tool-call parser is skipped on that pass with a recorded reason. `llamabench` and `llamabenchconc` run for both llama.cpp identities using the selected runtime's own native tools; `vllmbench` remains vLLM-only. Image generation does not depend on `--engine`, so a multi-engine run captures it once on the first pass.
 
 `main()` constructs the engine once per pass via `get_engine(engine_name)` ([`scripts/runtime/engines/__init__.py`](../scripts/runtime/engines/__init__.py)) and places it in a `RunContext` with the immutable serializable `RunPlan`, local-only `RunPaths`, `ResultStore`, profile, and lifecycle coordinator. The same instance reaches every workload's `run()`. Engine-backed workloads use only `InferenceEngine`, so adding a second engine does not require changes to MCQ, embeddings, or the other ordinary workload modules. The two native llama.cpp workloads are deliberate exceptions: `llamabench_benchmark.py` and `llamabench_concurrency_benchmark.py` import `LlamaCppEngine`, verify it with `isinstance`, and otherwise skip because `llama-bench` and `llama-batched-bench` have no cross-engine equivalent.
 

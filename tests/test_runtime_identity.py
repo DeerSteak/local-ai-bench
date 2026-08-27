@@ -152,6 +152,22 @@ def test_engine_runtime_version_resolves_managed_llamacpp_source_commit(monkeypa
     assert engine_runtime_version("llamacpp", engine, run=run) == "2026.08.11-a1b2c3d"
 
 
+def test_engine_runtime_version_uses_the_vulkan_managed_source_root(monkeypatch, tmp_path):
+    (tmp_path / ".git").mkdir()
+    executable = tmp_path / "build" / "bin" / "llama-server"
+    monkeypatch.setattr("scripts.setup.runtime_identity.config.LLAMACPP_VULKAN_DIR", tmp_path)
+    engine = type("Engine", (), {"runtime_location": lambda self: executable})()
+
+    def run(command, **_kwargs):
+        if command[0] == "git":
+            return SimpleNamespace(stdout="2026.08.12\n", stderr="", returncode=0)
+        return SimpleNamespace(stdout="version: 2 (b2c3d4e5)", stderr="", returncode=0)
+
+    assert engine_runtime_version(
+        "llamacpp-vulkan", engine, run=run,
+    ) == "2026.08.12-b2c3d4e"
+
+
 def test_source_build_version_rejects_malformed_git_date(tmp_path):
     (tmp_path / ".git").mkdir()
     identity = RuntimeIdentity(

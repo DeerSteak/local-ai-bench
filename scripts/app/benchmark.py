@@ -25,6 +25,7 @@ from scripts.workloads.conversation_selection import conv_skip_entry
 from scripts.runtime.shared import Shared
 from scripts.runtime.mtp import active_mtp_configurations
 from scripts.runtime.engines import get_engine, engine_names as registered_engine_names
+from scripts.runtime.engine_identity import engine_family
 from scripts.runtime.engines.vllm import VllmEngine
 from scripts.results.event_store import EventStore
 from scripts.workloads.llm_prefill_benchmark import LLMPrefillBenchmark
@@ -533,8 +534,8 @@ def validate_engine_scopes(tests: list[str], engine_name: str, llm_patterns: lis
 def apply_variant_selections(engine_scopes: list[dict], selectors: list[str] | None,
                              engine_names: list[str], tests: list[str]) -> None:
     selections = normalize_variant_selectors(selectors, LLM_MODELS)
-    if selections and engine_names != ["llamacpp"]:
-        raise ValueError("--model-variant requires --engine llamacpp")
+    if selections and any(engine_family(name) != "llamacpp" for name in engine_names):
+        raise ValueError("--model-variant requires only llama.cpp engines")
     for scope in engine_scopes:
         scope["llm_models"] = select_model_variants(scope["llm_models"], selections)
         if selections and scope.get("inventory_loaded"):
@@ -666,17 +667,26 @@ def expand_tests(tests: list[str]) -> list[str]:
     return expanded
 
 
-def resolve_engine_names(engine: str, available: list[str]) -> list[str]:
+def resolve_engine_names(engine: str, available: list[str], *,
+                         installed: list[str] | None = None) -> list[str]:
     """Resolve --engine into an ordered engine-name list ("all", or comma-separated),
     always in registry order so a multi-engine run is deterministic."""
     if engine == "all":
-        return list(available)
+        selected = list(available if installed is None else installed)
+        if not selected:
+            raise ValueError("No installed inference engines were found — run setup first")
+        return selected
     requested = [name.strip() for name in engine.split(",") if name.strip()]
     unknown = [name for name in requested if name not in available]
     if unknown or not requested:
         raise ValueError(
             f"Unknown inference engine {', '.join(unknown) or engine!r} — "
             f"known engines: {', '.join(available)}, or 'all'")
+    unavailable = [name for name in requested if installed is not None and name not in installed]
+    if unavailable:
+        raise ValueError(
+            f"Inference engine {', '.join(unavailable)} is not installed — run setup first"
+        )
     return [name for name in available if name in requested]
 
 
@@ -927,12 +937,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     parser.add_argument(
         "--engine", type=str, default=_engines[0],
         help=f"Inference engine to benchmark against (default: {_engines[0]}). "
-             "'all' runs the full --tests suite once per registered engine, back "
+             "'all' runs the full --tests suite once per installed engine, back "
              "to back (sorted order), writing a separate results file for each "
              "(engine name appended to the filename) so they can be compared "
-             "directly. Only llama.cpp is registered today, so this is a no-op "
-             "until a second engine (e.g. MLX) is added — kept here so scripts/"
-             "docs referencing --engine don't need to change when one is.",
+             "directly. Registered choices are: " + ", ".join(_engines) + ".",
     )
     args = parser.parse_args()
     if args.power_telemetry and not args.memory_telemetry:
@@ -973,7 +981,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         managed_dir=config.COMFYUI_DIR,
     ) or config.COMFYUI_DIR
     try:
-        run_engine_names = resolve_engine_names(args.engine, _engines)
+        installed_engines = [name for name in _engines if get_engine(name).is_installed()]
+        run_engine_names = resolve_engine_names(
+            args.engine, _engines, installed=installed_engines,
+        )
     except ValueError as exc:
         parser.error(str(exc))
     if args.list_models:

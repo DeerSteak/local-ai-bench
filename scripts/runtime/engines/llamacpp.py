@@ -43,6 +43,7 @@ class LlamaCppEngine(InferenceEngine):
     name = "llamacpp"
 
     BINARY = "llama-server"
+    REQUIRED_BACKEND: str | None = None
 
     # Model *load* time (disk read + VRAM placement), not inference time. Matches VllmEngine's
     # LOAD_TIMEOUT — large catalog entries (e.g. 120B split GGUFs) can still be loading at 300s.
@@ -98,13 +99,22 @@ class LlamaCppEngine(InferenceEngine):
 
     # ── binary resolution ──
 
-    @staticmethod
-    def _binary_path() -> str | None:
-        """Locate llama-server — see docs/engines.md's "Binary resolution"."""
+    @classmethod
+    def _runtime_dir(cls) -> Path:
+        return config.LLAMACPP_DIR
+
+    @classmethod
+    def tool_path(cls, name: str) -> str | None:
         return find_llamacpp_tool(
-            "llama-server", vendored_dir=config.LLAMACPP_DIR,
+            name, vendored_dir=cls._runtime_dir(),
             platform_name=platform.system(), which_fn=shutil.which,
+            engine_name=cls.name,
         )
+
+    @classmethod
+    def _binary_path(cls) -> str | None:
+        """Locate llama-server — see docs/engines.md's "Binary resolution"."""
+        return cls.tool_path("llama-server")
 
     def runtime_location(self) -> str | None:
         return self._binary_path()
@@ -126,7 +136,7 @@ class LlamaCppEngine(InferenceEngine):
         ), None)
         if model is None:
             raise RuntimeError(f"{tag} has no cataloged native MTP configuration for llama.cpp")
-        config = native_mtp_config(model, self.name)
+        config = native_mtp_config(model, self.family)
         if config is None:
             raise RuntimeError(f"{tag} does not support native MTP with llama.cpp")
         return config
@@ -155,7 +165,8 @@ class LlamaCppEngine(InferenceEngine):
     @classmethod
     def _models_dir(cls) -> Path:
         """This engine's namespaced model directory — see docs/engines.md."""
-        return config.MODELS_DIR / cls.name
+        from scripts.runtime.engine_identity import engine_family
+        return config.MODELS_DIR / engine_family(cls.name)
 
     @staticmethod
     def _slug(tag: str) -> str:
@@ -235,21 +246,31 @@ class LlamaCppEngine(InferenceEngine):
             return None
 
     def is_installed(self) -> bool:
-        return self._binary_path() is not None
+        binary = self._binary_path()
+        if binary is None:
+            return False
+        return self.REQUIRED_BACKEND is None or probe_llamacpp_backend(binary) == self.REQUIRED_BACKEND
 
     def ensure_running(self) -> bool:
         """Preflight only (binary + model dir exist) — see docs/engines.md's
         "No standalone up-but-idle state". The real spawn is lazy, per tag, in _ensure_model."""
-        if self._binary_path() is None:
+        binary = self._binary_path()
+        if binary is None:
             Shared.err(f"'{self.BINARY}' not found — run setup_check.py "
                        "to install it, or build/install llama.cpp yourself: "
                        "https://github.com/ggml-org/llama.cpp")
             return False
+        if self.REQUIRED_BACKEND is not None:
+            backend = probe_llamacpp_backend(binary)
+            if backend != self.REQUIRED_BACKEND:
+                Shared.err(f"{self.name} requires {self.REQUIRED_BACKEND}, but its runtime "
+                           f"exposes {backend or 'no backend'}")
+                return False
         if not self._models_dir().exists():
             Shared.err(f"Model directory not found at {self._models_dir()} — "
                        "run setup_check.py to download at least one model first")
             return False
-        Shared.ok(f"{self.BINARY} found at {self._binary_path()} — models load on demand per test")
+        Shared.ok(f"{self.BINARY} found at {binary} — models load on demand per test")
         return True
 
     def start(self, *, gpu_visible: bool = True, timeout: int = 15) -> bool:  # pragma: no cover — thin wrapper over ensure_running
@@ -348,7 +369,7 @@ class LlamaCppEngine(InferenceEngine):
                     continue
                 ggufs = self._resolve_model_files(entry.name)
                 if ggufs is not None:
-                    imported = custom_model(self.name, entry.name)
+                    imported = custom_model(self.family, entry.name)
                     item = {"tag": entry.name, "size": sum(p.stat().st_size for p in ggufs)}
                     if imported and imported.get("label"):
                         item["label"] = imported["label"]
@@ -356,7 +377,10 @@ class LlamaCppEngine(InferenceEngine):
         return installed
 
     def runtime_backend(self, hardware_backend: str, *, cpu_only: bool = False) -> str:
-        self._process_env = oneapi_environment() if hardware_backend == "xpu" else None
+        self._process_env = (
+            oneapi_environment()
+            if hardware_backend == "xpu" and self.REQUIRED_BACKEND is None else None
+        )
         if cpu_only:
             return "cpu"
         binary = self._binary_path()

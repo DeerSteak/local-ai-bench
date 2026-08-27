@@ -44,6 +44,11 @@ class LlamaBenchBenchmark:
             platform_name=platform.system(), which_fn=shutil.which,
         )
 
+    @classmethod
+    def find_engine_binary(cls, engine) -> str | None:
+        return engine.tool_path("llama-bench") \
+            if isinstance(engine, LlamaCppEngine) else cls.find_binary()
+
     @staticmethod
     def _base_command(binary: str, model_path: Path, batch_size: int, ubatch_size: int,
                       reps: int, ngl: int) -> list[str]:
@@ -224,7 +229,7 @@ class LlamaBenchBenchmark:
                 journal.finish()
             return results
 
-        binary = self.find_binary()
+        binary = self.find_engine_binary(engine)
         if binary is None:
             Shared.err("llama-bench not found — run setup.sh/setup.bat to install it, or build it "
                        "yourself: https://github.com/ggml-org/llama.cpp")

@@ -7,7 +7,9 @@ import subprocess
 from pathlib import Path
 
 from scripts.runtime import config
-from scripts.setup.setup_config import configured_llamacpp_tool, load_setup_config
+from scripts.setup.setup_config import (
+    configured_llamacpp_tool, configured_llamacpp_vulkan_tool, load_setup_config,
+)
 
 
 # The WSL-Ubuntu CUDA toolkit installs here and never puts itself on PATH.
@@ -97,7 +99,8 @@ def cuda_architecture(compute_cap: str | None) -> str | None:
 
 
 def find_llamacpp_tool(base_name: str, *, vendored_dir: Path | None = None,
-                       platform_name: str | None = None, which_fn=None) -> str | None:
+                       platform_name: str | None = None, which_fn=None,
+                       engine_name: str = "llamacpp") -> str | None:
     platform_name = platform_name or platform.system()
     vendored_dir = Path(vendored_dir) if vendored_dir is not None else config.LLAMACPP_DIR
     which_fn = which_fn or shutil.which
@@ -106,15 +109,19 @@ def find_llamacpp_tool(base_name: str, *, vendored_dir: Path | None = None,
         if vendored_dir.exists() else {}
     if base_name in managed_tools:
         return managed_tools[base_name]
-    found = which_fn(base_name)
+    found = which_fn(base_name) if engine_name == "llamacpp" else None
     if found:
         return found
-    if platform_name == "Darwin":
+    if platform_name == "Darwin" and engine_name == "llamacpp":
         for prefix in ("/opt/homebrew/bin", "/usr/local/bin"):
             candidate = Path(prefix) / exe_name
             if candidate.is_file():
                 return str(candidate)
-    configured = configured_llamacpp_tool(load_setup_config(config.SETUP_CONFIG_PATH), base_name)
+    setup = load_setup_config(config.SETUP_CONFIG_PATH)
+    configured = (
+        configured_llamacpp_vulkan_tool(setup, base_name)
+        if engine_name == "llamacpp-vulkan" else configured_llamacpp_tool(setup, base_name)
+    )
     if configured and Path(configured).is_file():
         return configured
     if vendored_dir.exists():

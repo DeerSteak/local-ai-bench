@@ -1,4 +1,5 @@
 from scripts.runtime import config
+from scripts.runtime.sampling import baseline_sampling_profile
 
 from scripts.workloads.methodology_profile import resolve_methodology_profile
 
@@ -110,6 +111,14 @@ def test_text_sampling_profile_maps_to_the_selected_engine():
     assert llama["semantic_controls"] == vllm["semantic_controls"]
     assert "repeat_penalty" in llama["engine_controls"]
     assert "repetition_penalty" in vllm["engine_controls"]
+
+
+def test_vulkan_llamacpp_uses_llamacpp_sampling_with_distinct_optimization_identity():
+    profile = resolve_methodology_profile(
+        engine_name="llamacpp-vulkan", tests=["llm"], cpu_only=False,
+    )
+    assert profile["sampling_profile"] == baseline_sampling_profile("llamacpp")
+    assert "llamacpp-vulkan:flash_attention=on" in profile["effective_optimizations"]
 
 
 def test_vllm_profile_records_one_cache_policy_for_server_and_native_workloads():

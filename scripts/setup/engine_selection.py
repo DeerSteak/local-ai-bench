@@ -1,10 +1,7 @@
 """Pure engine-picker rules shared by both setup interfaces — see docs/setup.md."""
 
 from scripts.setup.setup_console import section, warn
-
-LLAMACPP = "llamacpp"
-LLAMACPP_VULKAN = "llamacpp-vulkan"
-VLLM = "vllm"
+from scripts.runtime.engine_identity import LLAMACPP, LLAMACPP_VULKAN, VLLM
 
 
 def build_engine_entries(*, vllm_support=None, vllm_found: bool = False,
@@ -58,7 +55,8 @@ def model_engine_names(engines: list[str]) -> list[str]:
     """Deduplicate runtime choices that consume the same model family."""
     names = []
     for engine in engines:
-        model_engine = LLAMACPP if engine == LLAMACPP_VULKAN else engine
+        from scripts.runtime.engine_identity import engine_family
+        model_engine = engine_family(engine)
         if model_engine not in names:
             names.append(model_engine)
     return names

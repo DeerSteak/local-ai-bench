@@ -79,6 +79,20 @@ def test_variant_selection_expands_llm_and_downloaded_concurrency_scopes():
     ]
 
 
+def test_variant_selection_can_compare_native_and_vulkan_llamacpp():
+    gemma = LLM_MODELS[0]
+    scopes = [
+        {"name": name, "llm_models": [gemma], "concurrency_models": []}
+        for name in ("llamacpp", "llamacpp-vulkan")
+    ]
+    apply_variant_selections(
+        scopes, ["gemma3:1b-it=Q8_0"],
+        ["llamacpp", "llamacpp-vulkan"], ["llm"],
+    )
+    assert all([model["variant"] for model in scope["llm_models"]] == ["Q8_0"]
+               for scope in scopes)
+
+
 def test_ordinary_catalog_selection_emits_complete_default_variant_identity():
     scope = {
         "name": "llamacpp", "llm_models": [LLM_MODELS[0]],
@@ -97,7 +111,7 @@ def test_ordinary_catalog_selection_emits_complete_default_variant_identity():
 
 
 def test_variant_selection_rejects_vllm_before_execution():
-    with pytest.raises(ValueError, match="requires --engine llamacpp"):
+    with pytest.raises(ValueError, match="requires only llama.cpp engines"):
         apply_variant_selections(
             [], ["gemma3:1b-it=Q4_K_M"], ["vllm"], ["llm"],
         )
