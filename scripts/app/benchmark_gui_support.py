@@ -209,6 +209,11 @@ BENCHMARK_PRESETS = {
     "Offline / private": {"tests": ["llm", "llm_cached", "conv", "emb"]},
     "Quick run": {"tests": ["llm", "emb"], "runs": 1, "max_prompt_tokens": 8192},
     "Full run": {"tests": [name for name, *_ in TEST_DEFINITIONS], "force_all": True},
+    "Agentic Coding": {
+        "tests": ["llm", "llm_cached", "tool", "code"],
+        "force_all": True,
+        "options": {"mtp": "both", "memory_telemetry": True, "power_telemetry": True},
+    },
     "Role: Orchestrator": {"tests": ["llm", "llm_cached", "conv", "reasoning", "tool", "conc_chat"]},
     "Role: Agent / tool caller": {"tests": ["llm", "llm_cached", "conv", "tool", "code", "conc_tool"], "max_prompt_tokens": 32768},
     "Role: Coding assistant": {"tests": ["llm", "llm_cached", "conv", "code", "reasoning"], "max_prompt_tokens": 32768},
@@ -231,12 +236,15 @@ def preset_after_control_change(current: str, applying_preset: bool) -> str:
 
 def resolve_preset(name: str, available_tests: set[str]) -> dict:
     preset = BENCHMARK_PRESETS[name]
-    return {
+    resolved = {
         "tests": [test for test in preset["tests"] if test in available_tests],
         "runs": preset.get("runs", config.N_RUNS),
         "max_prompt_tokens": preset.get("max_prompt_tokens"),
         "force_all": preset.get("force_all", False),
     }
+    if preset.get("options"):
+        resolved["option_overrides"] = dict(preset["options"])
+    return resolved
 
 
 def progress_event_engine(event: dict, progress_engines: list[str]) -> str | None:
@@ -262,6 +270,7 @@ def preset_control_values(name: str, available_tests: set[str], defaults: dict) 
     }
     values["options"]["runs"] = preset["runs"]
     values["options"]["force_all"] = preset["force_all"]
+    values["options"].update(preset.get("option_overrides", {}))
     return values
 
 

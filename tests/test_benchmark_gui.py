@@ -1212,6 +1212,7 @@ def test_commercial_presets_cover_named_use_cases_and_filter_unavailable_tests()
     assert set(BENCHMARK_PRESETS) == {
         "Consumer guidance", "Vendor validation", "Neutral comparison", "Platform optimized",
         "Offline / private", "Quick run", "Full run",
+        "Agentic Coding",
         "Role: Orchestrator", "Role: Agent / tool caller", "Role: Coding assistant",
         "Role: Chat assistant", "Role: RAG / retrieval",
     }
@@ -1220,6 +1221,37 @@ def test_commercial_presets_cover_named_use_cases_and_filter_unavailable_tests()
     full = resolve_preset("Full run", {"llm", "img"})
     assert full["tests"] == ["llm", "img"]
     assert full["force_all"]
+
+
+def test_agentic_coding_preset_resolves_its_complete_measurement_contract():
+    available = {name for name, *_ in TEST_DEFINITIONS}
+    assert resolve_preset("Agentic Coding", available) == {
+        "tests": ["llm", "llm_cached", "tool", "code"],
+        "runs": config.N_RUNS,
+        "max_prompt_tokens": None,
+        "force_all": True,
+        "option_overrides": {
+            "mtp": "both", "memory_telemetry": True, "power_telemetry": True,
+        },
+    }
+
+    defaults = {
+        "tests": {test: False for test in available},
+        "models": {"model": True},
+        "max_prompt_tokens": "8192",
+        "tg_tokens": {128},
+        "options": dict(GUI_OPTION_DEFAULTS, mtp="off", force_all=False,
+                        memory_telemetry=False, power_telemetry=False),
+    }
+    values = preset_control_values("Agentic Coding", available, defaults)
+    assert {test for test, enabled in values["tests"].items() if enabled} == {
+        "llm", "llm_cached", "tool", "code",
+    }
+    assert values["max_prompt_tokens"] == "No cap"
+    assert values["options"]["mtp"] == "both"
+    assert values["options"]["force_all"] is True
+    assert values["options"]["memory_telemetry"] is True
+    assert values["options"]["power_telemetry"] is True
 
 
 def test_role_presets_select_role_relevant_tests_and_depth():
