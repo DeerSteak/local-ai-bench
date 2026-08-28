@@ -65,6 +65,19 @@ def test_qwen38_predictor_supports_every_llamacpp_quantization_variant():
         assert "draft_file" not in config
 
 
+@pytest.mark.parametrize("base_model", ["qwen3.5:4b", "qwen3.5:9b"])
+def test_qwen35_supports_every_llamacpp_quantization_variant(base_model):
+    family = next(model for model in LLM_MODELS if model.get("base_model") == base_model)
+    variants = expanded_model_variants(family)
+
+    assert native_mtp_models(variants, "llamacpp") == variants
+    assert native_mtp_models(variants, "vllm") == [variants[0]]
+    assert active_mtp_configurations(variants, "llamacpp", True) == {
+        model["tag"]: {"num_speculative_tokens": 3, "predictor": "embedded"}
+        for model in variants
+    }
+
+
 def test_nemotron35_lightning_supports_every_llamacpp_quantization_variant():
     family = next(
         model for model in LLM_MODELS
@@ -84,6 +97,12 @@ def test_nemotron35_lightning_supports_every_llamacpp_quantization_variant():
         model["tag"]: {"num_speculative_tokens": 1, "predictor": "embedded"}
         for model in variants
     }
+
+
+def test_large_llamacpp_gguf_families_without_embedded_mtp_remain_excluded():
+    for base_model in ("qwen3-coder-next:80b-a3b", "nemotron-3-super:120b-a12b"):
+        family = next(model for model in LLM_MODELS if model.get("base_model") == base_model)
+        assert native_mtp_models(expanded_model_variants(family), "llamacpp") == []
 
 
 @pytest.mark.parametrize("value", [None, {}, {"vllm": {}}, {"vllm": {"num_speculative_tokens": 0}},
