@@ -302,9 +302,11 @@ export const SIZE_TIER_LABELS = {
 };
 
 // Sections
-export const SECTIONS = ["llm", "llm_conversation", "sustained", "concurrency_tool", "concurrency_chat", "accuracy", "embeddings", "images", "llamabench", "llamabenchconc", "vllmbench"];
+export const SECTIONS = ["llm", "llm_cached", "llm_cache_comparison", "llm_conversation", "sustained", "concurrency_tool", "concurrency_chat", "accuracy", "embeddings", "images", "llamabench", "llamabenchconc", "vllmbench"];
 export const SECTION_LABELS = {
-  llm: "LLM",
+  llm: "Uncached Prefill / Generation",
+  llm_cached: "Cached Prefill / Generation",
+  llm_cache_comparison: "Cached vs Uncached",
   llm_conversation: "LLM Conversation",
   sustained: "Sustained Load",
   concurrency_tool: "Concurrency (Tool)",

@@ -47,7 +47,9 @@ A recommendation artifact produced by `python -m scripts.results.recommendation_
 
 | Section | Charts |
 |---|---|
-| LLM | Two charts per model — Tokens/sec and TTFT — across context lengths (512 / 2K / 8K / 32K / 64K), single-shot cold-prefill test |
+| Uncached Prefill / Generation | Per-model generation, TTFT, and engine-reported prefill-throughput charts across context lengths (512 / 2K / 8K / 32K / 64K), with request-level cache bypass |
+| Cached Prefill / Generation | Per-model generation and engine-reported prefill-throughput charts from repeated exact prompts after one excluded cache-priming request |
+| Cached vs Uncached | Two line charts per model comparing the cached and uncached sections directly: prompt-processing speed and generation speed |
 | LLM Conversation | Same two charts per model, but from the multi-turn conversation test, across whichever of 0 / 2K / 4K / 8K / 16K / 32K / 48K / 64K / 80K / 96K its plan reached (capped by the model's real context ceiling) |
 | Sustained Load | Opt-in — one aligned timeline per system/model with throughput on the left axis and available temperature and power overlays on separate right axes, plus retention, degradation class, suspected cause, onset, and ambient summary |
 | Concurrency (Tool) | Three line charts per model — Per-Request Tokens/sec, Aggregate Tokens/sec, and TTFT — at 1 / 2 / 4 / 6 / 8 / 12 / 16 simultaneous short-context requests |
@@ -58,13 +60,13 @@ A recommendation artifact produced by `python -m scripts.results.recommendation_
 | llama-bench | Opt-in — two line charts per model: Decode Throughput across prefilled prompt depths, with one line per tg size and system; and Prompt Processing Throughput across pp sizes, with one line per system. See [Workloads](workloads.md#llama-bench) |
 | llama-bench Concurrency | Opt-in — aggregate decode throughput from `llama-batched-bench`, charted across parallel sequence counts with one chart per model and tg size. See [Workloads](workloads.md#llama-bench-concurrency) |
 
-The **Models** filter and **Machine** labels are shared between the LLM, LLM Conversation, Sustained Load, Concurrency, Accuracy, llama-bench, and llama-bench Concurrency sections, so switching between them keeps the same models/files selected. Sortable raw-table headers are keyboard-focusable buttons; Enter or Space changes their sort, and assistive technology receives the active ascending or descending state.
+The **Models** filter and **Machine** labels are shared between the uncached, cached, combined cache-comparison, LLM Conversation, Sustained Load, Concurrency, Accuracy, llama-bench, and llama-bench Concurrency sections, so switching between them keeps the same models/files selected. Sortable raw-table headers are keyboard-focusable buttons; Enter or Space changes their sort, and assistive technology receives the active ascending or descending state.
 
 ## Chart Style and Group By
 
 **Chart Style** (Bar / Line) applies to the LLM, LLM Conversation, Embeddings, and Images sections — it picks the chart type. Both native llama.cpp sections are line-only because their horizontal axes are ordered numeric sweeps. **Group By** (Model / System) applies to LLM, LLM Conversation, Embeddings, Images, and llama-bench, and flips which entity becomes the chart group; llama-bench Concurrency stays grouped by model. In by-model LLM bar charts, each system remains one chart category with native group spacing, while its context bars follow the numeric checkpoint order from `CTX_ORDER` rather than lexicographic label order. Group By → System omits models for which every loaded file contains only a `no_llm_data` placeholder, while retaining a model attempted by at least one system. It also reveals a **Model Sizes** toggle (Split by tier vs. Combined) for the LLM/LLM Conversation and llama-bench sections, since a single combined chart with every model tier at once is unreadable.
 
-Both pills are hidden on **Accuracy**, HTTP **Concurrency**, and **llama-bench Concurrency**, while only Chart Style is hidden on **llama-bench**. Accuracy charts are always bar charts grouped by model. The concurrency and native llama.cpp charts are always line charts, with concurrency level or pp depth on the horizontal axis. llama-bench's pp-size ordering is derived from each entry's own `n_prompt` or `n_depth` rather than a fixed list like `CTX_ORDER`, since the sweep is a `config.py` constant that can change across versions; pp sizes are binary-K depths and render as plain "2K"/"32K" labels rather than raw token counts.
+Both pills are hidden on **Cached vs Uncached**, **Accuracy**, HTTP **Concurrency**, and **llama-bench Concurrency**, while only Chart Style is hidden on **llama-bench**. Cached vs Uncached is always a per-model line comparison. Accuracy charts are always bar charts grouped by model. The concurrency and native llama.cpp charts are always line charts, with concurrency level or pp depth on the horizontal axis. llama-bench's pp-size ordering is derived from each entry's own `n_prompt` or `n_depth` rather than a fixed list like `CTX_ORDER`, since the sweep is a `config.py` constant that can change across versions; pp sizes are binary-K depths and render as plain "2K"/"32K" labels rather than raw token counts.
 
 Sustained Load is also line-only and hides Group By because each card is already one system/model soak. Baseline-percent mode is unavailable for this section: transforming timestamps and sensor values into percentages would destroy the physical alignment and units. Missing temperature or power simply omits that line; throughput and retention remain visible.
 
@@ -74,9 +76,13 @@ The same position lookup drives the `crashed`, `timed_out`, and `slow_tps` casca
 
 ## What the charts mean
 
-**LLM → Tokens/sec.** Decode throughput (tokens generated per second) for the single-shot test, at each context length. Higher is better. This is generation speed *after* the prompt has already been processed — it answers "once the model starts responding, how fast does text come out?"
+**Cached vs Uncached → Prompt Processing Speed.** Engine-reported prefill tokens/sec from the cached and uncached tests plotted together for each model. Higher is better. A cached point reflects an exact-prompt prefix-cache hit after the excluded priming request; an uncached point reflects full cold prompt ingestion.
 
-**LLM → TTFT.** Time to process the single-shot prompt before the first token comes back — a genuine cold prefill, since request-level cache bypass forces the stable prompt to be fully processed on every run. Lower is better. This answers "if I paste a large document and hit send, how long do I wait before anything happens?" TTFT rises sharply with context length here, since the model has to run every one of those tokens through the network with nothing cached.
+**Cached vs Uncached → Generation Speed.** Decode tokens/sec from the same two tests plotted together for each model and context depth. Higher is better. This makes any generation-side effect of cache reuse visible without mixing it into the much larger prompt-processing delta.
+
+**Uncached Prefill / Generation → Tokens/sec.** Decode throughput (tokens generated per second) for the uncached test, at each context length. Higher is better. This is generation speed *after* the prompt has already been processed — it answers "once the model starts responding, how fast does text come out?"
+
+**Uncached Prefill / Generation → TTFT.** Time to process the prompt before the first token comes back — a genuine cold prefill, since request-level cache bypass forces the stable prompt to be fully processed on every run. Lower is better. This answers "if I paste a large document and hit send, how long do I wait before anything happens?" TTFT rises sharply with context length here, since the model has to run every one of those tokens through the network with nothing cached.
 
 **LLM Conversation → Tokens/sec.** The same decode-throughput metric, but measured mid-conversation instead of after a single cold prompt. Generally close to the single-shot number for the same model — decode speed doesn't depend much on how the context got filled.
 
@@ -118,7 +124,7 @@ The backend badge identifies the inference backend actually exposed by the selec
 
 ## Stats table
 
-Below the charts, every section also renders a sortable raw-numbers table (one row per model/context-length/category, depending on section) — click a column header to sort by it, click again to reverse direction. Useful for reading exact values or copying numbers out, where a chart is more about the overall shape.
+Below the charts, every measurement section also renders a sortable raw-numbers table (one row per model/context-length/category, depending on section) — click a column header to sort by it, click again to reverse direction. Cached vs Uncached is a derived visual comparison of the two underlying sections and therefore has no duplicate raw table; their standalone views retain the exact values.
 
 Performance sections with sample evidence also render a collapsible **Decision-grade sample review**. It lists every available sample, whether it contributed to the aggregate, and any exclusion reason such as `implausible_server_tps`; the filter isolates valid, excluded, or legacy evidence. Historical files that contain only means and run counts are labeled **legacy aggregate-only** rather than being presented as if their raw samples were recoverable. Native llama-bench internal repetitions appear when `ts_runs` or `samples_ts` is present. When schema-4 pause evidence exists, this review opens automatically and shows each affected system's pause count and total derived paused duration; an unfinished or malformed final interval is labeled unavailable rather than treated as zero time.
 

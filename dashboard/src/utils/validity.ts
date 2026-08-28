@@ -3,7 +3,7 @@ import type { JsonRecord } from "./shared";
 import type { ResultsFile } from "../types";
 
 const GENERATION_SECTIONS = new Set([
-  "llm", "llm_conversation", "concurrency_tool", "concurrency_chat",
+  "llm", "llm_cached", "llm_conversation", "concurrency_tool", "concurrency_chat",
 ]);
 
 interface ValidityRow {

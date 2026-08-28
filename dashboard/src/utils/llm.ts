@@ -99,6 +99,7 @@ export function getAllLLMModels(files: ResultsFile[]): string[] {
   const s = new Set<string>();
   for (const f of files) {
     for (const m of Object.keys(f.data.llm || {})) s.add(m);
+    for (const m of Object.keys(f.data.llm_cached || {})) s.add(m);
     for (const m of Object.keys(f.data.llm_conversation || {})) s.add(m);
     for (const m of Object.keys(f.data.sustained || {})) s.add(m);
     for (const test of ACCURACY_TESTS)
@@ -140,6 +141,37 @@ export function buildLLMDataForModel(files: ResultsFile[], model: string, metric
       if (s) row[`f${fi}`] = llmMetricValue(s, metric);
     });
     return row;
+  });
+}
+
+export function buildLLMCacheComparisonData(
+  files: ResultsFile[], model: string, metric: "prefill" | "tps",
+): ChartRow[] {
+  return CTX_ORDER.map(ctx => {
+    const row: ChartRow = { ctxLabel: ctx };
+    files.forEach((file, index) => {
+      const uncached = file.data.llm?.[model]?.[ctx];
+      const cached = file.data.llm_cached?.[model]?.[ctx];
+      if (uncached) row[`f${index}_uncached`] = llmMetricValue(uncached, metric);
+      if (cached) row[`f${index}_cached`] = llmMetricValue(cached, metric);
+    });
+    return row;
+  }).filter(row => Object.keys(row).length > 1);
+}
+
+export function buildLLMCacheComparisonConfigs(files: ResultsFile[]): LineConfig[] {
+  if (files.length === 1) {
+    return [
+      { dataKey: "f0_uncached", stroke: "#0969da", name: "Uncached" },
+      { dataKey: "f0_cached", stroke: "#1a7f37", name: "Cached" },
+    ];
+  }
+  return files.flatMap((file, index) => {
+    const stroke = FILE_COLORS[index % FILE_COLORS.length];
+    return [
+      { dataKey: `f${index}_uncached`, stroke, strokeDasharray: "8 5", name: `${file.hostname} — Uncached` },
+      { dataKey: `f${index}_cached`, stroke, name: `${file.hostname} — Cached` },
+    ];
   });
 }
 

@@ -3,6 +3,8 @@ import { describe, it, expect } from "vitest";
 import {
   buildLLMBarConfigsByModel,
   buildLLMBarDataByModel,
+  buildLLMCacheComparisonConfigs,
+  buildLLMCacheComparisonData,
   buildLLMData,
   buildLLMLineConfigs,
   buildLLMLineConfigsByCtx,
@@ -20,6 +22,32 @@ const dash = (config: object): string | undefined =>
   (config as { strokeDasharray?: string }).strokeDasharray;
 
 const ALL = new Set(["gemma3-1b", "gemma3-27b-q4"]);
+
+describe("cached versus uncached comparison", () => {
+  it("pairs prefill and generation values by model and context", () => {
+    const files = [{ id: "a", hostname: "alpha", data: {
+      llm: { m: { "2K": { tps_mean: 40, prefill_tps_mean: 900 } } },
+      llm_cached: { m: { "2K": { tps_mean: 55, prefill_tps_mean: 12000 } } },
+    } }];
+    expect(buildLLMCacheComparisonData(files, "m", "prefill")).toEqual([
+      { ctxLabel: "2K", f0_uncached: 900, f0_cached: 12000 },
+    ]);
+    expect(buildLLMCacheComparisonData(files, "m", "tps")).toEqual([
+      { ctxLabel: "2K", f0_uncached: 40, f0_cached: 55 },
+    ]);
+  });
+
+  it("uses cache-state colors for one file and file colors plus line styles for several", () => {
+    expect(buildLLMCacheComparisonConfigs([file("alpha", {})]).map(config => config.name))
+      .toEqual(["Uncached", "Cached"]);
+    const configs = buildLLMCacheComparisonConfigs([file("alpha", {}), file("beta", {})]);
+    expect(configs.map(config => config.name)).toEqual([
+      "alpha — Uncached", "alpha — Cached", "beta — Uncached", "beta — Cached",
+    ]);
+    expect(dash(configs[0])).toBe("8 5");
+    expect(dash(configs[1])).toBeUndefined();
+  });
+});
 
 
 // An unrecognized anchor cascades nothing — see docs/dashboard.md.
