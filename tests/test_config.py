@@ -21,6 +21,9 @@ def test_memory_interval_defaults_to_qualified_half_second_cadence():
 def test_context_lengths_ascending():
     assert config.CONTEXT_LENGTHS == sorted(config.CONTEXT_LENGTHS)
     assert len(config.CONTEXT_LENGTHS) == len(set(config.CONTEXT_LENGTHS))
+    assert config.PREFILL_128K_TOKENS == 131072
+    assert config.PREFILL_128K_TOKENS in config.CONTEXT_LENGTHS
+    assert config.PREFILL_128K_TOKENS in config.LLAMABENCH_PP
 
 
 def test_results_dir_under_script_dir():

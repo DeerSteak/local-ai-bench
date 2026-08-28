@@ -164,10 +164,24 @@ def test_growth_sequence_at_the_ceiling_never_exceeds_num_ctx():
 # ── conv_ctx_plan ──
 
 def test_ctx_plan_uses_full_target_and_checkpoints_regardless_of_tier():
-    target_ctx, checkpoints, num_ctx = Conv.conv_ctx_plan(131072)
+    model_max = Conv.CONV_TARGET_CTX + Conv.CONV_CTX_HEADROOM
+    target_ctx, checkpoints, num_ctx = Conv.conv_ctx_plan(model_max)
     assert target_ctx == Conv.CONV_TARGET_CTX
     assert checkpoints == Conv.CONV_CHECKPOINTS
-    assert num_ctx == min(target_ctx + Conv.CONV_CTX_HEADROOM, 131072)
+    assert num_ctx == target_ctx + Conv.CONV_CTX_HEADROOM
+
+
+def test_ctx_plan_skips_128k_when_model_has_no_generation_room():
+    target_ctx, checkpoints, num_ctx = Conv.conv_ctx_plan(131072)
+    assert target_ctx == 131072
+    assert checkpoints[-1] == 98304
+    assert 131072 not in checkpoints
+    assert num_ctx == 131072
+
+
+def test_ctx_plan_includes_128k_when_model_supports_more_than_128k():
+    _, checkpoints, _ = Conv.conv_ctx_plan(131073, 131072)
+    assert checkpoints[-1] == 131072
 
 
 def test_ctx_plan_a_lower_model_max_cuts_off_target_and_checkpoints_early():
@@ -186,7 +200,7 @@ def test_ctx_plan_num_ctx_never_exceeds_model_max():
 
 
 def test_ctx_plan_respects_max_prompt_tokens_cap():
-    target_ctx, checkpoints, num_ctx = Conv.conv_ctx_plan(131072, 32768)
+    target_ctx, checkpoints, num_ctx = Conv.conv_ctx_plan(262144, 32768)
     assert target_ctx == 32768
     assert checkpoints[-1] == 32768
     assert all(checkpoint <= 32768 for checkpoint in checkpoints)
@@ -194,7 +208,7 @@ def test_ctx_plan_respects_max_prompt_tokens_cap():
 
 
 def test_ctx_plan_cap_below_first_nonzero_checkpoint_keeps_opening_checkpoint():
-    target_ctx, checkpoints, num_ctx = Conv.conv_ctx_plan(131072, 512)
+    target_ctx, checkpoints, num_ctx = Conv.conv_ctx_plan(262144, 512)
     assert target_ctx == 512
     assert checkpoints == [0]
     assert num_ctx == 512 + Conv.CONV_CTX_HEADROOM

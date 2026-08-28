@@ -213,6 +213,15 @@ class Shared:
         return f"{tokens / 1024:g}K"
 
     @staticmethod
+    def supported_prompt_sizes(sizes: list[int], model_max: int) -> list[int]:
+        """Keep configured prompt sizes the model can run, with generation room at 128K."""
+        return [
+            size for size in sizes
+            if size <= model_max
+            and (size != config.PREFILL_128K_TOKENS or size < model_max)
+        ]
+
+    @staticmethod
     def system_ram_gb():
         return psutil.virtual_memory().total / (1024 ** 3)
 

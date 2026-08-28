@@ -263,7 +263,10 @@ class LlamaBenchBenchmark:
                     continue
 
                 prefill_entries, decode_entries = [], []
-                requested_cases = len(config.LLAMABENCH_PP) * (1 + len(config.LLAMABENCH_TG))
+                model_pp = Shared.supported_prompt_sizes(
+                    config.LLAMABENCH_PP, engine.max_context_length(tag),
+                )
+                requested_cases = len(model_pp) * (1 + len(config.LLAMABENCH_TG))
                 model_result: LlamaBenchModelResult = {
                     "prefill_entries": prefill_entries, "decode_entries": decode_entries,
                     "requested_cases": requested_cases, "completed_cases": 0,
@@ -275,10 +278,10 @@ class LlamaBenchBenchmark:
                 stopped = False
 
                 sweeps = (journal.pending_sweeps(
-                    model, config.LLAMABENCH_PP, config.LLAMABENCH_TG,
+                    model, model_pp, config.LLAMABENCH_TG,
                 ) if journal else [
-                    ("prefill", config.LLAMABENCH_PP, []),
-                    ("decode", config.LLAMABENCH_PP, config.LLAMABENCH_TG),
+                    ("prefill", model_pp, []),
+                    ("decode", model_pp, config.LLAMABENCH_TG),
                 ])
                 for sweep, pending_pp, pending_tg in sweeps:
                     wait_if_paused()

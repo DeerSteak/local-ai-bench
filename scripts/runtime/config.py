@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 
 VERSION        = "6.0"
+PREFILL_128K_TOKENS = 1 << 17
 
 COMFYUI_URL  = "http://localhost:8188"
 
@@ -61,7 +62,9 @@ RESUME_DIGEST_CACHE_PATH = SCRIPT_DIR / ".resume_digest_cache.json"
 
 RESULTS_DIR = SCRIPT_DIR / "results"
 
-CONTEXT_LENGTHS = [512, 2048, 8192, 32768, 65536]   # tokens (approximate, via prompt padding)
+CONTEXT_LENGTHS = [
+    512, 2048, 8192, 32768, 65536, PREFILL_128K_TOKENS,
+]   # tokens (approximate, via prompt padding)
 ACCURACY_CONTEXT = 32768   # fixed llama-server allocation shared by accuracy warmup and questions
 
 # See docs/workloads.md#concurrency for "tool" vs. "chat" and the soft-exit rationale.
@@ -131,7 +134,10 @@ PRACTICAL_ACCURACY_THRESHOLD_PCT = 1.0
 # llama-bench pp/tg throughput sweep (opt-in `llamabench` test) — see docs/workloads.md#llama-bench.
 # Matches every non-zero size from CONTEXT_LENGTHS (prefill) and LLMConversationBenchmark.CONV_CHECKPOINTS
 # (conversation) so llama-bench numbers can stand in for both as they're phased out.
-LLAMABENCH_PP = [512, 2048, 4096, 8192, 16384, 32768, 49152, 65536, 81920, 98304]
+LLAMABENCH_PP = [
+    512, 2048, 4096, 8192, 16384, 32768, 49152, 65536, 81920, 98304,
+    PREFILL_128K_TOKENS,
+]
 LLAMABENCH_TG = [128, 512]
 LLAMABENCH_BATCH_SIZE = 2048
 LLAMABENCH_UBATCH_SIZE = 512

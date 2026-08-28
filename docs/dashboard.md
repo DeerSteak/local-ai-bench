@@ -47,10 +47,10 @@ A recommendation artifact produced by `python -m scripts.results.recommendation_
 
 | Section | Charts |
 |---|---|
-| Uncached Prefill / Generation | Per-model generation, TTFT, and engine-reported prefill-throughput charts across context lengths (512 / 2K / 8K / 32K / 64K), with request-level cache bypass |
+| Uncached Prefill / Generation | Per-model generation, TTFT, and engine-reported prefill-throughput charts across context lengths (512 / 2K / 8K / 32K / 64K / 128K), with request-level cache bypass |
 | Cached Prefill / Generation | Per-model generation and engine-reported prefill-throughput charts from repeated exact prompts after one excluded cache-priming request |
 | Cached vs Uncached | Two line charts per model comparing the cached and uncached sections directly: prompt-processing speed and generation speed |
-| LLM Conversation | Same two charts per model, but from the multi-turn conversation test, across whichever of 0 / 2K / 4K / 8K / 16K / 32K / 48K / 64K / 80K / 96K its plan reached (capped by the model's real context ceiling) |
+| LLM Conversation | Same two charts per model, but from the multi-turn conversation test, across whichever of 0 / 2K / 4K / 8K / 16K / 32K / 48K / 64K / 80K / 96K / 128K its plan reached (capped by the model's real context ceiling) |
 | Sustained Load | Opt-in — one aligned timeline per system/model with throughput on the left axis and available temperature and power overlays on separate right axes, plus retention, degradation class, suspected cause, onset, and ambient summary |
 | Concurrency (Tool) | Three line charts per model — Per-Request Tokens/sec, Aggregate Tokens/sec, and TTFT — at 1 / 2 / 4 / 6 / 8 / 12 / 16 simultaneous short-context requests |
 | Concurrency (Chat) | The same three charts at 1 / 2 / 4 / 8 / 16 / 24 / 32 simultaneous long-context requests. See [Concurrency](workloads.md#concurrency) for how the two workloads differ |

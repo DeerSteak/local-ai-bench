@@ -71,7 +71,7 @@ class LLMPrefillBenchmark:
                 model_max = engine.max_context_length(tag)
                 results[short] = {}
 
-                model_ctx_lengths = [c for c in context_lengths if c <= model_max]
+                model_ctx_lengths = Shared.supported_prompt_sizes(context_lengths, model_max)
                 Shared.log(f"{label}: model supports {model_max} ctx")
 
                 model_timed_out = False
