@@ -460,6 +460,19 @@ def test_generate_uses_server_reported_timings(monkeypatch):
     assert result.tokens_per_sec == pytest.approx(5.0)
 
 
+def test_generate_enables_prompt_cache_when_requested(monkeypatch):
+    _patch_ensure_model(monkeypatch)
+    captured = []
+
+    def urlopen(req, timeout):
+        captured.append(json.loads(req.data))
+        return _FakeResponse([{"content": "x", "tokens": [1], "stop": True}])
+
+    monkeypatch.setattr(LlamaCppEngine, "_urlopen", staticmethod(urlopen))
+    LlamaCppEngine().generate("tag", "prompt", cache_prompt=True)
+    assert captured[0]["cache_prompt"] is True
+
+
 def test_generate_falls_back_to_wall_clock_ttft_when_server_omits_it(monkeypatch):
     _patch_ensure_model(monkeypatch)
     monkeypatch.setattr(

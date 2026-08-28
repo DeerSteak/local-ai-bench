@@ -59,7 +59,8 @@ class FakeEngine(InferenceEngine):
         return True
 
     # inference
-    def generate(self, tag, prompt, timeout=600, num_ctx=None, n_parallel=1):
+    def generate(self, tag, prompt, timeout=600, num_ctx=None, n_parallel=1,
+                 cache_prompt=False):
         return GenerationMeasurement(0.1, 1, 1.0, 1.1, 1.0)
 
     def chat(self, tag, messages, timeout=600, num_ctx=None, num_predict=1024,

@@ -323,7 +323,8 @@ class InferenceEngine(ABC):
 
     @abstractmethod
     def generate(self, tag: str, prompt: str, timeout: int = 600,
-                 num_ctx: int | None = None, n_parallel: int = 1) -> GenerationMeasurement:
+                 num_ctx: int | None = None, n_parallel: int = 1,
+                 cache_prompt: bool = False) -> GenerationMeasurement:
         """Return one named single-shot measurement."""
 
     @abstractmethod

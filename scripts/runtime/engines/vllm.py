@@ -737,6 +737,8 @@ class VllmEngine(InferenceEngine):
                     "--generation-config", "vllm",
                     "--max-num-seqs", str(n_parallel),
                     "--gpu-memory-utilization", str(self._gpu_memory_utilization)]
+        if not embedding:
+            options.append("--enable-prefix-caching")
         if self._kv_cache_dtype != "auto" and not embedding:
             options += ["--kv-cache-dtype", self._kv_cache_dtype]
         if num_ctx is not None:
@@ -937,7 +939,8 @@ class VllmEngine(InferenceEngine):
     # ── inference ──
 
     def generate(self, tag: str, prompt: str, timeout: int = 600,
-                 num_ctx: int | None = None, n_parallel: int = 1) -> GenerationMeasurement:
+                 num_ctx: int | None = None, n_parallel: int = 1,
+                 cache_prompt: bool = False) -> GenerationMeasurement:
         """Generate via /v1/completions; n_parallel must match prepare_concurrency."""
         operation_start = time.perf_counter()
         load_timeout = offload_calibration_timeout(self.LOAD_TIMEOUT, self.LOAD_TIMEOUT)
@@ -954,7 +957,7 @@ class VllmEngine(InferenceEngine):
             "max_tokens": config.GENERATE_MAX_TOKENS,
             "stream": True,
             "stream_options": {"include_usage": True},
-            "cache_salt": secrets.token_urlsafe(32),
+            "cache_salt": tag if cache_prompt else secrets.token_urlsafe(32),
         }
         prefill_before = self._prefill_reading()
         request_start = time.perf_counter()

@@ -604,7 +604,8 @@ class LlamaCppEngine(InferenceEngine):
     # ── inference ──
 
     def generate(self, tag: str, prompt: str, timeout: int = 600,
-                 num_ctx: int | None = None, n_parallel: int = 1) -> GenerationMeasurement:
+                 num_ctx: int | None = None, n_parallel: int = 1,
+                 cache_prompt: bool = False) -> GenerationMeasurement:
         """Generate via /completion; n_parallel must match prepare_concurrency."""
         operation_start = time.perf_counter()
         deadline = operation_start + timeout
@@ -617,7 +618,7 @@ class LlamaCppEngine(InferenceEngine):
             "n_predict": config.GENERATE_MAX_TOKENS,
             "stream": True,
             "return_tokens": True,
-            "cache_prompt": False,
+            "cache_prompt": cache_prompt,
         }).encode()
         req = urllib.request.Request(
             f"{config.LLAMACPP_URL}/completion",
