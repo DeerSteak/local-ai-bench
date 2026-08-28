@@ -136,6 +136,32 @@ def test_configuration_state_applies_imported_controls():
     assert controller.option_vars["gpu_split_mode"].get() == "Layer split (recommended)"
 
 
+@pytest.mark.parametrize("error", [KeyError("popdown"), RuntimeError("window closed")])
+def test_configuration_scroll_ignores_unregistered_or_destroyed_pointer_window(error):
+    class TclError(RuntimeError):
+        pass
+
+    if isinstance(error, RuntimeError):
+        error = TclError(str(error))
+
+    class Root:
+        def winfo_pointerx(self):
+            return 10
+
+        def winfo_pointery(self):
+            return 20
+
+        def winfo_containing(self, _x, _y):
+            raise error
+
+    controller = ConfigurationStateController.__new__(ConfigurationStateController)
+    controller.root = Root()
+    controller.tk = SimpleNamespace(TclError=TclError)
+    controller.screen = SimpleNamespace(canvas=object(), form=object())
+
+    assert controller.scroll_form(SimpleNamespace(delta=-1, num=0)) is None
+
+
 def test_configuration_file_action_translates_portable_preset():
     applied = []
     controller = ConfigurationFileActions.__new__(ConfigurationFileActions)

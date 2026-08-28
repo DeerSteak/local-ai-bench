@@ -176,9 +176,12 @@ class ConfigurationStateController:
         )
 
     def scroll_form(self, event):
-        widget = self.root.winfo_containing(
-            self.root.winfo_pointerx(), self.root.winfo_pointery(),
-        )
+        try:
+            widget = self.root.winfo_containing(
+                self.root.winfo_pointerx(), self.root.winfo_pointery(),
+            )
+        except (KeyError, self.tk.TclError):
+            return None
         current = widget
         while current is not None and current not in {self.screen.canvas, self.screen.form}:
             current = getattr(current, "master", None)
