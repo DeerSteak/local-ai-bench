@@ -6,7 +6,7 @@ from scripts.runtime.engine_identity import engine_family
 
 MTP_MODES = ("off", "on", "both")
 MTP_SERVER_TESTS = frozenset({
-    "llm", "conv", "mcq", "math", "reasoning", "code", "tool",
+    "llm", "llm_cached", "conv", "mcq", "math", "reasoning", "code", "tool",
     "conc_tool", "conc_chat", "sustained",
 })
 MTP_CONCURRENCY_TESTS = frozenset({"conc_tool", "conc_chat"})

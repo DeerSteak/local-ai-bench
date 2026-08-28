@@ -201,7 +201,7 @@ def format_resolved_plan(engine: str, tests: list[str], models: dict[str, list[d
         family = family_for.get(test, "llm")
         labels = [label for model in models.get(family, [])
                   if (label := str(model.get("label") or model.get("short") or ""))]
-        if test == "llm":
+        if test in {"llm", "llm_cached"}:
             cases = f"contexts {', '.join(map(str, config.CONTEXT_LENGTHS))}"
         elif test == "conv":
             from scripts.workloads.llm_conversation_benchmark import LLMConversationBenchmark
@@ -750,7 +750,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     parser.add_argument(
         "--tests", nargs="+",
         choices=TEST_CHOICES,
-        default=["llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool", "img"],
+        default=["llm", "llm_cached", "conv", "emb", "mcq", "math", "reasoning", "code", "tool", "img"],
         help="Which benchmarks to run (default: all except the concurrency "
              "tests and 'llamabench'). 'acc' is shorthand for every accuracy-style test "
              "('mcq', 'math', 'reasoning', 'code', and 'tool'). 'conc_tool' and 'conc_chat' are "
@@ -1159,7 +1159,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             continue
 
         engine_backed_tests = [
-            t for t in ("llm", "conv", "llamabench", "llamabenchconc", "emb", "mcq", "math", "reasoning", "code", "tool",
+            t for t in ("llm", "llm_cached", "conv", "llamabench", "llamabenchconc", "emb", "mcq", "math", "reasoning", "code", "tool",
                         "conc_tool", "conc_chat", "sustained") if t in tests
         ]
         profile = execution_profiles[engine_name]
@@ -1400,7 +1400,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 if not vllm_bench_path:
                     raise ValueError("cannot identify vLLM bench runtime for resume")
                 extra_resume_runtimes["vllm-bench"] = Path(vllm_bench_path).resolve()
-            if journal_stages & {"llm", "conv", "llamabench", "llamabenchconc", "vllmbench", "sustained", *ACCURACY_TESTS}:
+            if journal_stages & {"llm", "llm_cached", "conv", "llamabench", "llamabenchconc", "vllmbench", "sustained", *ACCURACY_TESTS}:
                 model_families.append("llm")
             if journal_stages & {"conc_tool", "conc_chat"}:
                 model_families.append("concurrency")
@@ -1416,7 +1416,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             resume_identity_options = {
                 "model_families": model_families,
                 "include_engine_runtime": bool(journal_stages & {
-                    "llm", "conv", "vllmbench", "sustained", "emb", "conc_tool", "conc_chat",
+                    "llm", "llm_cached", "conv", "vllmbench", "sustained", "emb", "conc_tool", "conc_chat",
                     *ACCURACY_TESTS,
                 }),
                 "extra_runtimes": extra_resume_runtimes,
@@ -1451,6 +1451,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             ),
             "sample_ids": {},  # populated only when --sample is used
             "llm":             {},
+            "llm_cached":      {},
             "llm_conversation": {},
             "embeddings":      {},
             "images":          {},
@@ -1478,7 +1479,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         def update_telemetry_summaries():
             sections = {
                 key: results.get(key) for key in (
-                    "llm", "llm_conversation", "embeddings", "images", "mcq", "math",
+                    "llm", "llm_cached", "llm_conversation", "embeddings", "images", "mcq", "math",
                     "reasoning", "code", "tool", "concurrency_tool", "concurrency_chat",
                     "llamabench", "llamabenchconc", "vllmbench",
                     "sustained",
@@ -1574,6 +1575,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             power_availability=power_availability,
             temperature_availability=temperature_availability,
         )
+        run_llm_cached = stage_runner("llm_cached", make_save("llm_cached"))
         run_conversation = stage_runner("conv", make_save("llm_conversation", "conv"))
         run_sustained = stage_runner("sustained", make_save("sustained"))
 
@@ -1630,6 +1632,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
         registry = [
             StageDefinition("llm", "llm", len(llm_models), run_llm,
+                            prepare=release_port_for_runner),
+            StageDefinition("llm_cached", "llm_cached", len(llm_models), run_llm_cached,
                             prepare=release_port_for_runner),
             StageDefinition("conv", "llm_conversation", len(llm_models), run_conversation,
                             requires_engine=False, prepare=release_port_for_runner),

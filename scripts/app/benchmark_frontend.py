@@ -41,7 +41,7 @@ TEST_STAGE_LABELS = {
     spec.key: spec.label for spec in STAGE_SPECS
 }
 TEST_SHORTCUT_GROUPS = {
-    "l": {"llm", "conv", "llamabench", "vllmbench"},
+    "l": {"llm", "llm_cached", "conv", "llamabench", "vllmbench"},
     "x": {"mcq", "math", "reasoning", "code", "tool"},
     "c": {"conc_tool", "conc_chat"},
     "e": {"emb"},
@@ -49,7 +49,7 @@ TEST_SHORTCUT_GROUPS = {
 }
 TIER_KEYS = {"xs": "xsmall", "s": "small", "m": "medium", "l": "large"}
 LLM_BACKED_TESTS = set(LLM_TESTS + CONCURRENCY_TESTS + ["vllmbench"])
-MAX_PROMPT_TOKEN_TESTS = {"llm", "conv", "llamabench", "llamabenchconc", "vllmbench"}
+MAX_PROMPT_TOKEN_TESTS = {"llm", "llm_cached", "conv", "llamabench", "llamabenchconc", "vllmbench"}
 MAX_PROMPT_TOKEN_OPTIONS: list[int] = sorted(set(config.CONTEXT_LENGTHS) | set(config.LLAMABENCH_PP))
 TG_TOKEN_TESTS = {"llamabench", "llamabenchconc"}
 TG_TOKEN_OPTIONS: list[int] = list(TG_TOKEN_CHOICES)
@@ -524,7 +524,7 @@ def choose_max_prompt_tokens(input_fn, output_fn, clear_fn=lambda: None,
             clear_fn()
         redraw = True
         output_fn(
-            "Cap the max prompt-processing size tested (applies to Single-shot LLM, "
+            "Cap the max prompt-processing size tested (applies to uncached/cached prefill, "
             "conversation, llama-bench throughput, and llama-bench concurrency):"
         )
         output_fn(f"   0  No cap (test every configured depth){' (restored)' if preferred is None else ''}")

@@ -584,7 +584,7 @@ def test_saved_model_selection_keeps_family_defaults_when_all_values_are_stale()
 def test_default_test_state_matches_documented_matrix():
     entries = {entry.value: entry for entry in build_test_entries(sample_inventory())}
     assert {name for name, entry in entries.items() if entry.checked} == {
-        "llm", "conv", "emb", "img",
+        "llm", "llm_cached", "conv", "emb", "img",
     }
     assert all(entries[name].available for name in entries)
     assert all(not entries[name].checked for name in (
@@ -681,7 +681,7 @@ def test_test_shortcut_all_selects_every_available_test_only():
 @pytest.mark.parametrize(
     ("shortcut", "expected"),
     [
-        ("l", {"llm", "conv", "llamabench", "vllmbench"}),
+        ("l", {"llm", "llm_cached", "conv", "llamabench", "vllmbench"}),
         ("x", {"mcq", "math", "reasoning", "code", "tool"}),
         ("c", {"conc_tool", "conc_chat"}),
         ("e", {"emb"}),
@@ -809,7 +809,7 @@ def test_choose_tests_clears_each_redraw_and_keeps_feedback_visible():
         entries, InputSequence(["invalid", ""]), output,
         clear_fn=lambda: clears.append(len(messages)),
     )
-    assert selected == ["llm", "conv", "emb", "img"]
+    assert selected == ["llm", "llm_cached", "conv", "emb", "img"]
     assert len(clears) == 1
     second_menu = messages[clears[0]:]
     assert "Couldn't parse that selection; use numbers/ranges or a shortcut from the legend." in second_menu
@@ -1222,7 +1222,7 @@ def test_run_frontend_launches_argument_list_and_propagates_exit_code(tmp_path):
     state = load_frontend_state(tmp_path / ".benchmark_frontend_state.json")
     assert state is not None
     assert state["engine"] == "fake"
-    assert state["tests"] == ["llm", "conv", "emb", "img"]
+    assert state["tests"] == ["llm", "llm_cached", "conv", "emb", "img"]
 
 
 def test_run_frontend_default_output_function_is_untimestamped(capsys):
@@ -1385,7 +1385,7 @@ def test_run_frontend_skips_max_prompt_tokens_prompt_for_unrelated_tests():
     commands = []
     messages, output = output_collector()
     result = run_frontend(
-        input_fn=InputSequence(["1 2 8", "", "", ""]),
+        input_fn=InputSequence(["1 2 3", "", "", ""]),
         output_fn=output,
         process_runner=lambda command: commands.append(command) or 0,
         engine_names_fn=lambda: ["fake"],
@@ -1422,7 +1422,7 @@ def test_run_frontend_prompts_for_max_prompt_tokens_when_llamabench_selected():
     assert commands[0][commands[0].index("--tg-tokens") + 1:commands[0].index("--llm-models")] == ["128", "512"]
 
 
-@pytest.mark.parametrize("test_toggles", ["2 4 13", "1 4 13"])
+@pytest.mark.parametrize("test_toggles", ["2 3 7 15", "1 2 7 15"])
 def test_run_frontend_applies_max_prompt_tokens_to_llm_and_conversation(test_toggles):
     commands = []
     messages, output = output_collector()

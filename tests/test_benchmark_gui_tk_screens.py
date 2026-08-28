@@ -144,7 +144,8 @@ def test_configuration_checkbox_text_is_part_of_focusable_control(tk_shell):
         tg_vars={value: tk.BooleanVar(root, value=True) for value in TG_TOKEN_OPTIONS},
     )
 
-    assert screen.test_widgets["llm"].cget("text") == "Single-shot LLM"
+    assert screen.test_widgets["llm"].cget("text") == "Uncached Prefill / Generation"
+    assert screen.test_widgets["llm_cached"].cget("text") == "Cached Prefill / Generation"
     assert screen.model_widgets["demo:q4"].cget("text") == "Q4 (~1 GB)"
 
 

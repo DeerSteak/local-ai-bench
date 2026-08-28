@@ -21,8 +21,10 @@ class StageSpec:
 
 
 STAGE_SPECS = (
-    StageSpec("llm", "Single-shot LLM", "llm", "llm", "llm", "llm", default_enabled=True,
+    StageSpec("llm", "Uncached Prefill / Generation", "llm", "llm", "llm", "llm", default_enabled=True,
               journal_owned=True, selected_retry=True),
+    StageSpec("llm_cached", "Cached Prefill / Generation", "llm_cached", "llm", "llm", "llm",
+              default_enabled=True, journal_owned=True, selected_retry=True),
     StageSpec("conv", "Conversation", "llm_conversation", "llm", "llm", "llm",
               default_enabled=True, journal_owned=True, selected_retry=True),
     StageSpec("llamabench", "llama-bench throughput", "llamabench", "llm", "llm", "llm", menu_label="llama-bench (throughput + concurrency)", native_engine="llamacpp", journal_owned=True),

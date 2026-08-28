@@ -1226,20 +1226,20 @@ def test_role_presets_select_role_relevant_tests_and_depth():
     every_test = {name for name, *_ in TEST_DEFINITIONS}
     orchestrator = resolve_preset("Role: Orchestrator", every_test)
     assert orchestrator == {
-        "tests": ["llm", "conv", "reasoning", "tool", "conc_chat"], "runs": config.N_RUNS,
+        "tests": ["llm", "llm_cached", "conv", "reasoning", "tool", "conc_chat"], "runs": config.N_RUNS,
         "max_prompt_tokens": None, "force_all": False,
     }
     agent = resolve_preset("Role: Agent / tool caller", every_test)
-    assert agent["tests"] == ["llm", "conv", "tool", "code", "conc_tool"]
+    assert agent["tests"] == ["llm", "llm_cached", "conv", "tool", "code", "conc_tool"]
     assert agent["max_prompt_tokens"] == 32768
     coding = resolve_preset("Role: Coding assistant", every_test)
-    assert coding["tests"] == ["llm", "conv", "code", "reasoning"]
+    assert coding["tests"] == ["llm", "llm_cached", "conv", "code", "reasoning"]
     assert coding["max_prompt_tokens"] == 32768
     chat = resolve_preset("Role: Chat assistant", every_test)
-    assert chat["tests"] == ["llm", "conv", "mcq", "reasoning", "conc_chat"]
+    assert chat["tests"] == ["llm", "llm_cached", "conv", "mcq", "reasoning", "conc_chat"]
     assert chat["max_prompt_tokens"] == 8192
     rag = resolve_preset("Role: RAG / retrieval", every_test)
-    assert rag["tests"] == ["llm", "conv", "emb", "mcq"]
+    assert rag["tests"] == ["llm", "llm_cached", "conv", "emb", "mcq"]
     assert rag["max_prompt_tokens"] == 32768
     assert resolve_preset("Role: RAG / retrieval", {"llm", "emb"})["tests"] == ["llm", "emb"]
     assert restored_preset_name({"selected_preset": "Role: Orchestrator"}) == "Role: Orchestrator"

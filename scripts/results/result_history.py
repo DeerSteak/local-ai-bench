@@ -15,6 +15,7 @@ from scripts.stage_registry import ACCURACY_TESTS
 PERFORMANCE_METRICS = {
     "llm": ("tps_mean", "ttft_mean_sec"),
     "llm_conversation": ("tps_mean", "client_ttft_mean_sec", "server_prompt_mean_sec"),
+    "llm_cached": ("tps_mean", "prefill_tps_mean", "server_prompt_mean_sec"),
     "concurrency_tool": ("aggregate_tps", "ttft_mean_sec"),
     "concurrency_chat": ("aggregate_tps", "ttft_mean_sec"),
 }

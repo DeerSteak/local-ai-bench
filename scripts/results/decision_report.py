@@ -9,7 +9,8 @@ from scripts.results.result_store import as_dict, validate_json_data
 
 
 PERFORMANCE_SECTIONS = {
-    "llm": "Single-shot LLM", "llm_conversation": "Conversation",
+    "llm": "Uncached Prefill / Generation", "llm_cached": "Cached Prefill / Generation",
+    "llm_conversation": "Conversation",
     "concurrency_tool": "Tool concurrency", "concurrency_chat": "Chat concurrency",
 }
 
@@ -145,10 +146,14 @@ def build_report_model(result: dict, policy: dict | None = None,
                     section_label, f"{model} / {case_label}", str(valid), str(invalid),
                 ))
                 if case.get("tps_mean") is not None:
+                    latency = (
+                        case.get("server_prompt_mean_sec") if section == "llm_cached"
+                        else case.get("client_ttft_mean_sec", case.get("ttft_mean_sec", 0))
+                    )
                     performance.append((
                         section_label, str(model), str(case_label),
                         f"{case['tps_mean']:.2f}",
-                        f"{case.get('client_ttft_mean_sec', case.get('ttft_mean_sec', 0)):.3f}",
+                        f"{latency:.3f}" if latency is not None else "Not recorded",
                     ))
 
     accuracy = []
@@ -247,7 +252,7 @@ th,td{{padding:8px 10px;border-bottom:1px solid #d7dde5;text-align:left}}th{{bac
 <div class="readiness"><strong>{html.escape(model.readiness)}</strong>{html.escape(model.readiness_detail)}</div>
 <h2>Run identity</h2><dl>{metadata}</dl>
 <h2>Coverage</h2>{_html_table(("Stage", "Status", "Models with results", "Skipped / failed"), model.coverage)}
-<h2>Performance evidence</h2>{_html_table(("Workload", "Model", "Case", "Tokens/sec", "TTFT sec"), model.performance)}
+<h2>Performance evidence</h2>{_html_table(("Workload", "Model", "Case", "Tokens/sec", "TTFT / prefill sec"), model.performance)}
 <h2>Accuracy evidence</h2>{_html_table(("Workload", "Model", "Accuracy", "Correct"), model.accuracy)}
 <h2>Sample validity</h2>{_html_table(("Workload", "Case", "Valid", "Excluded"), model.evidence)}
 <h2>Effective optimizations</h2>{_html_table(("Recorded setting",), ((value,) for value in model.optimizations))}
@@ -332,7 +337,7 @@ def write_pdf_report(result: dict, path: Path, policy: dict | None = None,
 
     add_table("Run identity", ("Field", "Value"), model.metadata, [1.45 * inch, 5.85 * inch])
     add_table("Coverage", ("Stage", "Status", "Models", "Skipped / failed"), model.coverage)
-    add_table("Performance evidence", ("Workload", "Model", "Case", "Tokens/sec", "TTFT sec"), model.performance)
+    add_table("Performance evidence", ("Workload", "Model", "Case", "Tokens/sec", "TTFT / prefill sec"), model.performance)
     add_table("Accuracy evidence", ("Workload", "Model", "Accuracy", "Correct"), model.accuracy)
     add_table("Sample validity", ("Workload", "Case", "Valid", "Excluded"), model.evidence)
     add_table("Effective optimizations", ("Recorded setting",), tuple((value,) for value in model.optimizations))

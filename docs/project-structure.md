@@ -71,6 +71,7 @@
 | `results_*.events.sqlite3.local.json` | Owner-only run-local execution paths required to recover isolated image workloads; never portable or bundleable and deleted with the run |
 | `.coveragerc` | Coverage config for the test suite — excludes live-server/subprocess code marked `# pragma: no cover`, so `pytest --cov` reports coverage of the unit-testable code only |
 | `.llm_crash_cache.json` | Records LLM models that crashed the active engine's runner repeatedly during the single-shot test, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry. Keyed `{engine_name: {tag: detail}}`: a crash is scoped to the engine that produced it, since the same catalog tag is a different runtime and a different weight file per engine (see [Engines](engines.md)) |
+| `.llm_cached_crash_cache.json` | Same crash isolation for the cached prefill/generation stage |
 | `.conv_crash_cache.json` | Same as above, for the conversation test |
 | `.embed_crash_cache.json` | Records model/document combos that crashed the active engine's runner repeatedly, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry. Same per-engine keying as `.llm_crash_cache.json` |
 | `.mcq_crash_cache.json` | Same as above, for the MCQ accuracy test. Also records which question-bank version (a short content hash) the crash happened against, so a crash recorded on an old/smaller bank doesn't skip a model forever once the bank changes — see [bank versioning](workloads.md#bank-versioning) |
@@ -174,7 +175,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `runtime/hardware.py` | GPU/system-memory detection, shared-memory classification, and model-fit estimates |
 | `runtime/engines/base.py`, `runtime/engines/llamacpp.py`, `runtime/engines/llamacpp_vulkan.py`, `runtime/engines/vllm.py` | Engine interface, shared llama.cpp adapter, Vulkan runtime identity, and vLLM lifecycle/transport client, see [Engines](engines.md) |
 | `runtime/engines/chat_flow.py` | Engine-neutral bounded chat finalization and measurement aggregation |
-| `workloads/llm_prefill_benchmark.py` | Single-shot LLM test |
+| `workloads/llm_prefill_benchmark.py` | Uncached and cached prefill/generation tests |
 | `results/llm_event_stage.py` | Journal-owned generation/conversation/concurrency samples, stage/model-family isolation, and compatible JSON projections |
 | `workloads/conversation_selection.py` | Pure conversation preflight selection shared by the coordinator tests and child runner |
 | `results/native_bench_event_stage.py` | Journal-owned streamed llama-bench rows, partial markers, repetition counts, and compatible projection |
@@ -249,7 +250,7 @@ The main file is checkpointed throughout a run, so completed stages and models s
 | `profile` | Host description, OS/release, architecture, Python version, RAM, UTC timestamp, effective inference backend (`cuda`, `rocm`, `metal`, `xpu`, `vulkan`, or `cpu`), and separately detected `hardware_backend` |
 | `bank_versions` | Content hashes for the MCQ, math, reasoning, code, and tool banks |
 | `sample_ids` | Exact per-bank IDs only when `--sample` was used |
-| `llm`, `llm_conversation` | Per-model context/checkpoint measurements, optional same-timeline memory/power evidence, and any timeout, crash, slow-TPS, or skip markers |
+| `llm`, `llm_cached`, `llm_conversation` | Per-model context/checkpoint measurements, optional same-timeline memory/power evidence, and any timeout, crash, slow-TPS, or skip markers |
 | `accuracy_settings` | Effective accuracy timeout, completion-token budget, and first-pass fraction used by the run |
 | `mcq`, `math`, `reasoning`, `code`, `tool` | Per-model overall/category scores plus nudge, exhausted-budget, timeout, and likely-loop diagnostics when present; reasoning also includes `by_difficulty` |
 | `embeddings`, `images` | Per-model throughput or per-resolution generation-time measurements |

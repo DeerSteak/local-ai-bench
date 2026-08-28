@@ -16,7 +16,7 @@ def test_stage_groups_are_derived_from_categories():
     assert ACCURACY_TESTS == ["mcq", "math", "reasoning", "code", "tool"]
     assert CONCURRENCY_TESTS == ["conc_tool", "conc_chat"]
     assert set(LLM_TESTS) == {
-        "llm", "conv", "llamabench", "llamabenchconc", "vllmbench",
+        "llm", "llm_cached", "conv", "llamabench", "llamabenchconc", "vllmbench",
         "sustained",
         *ACCURACY_TESTS,
     }
@@ -25,6 +25,7 @@ def test_stage_groups_are_derived_from_categories():
 def test_every_stage_has_result_and_model_ownership():
     assert all(spec.section and spec.model_family and spec.ui_family for spec in STAGE_SPECS)
     assert stage_spec("conv").section == "llm_conversation"
+    assert stage_spec("llm_cached").section == "llm_cached"
     assert stage_spec("llamabench").menu_label == "llama-bench (throughput + concurrency)"
     with pytest.raises(ValueError, match="unknown benchmark stage"):
         stage_spec("unknown")
@@ -33,7 +34,7 @@ def test_every_stage_has_result_and_model_ownership():
 def test_recovery_capabilities_are_derived_from_stage_ownership():
     assert JOURNAL_STAGES == frozenset(spec.key for spec in STAGE_SPECS)
     assert JOURNAL_STAGES == {
-        "llm", "conv", "llamabench", "llamabenchconc", "vllmbench", "sustained",
+        "llm", "llm_cached", "conv", "llamabench", "llamabenchconc", "vllmbench", "sustained",
         "conc_tool", "conc_chat",
         "emb", "img", *ACCURACY_TESTS,
     }

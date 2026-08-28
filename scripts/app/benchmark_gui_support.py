@@ -202,18 +202,18 @@ def default_control_values(test_entries, model_entries, engine: str, comfyui_dir
 
 
 BENCHMARK_PRESETS = {
-    "Consumer guidance": {"tests": ["llm", "conv"], "max_prompt_tokens": 32768},
-    "Vendor validation": {"tests": ["llm", "conv", "llamabench", "emb", "mcq", "math", "reasoning", "code", "tool", "img"]},
-    "Neutral comparison": {"tests": ["llm", "conv", "emb", "img"]},
-    "Platform optimized": {"tests": ["llm", "conv", "llamabench"]},
-    "Offline / private": {"tests": ["llm", "conv", "emb"]},
+    "Consumer guidance": {"tests": ["llm", "llm_cached", "conv"], "max_prompt_tokens": 32768},
+    "Vendor validation": {"tests": ["llm", "llm_cached", "conv", "llamabench", "emb", "mcq", "math", "reasoning", "code", "tool", "img"]},
+    "Neutral comparison": {"tests": ["llm", "llm_cached", "conv", "emb", "img"]},
+    "Platform optimized": {"tests": ["llm", "llm_cached", "conv", "llamabench"]},
+    "Offline / private": {"tests": ["llm", "llm_cached", "conv", "emb"]},
     "Quick run": {"tests": ["llm", "emb"], "runs": 1, "max_prompt_tokens": 8192},
     "Full run": {"tests": [name for name, *_ in TEST_DEFINITIONS], "force_all": True},
-    "Role: Orchestrator": {"tests": ["llm", "conv", "reasoning", "tool", "conc_chat"]},
-    "Role: Agent / tool caller": {"tests": ["llm", "conv", "tool", "code", "conc_tool"], "max_prompt_tokens": 32768},
-    "Role: Coding assistant": {"tests": ["llm", "conv", "code", "reasoning"], "max_prompt_tokens": 32768},
-    "Role: Chat assistant": {"tests": ["llm", "conv", "mcq", "reasoning", "conc_chat"], "max_prompt_tokens": 8192},
-    "Role: RAG / retrieval": {"tests": ["llm", "conv", "emb", "mcq"], "max_prompt_tokens": 32768},
+    "Role: Orchestrator": {"tests": ["llm", "llm_cached", "conv", "reasoning", "tool", "conc_chat"]},
+    "Role: Agent / tool caller": {"tests": ["llm", "llm_cached", "conv", "tool", "code", "conc_tool"], "max_prompt_tokens": 32768},
+    "Role: Coding assistant": {"tests": ["llm", "llm_cached", "conv", "code", "reasoning"], "max_prompt_tokens": 32768},
+    "Role: Chat assistant": {"tests": ["llm", "llm_cached", "conv", "mcq", "reasoning", "conc_chat"], "max_prompt_tokens": 8192},
+    "Role: RAG / retrieval": {"tests": ["llm", "llm_cached", "conv", "emb", "mcq"], "max_prompt_tokens": 32768},
 }
 CUSTOM_PRESET = "Custom"
 DEFAULT_BENCHMARK_PRESET = "Consumer guidance"

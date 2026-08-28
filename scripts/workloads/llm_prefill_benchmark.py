@@ -1,4 +1,4 @@
-"""llm_prefill_benchmark.py — single-shot LLM prefill/decode benchmark."""
+"""Uncached and cached LLM prefill/generation benchmarks."""
 
 from pathlib import Path
 
@@ -14,12 +14,22 @@ from scripts.runtime.progress_events import emit_model_finished, emit_progress
 
 class LLMPrefillBenchmark:
     LLM_CRASH_CACHE = Path(".llm_crash_cache.json")  # see docs/project-structure.md
+    stage_name = "llm"
+    section_label = "Uncached Prefill / Generation"
+    cache_prompt = False
 
     @staticmethod
     def prefill_server_ctx(ctx_len: int, model_max: int) -> int:
         """num_ctx to load the server at for a padded-to-ctx_len prompt — headroom
         for the n_predict generation on top, clamped to the model's real max."""
         return Shared.ctx_with_headroom(ctx_len, config.GENERATE_MAX_TOKENS, model_max)
+
+    @staticmethod
+    def prompt_plan(ctx_len: int, runs: int, cached: bool, prompt_factory):
+        if cached:
+            prompt = prompt_factory(ctx_len)
+            return prompt, [prompt] * runs
+        return None, [prompt_factory(ctx_len) for _ in range(runs)]
 
     def run(self, engine, models, context_lengths, warmup_runs, force_all=False,
             save_fn=None, journal=None):  # pragma: no cover — orchestrates real engine runs
@@ -36,12 +46,12 @@ class LLMPrefillBenchmark:
             label = model["label"]
             short = model["short"]
 
-            Shared.section(f"LLM ({engine.name}): {label}")
+            Shared.section(f"{self.section_label} ({engine.name}): {label}")
 
             if not engine.reachable_or_abort():
                 break
 
-            emit_progress("model", "llm", "running", label, model_id=tag)
+            emit_progress("model", self.stage_name, "running", label, model_id=tag)
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
@@ -95,14 +105,26 @@ class LLMPrefillBenchmark:
                         journal.begin_measured()
                     Shared.log(f"Context {label_ctx} — {config.N_RUNS} runs ...")
 
+                    prime_prompt, measured_prompts = self.prompt_plan(
+                        ctx_len, config.N_RUNS, self.cache_prompt,
+                        Shared.build_prompt_for_context,
+                    )
+                    if prime_prompt is not None:
+                        Shared.log(f"Priming cached context {label_ctx} ...")
+                        engine.generate(
+                            tag, prime_prompt, timeout=config.RUN_TIMEOUT, num_ctx=server_ctx,
+                            cache_prompt=True,
+                        )
+
                     def _prefill_once(run_i):
-                        prompt = Shared.build_prompt_for_context(ctx_len)
                         measurement = Shared.retry_implausible_tps(
                             lambda: engine.generate(
-                                tag, prompt, timeout=config.RUN_TIMEOUT, num_ctx=server_ctx,
+                                tag, measured_prompts[run_i], timeout=config.RUN_TIMEOUT,
+                                num_ctx=server_ctx,
+                                cache_prompt=self.cache_prompt,
                             ),
                             f"{tag} {label_ctx} run {run_i + 1}",
-                            "llm",
+                            self.stage_name,
                         )
                         ttft = measurement.client_ttft_sec
                         tps = measurement.tokens_per_sec
@@ -191,9 +213,16 @@ class LLMPrefillBenchmark:
             finally:
                 if save_fn:
                     save_fn(journal.export() if journal else results)
-                emit_model_finished("llm", label, results.get(short), model_id=tag)
+                emit_model_finished(self.stage_name, label, results.get(short), model_id=tag)
 
         if journal:
             journal.finish()
             return journal.export()
         return results
+
+
+class LLMCachedPrefillBenchmark(LLMPrefillBenchmark):
+    LLM_CRASH_CACHE = Path(".llm_cached_crash_cache.json")
+    stage_name = "llm_cached"
+    section_label = "Cached Prefill / Generation"
+    cache_prompt = True

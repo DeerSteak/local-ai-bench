@@ -6,7 +6,7 @@ from scripts.runtime.engine_identity import engine_family
 
 
 ENGINE_STAGES = {
-    "llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool",
+    "llm", "llm_cached", "conv", "emb", "mcq", "math", "reasoning", "code", "tool",
     "conc_tool", "conc_chat", "sustained",
 }
 TEXT_GENERATION_STAGES = ENGINE_STAGES - {"emb"}
