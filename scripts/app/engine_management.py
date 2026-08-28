@@ -120,6 +120,8 @@ def inspection_placeholder(engine: str) -> EngineStatus:
 
 
 def engine_status_lines(status: EngineStatus) -> list[tuple[str, str]]:
+    if status.ownership == "missing":
+        return [("Status", "Not installed")]
     lines = [
         ("Ownership", OWNERSHIP_LABELS.get(status.ownership, status.ownership)),
         ("Location", status.location or "Not found"),
@@ -173,22 +175,23 @@ def collect_engine_statuses(engine_factory, hardware_backend: str) -> list[Engin
     vulkan = engine_factory("llamacpp-vulkan")
     vllm = engine_factory("vllm")
     is_wsl = Shared.detect_wsl(platform.system(), platform.release())
+    llama_location = llama.runtime_location()
     statuses = [
         build_llamacpp_status(
-            llama.runtime_location(), config.LLAMACPP_DIR,
-            llama.runtime_backend(hardware_backend),
+            llama_location, config.LLAMACPP_DIR,
+            llama.runtime_backend(hardware_backend) if llama_location else "",
         ),
     ]
-    if platform.system() in {"Linux", "Windows"} or vulkan.runtime_location() is not None:
-        vulkan_status = build_llamacpp_status(
-            vulkan.runtime_location(), config.LLAMACPP_VULKAN_DIR,
-            vulkan.runtime_backend(hardware_backend),
-        )
-        statuses.append(EngineStatus(
-            "llamacpp-vulkan", vulkan_status.ownership, vulkan_status.location,
-            vulkan_status.version, vulkan_status.backend, vulkan_status.health,
-            vulkan_status.components, vulkan_status.warnings,
-        ))
+    vulkan_location = vulkan.runtime_location()
+    vulkan_status = build_llamacpp_status(
+        vulkan_location, config.LLAMACPP_VULKAN_DIR,
+        vulkan.runtime_backend(hardware_backend) if vulkan_location else "",
+    )
+    statuses.append(EngineStatus(
+        "llamacpp-vulkan", vulkan_status.ownership, vulkan_status.location,
+        vulkan_status.version, vulkan_status.backend, vulkan_status.health,
+        vulkan_status.components, vulkan_status.warnings,
+    ))
     statuses.append(build_vllm_status(
             vllm.runtime_location(), config.VLLM_VENV,
             vllm.runtime_backend(hardware_backend),
