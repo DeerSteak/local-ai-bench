@@ -34,3 +34,16 @@ def test_runner_resolves_each_prefill_stage_to_its_methodology():
     assert llm_benchmark_class("llm_cached") is LLMCachedPrefillBenchmark
     with pytest.raises(ValueError, match="unsupported LLM stage"):
         llm_benchmark_class("conv")
+
+
+@pytest.mark.parametrize("benchmark", [LLMPrefillBenchmark, LLMCachedPrefillBenchmark])
+def test_prefill_terminal_metrics_show_ttft_prefill_and_generation_tps(benchmark):
+    assert benchmark.format_terminal_metrics(0.456, 1234.56, 78.94) == (
+        "TTFT=0.46s  Prefill=1234.6 tok/s  TPS=78.9"
+    )
+
+
+def test_prefill_terminal_metrics_mark_unavailable_prompt_speed():
+    assert LLMPrefillBenchmark.format_terminal_metrics(0.5, None, 40.0) == (
+        "TTFT=0.50s  Prefill=N/A  TPS=40.0"
+    )

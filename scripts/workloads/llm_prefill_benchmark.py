@@ -5,6 +5,7 @@ from pathlib import Path
 from scripts.runtime import config
 from scripts.runtime.engines.base import (
     TIMING_DECIMALS, aggregate_generation_measurements, measurement_validation_errors,
+    prefill_tokens_per_sec,
 )
 from scripts.runtime.shared import Shared
 from scripts.runtime.failure_handling import unexpected_model_failure
@@ -17,6 +18,13 @@ class LLMPrefillBenchmark:
     stage_name = "llm"
     section_label = "Uncached Prefill / Generation"
     cache_prompt = False
+
+    @staticmethod
+    def format_terminal_metrics(ttft: float, prefill_tps: float | None,
+                                generation_tps: float) -> str:
+        prefill = f"{prefill_tps:.1f} tok/s" if prefill_tps is not None else "N/A"
+        return (f"TTFT={ttft:.2f}s  Prefill={prefill}  "
+                f"TPS={generation_tps:.1f}")
 
     @staticmethod
     def prefill_server_ctx(ctx_len: int, model_max: int) -> int:
@@ -128,10 +136,12 @@ class LLMPrefillBenchmark:
                         )
                         ttft = measurement.client_ttft_sec
                         tps = measurement.tokens_per_sec
+                        prefill_tps = prefill_tokens_per_sec(
+                            measurement.prompt_tokens, measurement.server_prompt_sec,
+                        )
                         Shared.output(
                             f"    run {run_i+1}/{config.N_RUNS}: "
-                            f"TTFT={ttft:.2f}s  "
-                            f"TPS={tps:.1f}"
+                            f"{self.format_terminal_metrics(ttft, prefill_tps, tps)}"
                         )
                         return measurement
 
@@ -154,10 +164,13 @@ class LLMPrefillBenchmark:
                             "tps_runs":       [round(t, 2) for t in tps_list],
                             **aggregate,
                         }
+                        context_result = results[short][label_ctx]
                         Shared.ok(
-                            f"Context {label_ctx} done: "
-                            f"TTFT={results[short][label_ctx]['ttft_mean_sec']:.2f}s  "
-                            f"TPS={results[short][label_ctx]['tps_mean']:.1f}"
+                            f"Context {label_ctx} done: " + self.format_terminal_metrics(
+                                context_result["ttft_mean_sec"],
+                                context_result.get("prefill_tps_mean"),
+                                context_result["tps_mean"],
+                            )
                         )
 
                     if status == "timed_out":
