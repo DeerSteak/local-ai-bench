@@ -81,6 +81,35 @@ def test_multi_variant_model_expands_distinct_executable_records():
     assert default_model_variant(model())["tag"] == "demo:q4_K_M"
 
 
+def test_nondefault_variants_keep_llamacpp_mtp_but_not_vllm_capability():
+    native_mtp = {
+        "llamacpp": {
+            "num_speculative_tokens": 3,
+            "draft_repo": "owner/demo",
+            "draft_file": "MTP/draft.gguf",
+        },
+        "vllm": {"num_speculative_tokens": 2},
+    }
+
+    default, alternate = expanded_model_variants(model(
+        native_mtp=native_mtp, vllm_repo="owner/vllm",
+    ))
+
+    assert default["native_mtp"] == native_mtp
+    assert alternate["native_mtp"] == {"llamacpp": native_mtp["llamacpp"]}
+    assert alternate["default_variant_tag"] == "demo:q4_K_M"
+    assert "vllm_repo" not in alternate
+
+
+def test_nondefault_variants_do_not_assume_embedded_mtp_tensors():
+    _, alternate = expanded_model_variants(model(native_mtp={
+        "llamacpp": {"num_speculative_tokens": 3},
+        "vllm": {"num_speculative_tokens": 3},
+    }))
+
+    assert "native_mtp" not in alternate
+
+
 def test_catalog_variants_are_valid_and_default_preserves_legacy_gemma_identity():
     for catalog_model in LLM_MODELS:
         validate_model_variants(catalog_model)

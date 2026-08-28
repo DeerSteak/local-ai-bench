@@ -51,7 +51,7 @@ from scripts.setup.model_inventory import (
     find_non_catalog_model_dirs,
 )
 from scripts.setup.model_download import (
-    catalog_model_downloaded, catalog_mtp_artifact_download_size,
+    catalog_model_downloaded, missing_catalog_mtp_download_size_gb,
     catalog_mtp_artifact_downloaded, download_hf_files, download_hf_snapshot,
     provision_catalog_models,
 )
@@ -1135,12 +1135,11 @@ def main() -> None:  # pragma: no cover - real interactive installer
                 m, engine, models_dir=config.MODELS_DIR, vllm_cache=VLLM_CACHE_HOME,
             ):
                 remaining_gb += hardware.parse_size_gb(engine_download_size(m, engine) or "")
-            if not catalog_mtp_artifact_downloaded(
-                m, engine, models_dir=config.MODELS_DIR,
-            ):
-                remaining_gb += hardware.parse_size_gb(
-                    catalog_mtp_artifact_download_size(m, engine) or ""
-                )
+
+    remaining_gb += missing_catalog_mtp_download_size_gb(
+        all_llm, selected_model_engines, models_dir=config.MODELS_DIR,
+        parse_size_gb=hardware.parse_size_gb,
+    )
 
     remaining_gb += missing_download_size_gb(selected_images, image_asset)
 

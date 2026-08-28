@@ -6,6 +6,7 @@ from scripts.runtime.mtp import (
     native_mtp_models,
 )
 from scripts.workloads.models import LLM_MODELS
+from scripts.workloads.model_variants import expanded_model_variants
 
 
 def test_catalog_marks_every_confirmed_native_mtp_artifact():
@@ -40,6 +41,20 @@ def test_catalog_marks_every_confirmed_native_mtp_artifact():
         "qwen3.8:27b-ud-q4_K_M": 2,
         "nemotron3.5-lightning:30b-a3b-ud-q4_K_M": 1,
     }
+
+
+def test_qwen38_predictor_supports_every_llamacpp_quantization_variant():
+    family = next(model for model in LLM_MODELS if model.get("base_model") == "qwen3.8:27b")
+    variants = expanded_model_variants(family)
+
+    assert {model["tag"] for model in native_mtp_models(variants, "llamacpp")} == {
+        "qwen3.8:27b-ud-q4_K_M",
+        "qwen3.8:27b-ud-q6_K_XL",
+        "qwen3.8:27b-q8_0",
+    }
+    assert [model["tag"] for model in native_mtp_models(variants, "vllm")] == [
+        "qwen3.8:27b-ud-q4_K_M",
+    ]
 
 
 @pytest.mark.parametrize("value", [None, {}, {"vllm": {}}, {"vllm": {"num_speculative_tokens": 0}},

@@ -144,7 +144,11 @@ class LlamaCppEngine(InferenceEngine):
     def _mtp_draft_path(self, tag: str, mtp_config: dict | None) -> Path | None:
         if mtp_config is None or "draft_file" not in mtp_config:
             return None
-        path = self._models_dir() / self._slug(tag) / Path(mtp_config["draft_file"]).name
+        model = next((
+            model for model in expanded_variant_catalog(LLM_MODELS) if model["tag"] == tag
+        ), None)
+        artifact_tag = model.get("default_variant_tag", tag) if model is not None else tag
+        path = self._models_dir() / self._slug(artifact_tag) / Path(mtp_config["draft_file"]).name
         if not path.is_file():
             raise RuntimeError(
                 f"{tag} native MTP predictor is missing at {path} — rerun setup to download it"

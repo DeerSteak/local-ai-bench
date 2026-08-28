@@ -7,9 +7,10 @@ from scripts.setup.custom_models import load_custom_models
 from scripts.setup import model_download
 from scripts.setup.model_download import (
     catalog_model_downloaded, catalog_mtp_artifact_download_size,
-    catalog_mtp_artifact_downloaded,
+    catalog_mtp_artifact_downloaded, catalog_mtp_artifact_identity,
     download_hf_files, download_hf_snapshot,
-    enough_disk_space, import_model, provision_catalog_models,
+    enough_disk_space, import_model, missing_catalog_mtp_download_size_gb,
+    provision_catalog_models,
 )
 from scripts.setup.model_import import ImportVariant, inspect_repository
 
@@ -110,6 +111,39 @@ def test_catalog_mtp_artifact_download_size_is_only_for_separate_drafts():
     }}}
     assert catalog_mtp_artifact_download_size(embedded, "llamacpp") is None
     assert catalog_mtp_artifact_download_size(separate, "llamacpp") == "~1.4 GB"
+
+
+def test_quantization_family_shares_one_mtp_predictor_and_download_size(tmp_path):
+    config = {
+        "llamacpp": {
+            "num_speculative_tokens": 3,
+            "draft_repo": "owner/model",
+            "draft_file": "MTP/draft.gguf",
+            "draft_download_size": "~1.4 GB",
+        },
+    }
+    models = [
+        {"tag": "demo:q4", "default_variant_tag": "demo:q4", "native_mtp": config},
+        {"tag": "demo:q6", "default_variant_tag": "demo:q4", "native_mtp": config},
+        {"tag": "demo:q8", "default_variant_tag": "demo:q4", "native_mtp": config},
+    ]
+
+    assert {catalog_mtp_artifact_identity(model, "llamacpp") for model in models} == {
+        ("llamacpp", "demo:q4", "draft.gguf"),
+    }
+    assert missing_catalog_mtp_download_size_gb(
+        models, ["llamacpp"], models_dir=tmp_path, parse_size_gb=lambda _value: 1.4,
+    ) == 1.4
+
+    destination = tmp_path / "llamacpp" / "demo_q4"
+    destination.mkdir(parents=True)
+    (destination / "draft.gguf").touch()
+    assert all(catalog_mtp_artifact_downloaded(
+        model, "llamacpp", models_dir=tmp_path,
+    ) for model in models)
+    assert missing_catalog_mtp_download_size_gb(
+        models, ["llamacpp"], models_dir=tmp_path, parse_size_gb=lambda _value: 1.4,
+    ) == 0.0
 
 
 def test_provision_catalog_models_downloads_missing_llamacpp_model(monkeypatch, tmp_path):
