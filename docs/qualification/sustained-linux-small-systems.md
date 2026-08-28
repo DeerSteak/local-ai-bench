@@ -26,8 +26,8 @@ Supported temperature and power channels recorded zero failed samples. Unsupport
 Replace the model tag and ambient reading. Previewing is safe and launches no benchmark:
 
 ```bash
-bash run_sustained_qualification_linux.sh --model MODEL_TAG --ambient-temp-c 20.5 --dry-run
-bash run_sustained_qualification_linux.sh --model MODEL_TAG --ambient-temp-c 20.5
+bash qualification/run_sustained_qualification_linux.sh --model MODEL_TAG --ambient-temp-c 20.5 --dry-run
+bash qualification/run_sustained_qualification_linux.sh --model MODEL_TAG --ambient-temp-c 20.5
 ```
 
 Run three ten-minute soaks per platform, invoking the default one-run wrapper separately so each command receives the ambient temperature measured immediately beforehand. Wait at least five minutes and confirm the system has returned to a comparable idle temperature before the next invocation. `--repeats 3 --wait 300` is available only when ambient remains stable enough to reuse one reading. Power telemetry is requested so a qualified source can be correlated, but unavailable power is an honest result. Each output retains the full aligned series and its source/availability provenance.

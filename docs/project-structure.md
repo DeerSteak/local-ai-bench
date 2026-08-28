@@ -21,15 +21,12 @@
 | `Launch Local AI Bench Dashboard.desktop` | Double-clickable Linux desktop launcher that builds, serves, and opens the dashboard |
 | `Launch Local AI Bench Dashboard.bat` | Double-clickable Windows launcher that builds, serves, and opens the dashboard |
 | `run_bench.sh` | Activates the venv; auto-selects GUI/terminal with no arguments or forwards benchmark arguments directly on Linux / macOS |
-| `run_qualification.sh` / `run_qualification.bat` | Thin platform launchers that run normal setup and the normal smallest-model benchmark |
-| `run_telemetry_trials.sh` | Resumable alternating telemetry-off/on qualification runner for memory and power on Linux / macOS |
-| `run_sustained_qualification_linux.sh` | Repeated ten-minute sustained-load evidence wrapper for Linux small systems |
-| `run_temperature_qualification_linux.sh` | Unattended Linux temperature observer-effect matrix across latency/sustained screens and all candidate intervals |
 | `run_bench.bat` | Windows equivalent of `run_bench.sh` |
 | `launch_dashboard.sh` | Builds and serves the dashboard on Linux / macOS, optionally stages selected `--result` files, and opens the browser automatically |
 | `launch_dashboard.bat` | Windows equivalent of `launch_dashboard.sh` |
 | `tests.sh` | Activates the venv and runs unit/integration tests on Linux / macOS — see [Testing](testing.md) |
 | `tests.bat` | Activates the venv and runs unit/integration tests on Windows — see [Testing](testing.md) |
+| `qualification/` | Platform qualification, telemetry-trial, power, temperature, and sustained-load runners |
 | `scripts/` | Packaged implementation grouped by application, runtime, workloads, results, setup, and release responsibilities |
 | `.githooks/pre-commit` | Version-sync hook — see [Release policy](release-policy.md#version-sync-hook); enable per clone with `git config core.hooksPath .githooks` |
 | `.github/CODEOWNERS` | Default and sensitive-boundary review ownership used by GitHub rulesets |

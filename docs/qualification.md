@@ -13,19 +13,19 @@ Shared engine coverage includes single-shot and conversational generation, embed
 List the explicit platform targets:
 
 ```bash
-./run_qualification.sh --list-targets
+./qualification/run_qualification.sh --list-targets
 ```
 
 Run one target on macOS, Linux, or WSL2:
 
 ```bash
-./run_qualification.sh dgx-spark-vllm-cuda
+./qualification/run_qualification.sh dgx-spark-vllm-cuda
 ```
 
 On Windows:
 
 ```text
-run_qualification.bat geforce-windows-llamacpp-cuda
+qualification/run_qualification.bat geforce-windows-llamacpp-cuda
 ```
 
 The launcher calls the normal `setup.sh` or `setup.bat` with a qualification preset that selects exactly one engine, the smallest LLM that supports every required engine workload, the smallest embedding model, and, for llama.cpp, the smallest image model. This is Gemma 3 1B for llama.cpp and Granite 4.1 3B for vLLM because vLLM requires a model-specific tool-call parser. It then verifies the requested platform, architecture, accelerator, and non-Vulkan backend against the shared execution profile before calling the normal `run_bench.sh` or `run_bench.bat` with those explicit selections. A missing ROCm or CUDA runtime therefore stops before an accidental CPU run. Existing installations and downloads are reused by the same setup code used by every other user.

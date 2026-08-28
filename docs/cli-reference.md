@@ -263,8 +263,8 @@ A full run takes several hours, depending on your hardware and which options you
 Run the normal setup and benchmark paths with the required smallest-model selection:
 
 ```bash
-./run_qualification.sh --list-targets
-./run_qualification.sh dgx-spark-vllm-cuda
+./qualification/run_qualification.sh --list-targets
+./qualification/run_qualification.sh dgx-spark-vllm-cuda
 ```
 
 The ordinary result JSON is the qualification evidence. See [Platform qualification](qualification.md).
