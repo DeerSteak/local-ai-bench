@@ -447,6 +447,7 @@ LLM_MODELS_MEDIUM = sorted([
                 "hf_repo": "unsloth/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
                 "hf_file": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-UD-Q6_K_XL.gguf",
                 "download_size": "~35.1 GB",
+                "native_mtp": {"llamacpp": {"num_speculative_tokens": 1}},
             },
             {
                 "tag": "nemotron3.5-lightning:30b-a3b-q8_0",
@@ -454,6 +455,7 @@ LLM_MODELS_MEDIUM = sorted([
                 "hf_repo": "unsloth/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
                 "hf_file": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Q8_0.gguf",
                 "download_size": "~35.1 GB",
+                "native_mtp": {"llamacpp": {"num_speculative_tokens": 1}},
             },
         ],
     },

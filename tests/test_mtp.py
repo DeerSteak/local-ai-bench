@@ -65,6 +65,27 @@ def test_qwen38_predictor_supports_every_llamacpp_quantization_variant():
         assert "draft_file" not in config
 
 
+def test_nemotron35_lightning_supports_every_llamacpp_quantization_variant():
+    family = next(
+        model for model in LLM_MODELS
+        if model.get("base_model") == "nemotron3.5-lightning:30b-a3b"
+    )
+    variants = expanded_model_variants(family)
+
+    assert {model["tag"] for model in native_mtp_models(variants, "llamacpp")} == {
+        "nemotron3.5-lightning:30b-a3b-ud-q4_K_M",
+        "nemotron3.5-lightning:30b-a3b-ud-q6_K_XL",
+        "nemotron3.5-lightning:30b-a3b-q8_0",
+    }
+    assert [model["tag"] for model in native_mtp_models(variants, "vllm")] == [
+        "nemotron3.5-lightning:30b-a3b-ud-q4_K_M",
+    ]
+    assert active_mtp_configurations(variants, "llamacpp", True) == {
+        model["tag"]: {"num_speculative_tokens": 1, "predictor": "embedded"}
+        for model in variants
+    }
+
+
 @pytest.mark.parametrize("value", [None, {}, {"vllm": {}}, {"vllm": {"num_speculative_tokens": 0}},
                                    {"vllm": {"num_speculative_tokens": True}}])
 def test_native_mtp_config_rejects_incomplete_or_invalid_metadata(value):
