@@ -41,22 +41,49 @@ class EngineUpdateActions:
         release_fetcher = (lambda: fetch_llamacpp_release_tag(tag)) \
             if tag else fetch_llamacpp_release
         snapshot = collect_engine_management(get_engine, self.hardware_backend)
-        status = next(item for item in snapshot.statuses if item.engine == "llamacpp")
-        if not status.managed and platform.system() != "Darwin":
+        statuses = [
+            item for item in snapshot.statuses
+            if item.engine in {"llamacpp", "llamacpp-vulkan"}
+            and (item.managed or (item.engine == "llamacpp" and platform.system() == "Darwin"))
+        ]
+        if not statuses:
             return RuntimeUpdateResult(False, "This llama.cpp runtime is not app managed.")
-        if platform.system() == "Darwin":
-            return update_macos_llamacpp(
-                config.LLAMACPP_DIR, platform.machine(), control=control,
-                release_fetcher=release_fetcher,
-            )
-        if platform.system() == "Windows":
-            return update_windows_llamacpp(
-                config.LLAMACPP_DIR, detect_nvidia_max_cuda_version(), control=control,
-                release_fetcher=release_fetcher, intel_xpu=self.hardware_backend == "xpu",
-            )
-        return rebuild_managed_llamacpp(
-            config.LLAMACPP_DIR, status.backend, control=control, log=control.log,
-            release_fetcher=release_fetcher,
+        release = release_fetcher()
+        selected_release = lambda: release
+        updated = []
+        versions = []
+        for status in statuses:
+            control.log(f"Updating {status.engine} from the selected llama.cpp release...")
+            target = (config.LLAMACPP_VULKAN_DIR if status.engine == "llamacpp-vulkan"
+                      else config.LLAMACPP_DIR)
+            if platform.system() == "Darwin":
+                result = update_macos_llamacpp(
+                    target, platform.machine(), control=control,
+                    release_fetcher=selected_release,
+                )
+            elif platform.system() == "Windows":
+                result = update_windows_llamacpp(
+                    target, detect_nvidia_max_cuda_version(), control=control,
+                    release_fetcher=selected_release,
+                    intel_xpu=status.engine == "llamacpp" and self.hardware_backend == "xpu",
+                    vulkan=status.engine == "llamacpp-vulkan",
+                )
+            else:
+                result = rebuild_managed_llamacpp(
+                    target, status.backend, control=control, log=control.log,
+                    release_fetcher=selected_release,
+                )
+            if not result.success:
+                prefix = f"Updated {', '.join(updated)}; " if updated else ""
+                return RuntimeUpdateResult(
+                    False, f"{prefix}{status.engine} update failed: {result.detail}",
+                )
+            updated.append(status.engine)
+            if result.version:
+                versions.append(result.version)
+        version = versions[0] if versions and len(set(versions)) == 1 else None
+        return RuntimeUpdateResult(
+            True, f"Updated all app-managed llama.cpp runtimes: {', '.join(updated)}.", version,
         )
 
     def probe_llamacpp_model(self, tag, control):

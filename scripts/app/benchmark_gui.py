@@ -524,9 +524,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     engine_updates = EngineUpdateActions(setup, hardware_backend)
     llamacpp_update_prompts = {
-        "Darwin": "Download and validate the latest official macOS llama.cpp release, then replace the current one?",
-        "Windows": "Download and validate the latest compatible llama.cpp release, then replace the current one?",
-        "Linux": "Clone and build the latest llama.cpp, then replace the current checkout?",
+        "Darwin": "Download and validate the latest official macOS llama.cpp release, then replace the managed runtime?",
+        "Windows": "Download and validate one llama.cpp release for every installed managed backend, then replace them?",
+        "Linux": "Clone and build one llama.cpp release for every installed managed backend, then replace them?",
     }
 
     notebook = ttk.Notebook(root)
