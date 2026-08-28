@@ -452,10 +452,13 @@ def test_llamacpp_update_rejects_unmanaged_non_macos_runtime(monkeypatch):
 
 @pytest.mark.parametrize("platform_name", ["Darwin", "Windows", "Linux"])
 @pytest.mark.parametrize("tag", [None, "b1234"])
-def test_llamacpp_update_dispatches_platform_and_release(monkeypatch, platform_name, tag):
+def test_llamacpp_update_dispatches_platform_and_release(monkeypatch, tmp_path, platform_name, tag):
     actions = EngineUpdateActions({}, "cuda")
     status = SimpleNamespace(engine="llamacpp", managed=True, backend="cuda")
     calls = []
+    runtime = tmp_path / "llama.cpp"
+    runtime.mkdir()
+    monkeypatch.setattr(config, "LLAMACPP_DIR", runtime)
     monkeypatch.setattr(
         "scripts.app.benchmark_gui_screens.engines.collect_engine_management",
         lambda *_args: SimpleNamespace(statuses=[status]),
@@ -505,7 +508,7 @@ def test_llamacpp_update_dispatches_platform_and_release(monkeypatch, platform_n
     )]
 
 
-def test_llamacpp_update_rebuilds_native_and_vulkan_from_one_release(monkeypatch):
+def test_llamacpp_update_rebuilds_native_and_vulkan_from_one_release(monkeypatch, tmp_path):
     actions = EngineUpdateActions({}, "cuda")
     statuses = [
         SimpleNamespace(engine="llamacpp", managed=True, backend="cuda"),
@@ -513,6 +516,12 @@ def test_llamacpp_update_rebuilds_native_and_vulkan_from_one_release(monkeypatch
     ]
     releases = []
     calls = []
+    native = tmp_path / "llama.cpp"
+    vulkan = tmp_path / "llama.cpp-vulkan"
+    native.mkdir()
+    vulkan.mkdir()
+    monkeypatch.setattr(config, "LLAMACPP_DIR", native)
+    monkeypatch.setattr(config, "LLAMACPP_VULKAN_DIR", vulkan)
     monkeypatch.setattr(
         "scripts.app.benchmark_gui_screens.engines.collect_engine_management",
         lambda *_args: SimpleNamespace(statuses=statuses),
@@ -537,18 +546,26 @@ def test_llamacpp_update_rebuilds_native_and_vulkan_from_one_release(monkeypatch
 
     assert result.success is True
     assert releases == ["fetched"]
-    assert calls == [
-        (config.LLAMACPP_DIR, "cuda", {"tag_name": "b1234"}),
-        (config.LLAMACPP_VULKAN_DIR, "vulkan", {"tag_name": "b1234"}),
+    assert [(path.name.split("-family-stage-")[0], backend, release) for path, backend, release in calls] == [
+        (".llama.cpp", "cuda", {"tag_name": "b1234"}),
+        (".llama.cpp-vulkan", "vulkan", {"tag_name": "b1234"}),
     ]
 
 
-def test_llamacpp_update_reports_partial_alignment_when_later_variant_fails(monkeypatch):
+def test_llamacpp_update_preserves_both_runtimes_when_later_staging_fails(monkeypatch, tmp_path):
     actions = EngineUpdateActions({}, "cuda")
     statuses = [
         SimpleNamespace(engine="llamacpp", managed=True, backend="cuda"),
         SimpleNamespace(engine="llamacpp-vulkan", managed=True, backend="vulkan"),
     ]
+    native = tmp_path / "llama.cpp"
+    vulkan = tmp_path / "llama.cpp-vulkan"
+    native.mkdir()
+    vulkan.mkdir()
+    (native / "old").touch()
+    (vulkan / "old").touch()
+    monkeypatch.setattr(config, "LLAMACPP_DIR", native)
+    monkeypatch.setattr(config, "LLAMACPP_VULKAN_DIR", vulkan)
     monkeypatch.setattr(
         "scripts.app.benchmark_gui_screens.engines.collect_engine_management",
         lambda *_args: SimpleNamespace(statuses=statuses),
@@ -572,14 +589,18 @@ def test_llamacpp_update_reports_partial_alignment_when_later_variant_fails(monk
     result = actions.update_llamacpp(SimpleNamespace(log=lambda _text: None))
 
     assert result.success is False
-    assert "Updated llamacpp" in result.detail
-    assert "llamacpp-vulkan update failed" in result.detail
+    assert "no runtime was replaced" in result.detail
+    assert (native / "old").is_file()
+    assert (vulkan / "old").is_file()
 
 
-def test_windows_intel_llamacpp_update_preserves_sycl_backend(monkeypatch):
+def test_windows_intel_llamacpp_update_preserves_sycl_backend(monkeypatch, tmp_path):
     actions = EngineUpdateActions({}, "xpu")
     status = SimpleNamespace(engine="llamacpp", managed=True, backend="xpu")
     calls = []
+    runtime = tmp_path / "llama.cpp"
+    runtime.mkdir()
+    monkeypatch.setattr(config, "LLAMACPP_DIR", runtime)
     monkeypatch.setattr(
         "scripts.app.benchmark_gui_screens.engines.collect_engine_management",
         lambda *_args: SimpleNamespace(statuses=[status]),

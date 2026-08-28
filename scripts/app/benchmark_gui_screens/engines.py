@@ -1,6 +1,8 @@
 """Engine Management screen composition."""
 
 import platform
+import shutil
+import uuid
 
 from scripts.runtime import config
 from scripts.app.engine_management import (
@@ -13,6 +15,9 @@ from scripts.setup.runtime_update import (
     RuntimeUpdateResult, detect_nvidia_max_cuda_version, fetch_llamacpp_release,
     fetch_llamacpp_release_tag, rebuild_managed_llamacpp, update_macos_llamacpp,
     update_managed_vllm, update_windows_llamacpp,
+)
+from scripts.setup.directory_transaction import (
+    DirectorySwapError, DirectorySwapSpec, swap_staged_directories,
 )
 
 
@@ -50,41 +55,67 @@ class EngineUpdateActions:
             return RuntimeUpdateResult(False, "This llama.cpp runtime is not app managed.")
         release = release_fetcher()
         selected_release = lambda: release
-        updated = []
+        token = uuid.uuid4().hex
+        staged_runtimes = []
         versions = []
-        for status in statuses:
-            control.log(f"Updating {status.engine} from the selected llama.cpp release...")
-            target = (config.LLAMACPP_VULKAN_DIR if status.engine == "llamacpp-vulkan"
-                      else config.LLAMACPP_DIR)
-            if platform.system() == "Darwin":
-                result = update_macos_llamacpp(
-                    target, platform.machine(), control=control,
-                    release_fetcher=selected_release,
+        try:
+            for status in statuses:
+                control.log(f"Staging {status.engine} from the selected llama.cpp release...")
+                target = (config.LLAMACPP_VULKAN_DIR if status.engine == "llamacpp-vulkan"
+                          else config.LLAMACPP_DIR)
+                candidate = target.with_name(f".{target.name}-family-stage-{token}")
+                candidate.mkdir(parents=True)
+                staged_runtimes.append((status, target, candidate))
+                if platform.system() == "Darwin":
+                    result = update_macos_llamacpp(
+                        candidate, platform.machine(), control=control,
+                        release_fetcher=selected_release,
+                    )
+                elif platform.system() == "Windows":
+                    result = update_windows_llamacpp(
+                        candidate, detect_nvidia_max_cuda_version(), control=control,
+                        release_fetcher=selected_release,
+                        intel_xpu=status.engine == "llamacpp" and self.hardware_backend == "xpu",
+                        vulkan=status.engine == "llamacpp-vulkan",
+                    )
+                else:
+                    result = rebuild_managed_llamacpp(
+                        candidate, status.backend, control=control, log=control.log,
+                        release_fetcher=selected_release,
+                    )
+                if not result.success:
+                    return RuntimeUpdateResult(
+                        False, f"{status.engine} staging failed; no runtime was replaced: "
+                        f"{result.detail}",
+                    )
+                if result.version:
+                    versions.append(result.version)
+            specs = [
+                DirectorySwapSpec(
+                    target, candidate, target.with_name(f".{target.name}-family-backup-{token}"),
+                    target.is_dir(),
                 )
-            elif platform.system() == "Windows":
-                result = update_windows_llamacpp(
-                    target, detect_nvidia_max_cuda_version(), control=control,
-                    release_fetcher=selected_release,
-                    intel_xpu=status.engine == "llamacpp" and self.hardware_backend == "xpu",
-                    vulkan=status.engine == "llamacpp-vulkan",
+                for _status, target, candidate in staged_runtimes
+            ]
+            try:
+                cleanup_errors = swap_staged_directories(
+                    specs, replace=lambda source, destination: source.replace(destination),
+                    remove=shutil.rmtree,
                 )
-            else:
-                result = rebuild_managed_llamacpp(
-                    target, status.backend, control=control, log=control.log,
-                    release_fetcher=selected_release,
-                )
-            if not result.success:
-                prefix = f"Updated {', '.join(updated)}; " if updated else ""
+            except DirectorySwapError as exc:
                 return RuntimeUpdateResult(
-                    False, f"{prefix}{status.engine} update failed: {result.detail}",
+                    False, f"llama.cpp family replacement failed; prior runtimes were restored: {exc}",
                 )
-            updated.append(status.engine)
-            if result.version:
-                versions.append(result.version)
-        version = versions[0] if versions and len(set(versions)) == 1 else None
-        return RuntimeUpdateResult(
-            True, f"Updated all app-managed llama.cpp runtimes: {', '.join(updated)}.", version,
-        )
+            names = [status.engine for status, _target, _candidate in staged_runtimes]
+            version = versions[0] if versions and len(set(versions)) == 1 else None
+            detail = f"Updated all app-managed llama.cpp runtimes: {', '.join(names)}."
+            if cleanup_errors:
+                detail += " One or more rollback backups could not be removed."
+            return RuntimeUpdateResult(True, detail, version)
+        finally:
+            for _status, _target, candidate in staged_runtimes:
+                if candidate.exists():
+                    shutil.rmtree(candidate, ignore_errors=True)
 
     def probe_llamacpp_model(self, tag, control):
         engine = get_engine("llamacpp")
