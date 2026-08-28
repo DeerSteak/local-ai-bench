@@ -136,6 +136,25 @@ def test_configuration_state_applies_imported_controls():
     assert controller.option_vars["gpu_split_mode"].get() == "Layer split (recommended)"
 
 
+def test_configuration_state_preserves_models_when_preset_omits_them():
+    controller = ConfigurationStateController.__new__(ConfigurationStateController)
+    controller.test_vars = {"llm": FakeVariable(False)}
+    controller.model_vars = {"small": FakeVariable(False), "large": FakeVariable(True)}
+    controller.cap_var = FakeVariable("8192")
+    controller.tg_vars = {128: FakeVariable(True)}
+    controller.option_vars = {"runs": FakeVariable(3)}
+    controller.set_selected_engines = lambda _engines: None
+
+    controller.apply_control_values({
+        "tests": {"llm": True}, "max_prompt_tokens": "No cap", "tg_tokens": {128},
+        "options": {"runs": 5},
+    })
+
+    assert {name: var.get() for name, var in controller.model_vars.items()} == {
+        "small": False, "large": True,
+    }
+
+
 @pytest.mark.parametrize("error", [KeyError("popdown"), RuntimeError("window closed")])
 def test_configuration_scroll_ignores_unregistered_or_destroyed_pointer_window(error):
     class TclError(RuntimeError):

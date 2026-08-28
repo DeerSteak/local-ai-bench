@@ -1277,7 +1277,7 @@ def test_role_presets_select_role_relevant_tests_and_depth():
     assert restored_preset_name({"selected_preset": "Role: Orchestrator"}) == "Role: Orchestrator"
 
 
-def test_named_preset_replaces_the_complete_control_configuration():
+def test_named_preset_changes_run_controls_without_replacing_models():
     defaults = {
         "tests": {"llm": True, "emb": True, "img": True},
         "models": {"small": True}, "engine": "llamacpp",
@@ -1287,6 +1287,7 @@ def test_named_preset_replaces_the_complete_control_configuration():
     values = preset_control_values("Quick run", {"llm", "emb", "img"}, defaults)
     # A preset must not touch the engine selection — see apply_control_values.
     assert "engine" not in values
+    assert "models" not in values
     assert values["tests"] == {"llm": True, "emb": True, "img": False}
     assert values["max_prompt_tokens"] == "8192"
     assert values["options"]["runs"] == 1

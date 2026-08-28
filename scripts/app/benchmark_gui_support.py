@@ -262,7 +262,6 @@ def preset_control_values(name: str, available_tests: set[str], defaults: dict) 
     preset = resolve_preset(name, available_tests)
     values = {
         "tests": {test: test in preset["tests"] for test in defaults["tests"]},
-        "models": dict(defaults["models"]),
         "max_prompt_tokens": (str(preset["max_prompt_tokens"])
                               if preset["max_prompt_tokens"] else "No cap"),
         "tg_tokens": set(defaults["tg_tokens"]),
