@@ -77,17 +77,25 @@ def managed_distribution_version(managed_root: Path, distribution: str) -> str |
 def source_commit_version(identity: RuntimeIdentity, managed_root: Path, *,
                           run=subprocess.run) -> str | None:
     """Prefer a sortable commit identity for a managed llama.cpp source build."""
-    commit = parse_llamacpp_commit(identity.version_output)
-    if not identity.managed or not commit or not (Path(managed_root) / ".git").exists():
+    if not identity.managed or not (Path(managed_root) / ".git").exists():
         return identity.version
     try:
         tag_result = run(
-            ["git", "-C", str(managed_root), "describe", "--tags", "--exact-match", commit],
+            ["git", "-C", str(managed_root), "describe", "--tags", "--exact-match", "HEAD"],
             capture_output=True, text=True, timeout=15,
         )
         tag = tag_result.stdout.strip()
         if tag_result.returncode == 0 and re.fullmatch(r"b\d+", tag):
             return tag[1:]
+        commit = parse_llamacpp_commit(identity.version_output)
+        if not commit:
+            commit_result = run(
+                ["git", "-C", str(managed_root), "rev-parse", "HEAD"],
+                capture_output=True, text=True, timeout=15,
+            )
+            commit = commit_result.stdout.strip().lower()
+            if commit_result.returncode != 0 or not re.fullmatch(r"[0-9a-f]{7,40}", commit):
+                return identity.version
         result = run(
             ["git", "-C", str(managed_root), "show", "-s", "--format=%cd",
              "--date=format-local:%Y.%m.%d", commit],

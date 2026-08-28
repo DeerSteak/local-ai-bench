@@ -108,7 +108,8 @@ def test_source_build_version_uses_utc_commit_date_and_short_hash(tmp_path):
         return SimpleNamespace(stdout="2026.08.11\n", stderr="", returncode=0)
 
     assert source_commit_version(identity, tmp_path, run=run) == "2026.08.11-a1b2c3d"
-    assert calls[0][0][-1] == "a1b2c3d4e5f6"
+    assert calls[0][0][-1] == "HEAD"
+    assert calls[1][0][-1] == "a1b2c3d4e5f6"
     assert calls[1][1]["env"]["TZ"] == "UTC"
 
 
@@ -126,6 +127,22 @@ def test_source_build_version_uses_exact_release_tag(tmp_path):
     )
 
     assert result == "10362"
+
+
+def test_source_build_version_uses_exact_release_tag_when_binary_reports_semver(tmp_path):
+    (tmp_path / ".git").mkdir()
+    identity = RuntimeIdentity(
+        "llamacpp", "app_managed", "/runtime", "0.3.0", "version: 0.3.0",
+    )
+
+    result = source_commit_version(
+        identity, tmp_path,
+        run=lambda *_args, **_kwargs: SimpleNamespace(
+            stdout="b10615\n", stderr="", returncode=0,
+        ),
+    )
+
+    assert result == "10615"
 
 
 def test_source_build_version_falls_back_when_git_metadata_is_unavailable(tmp_path):
