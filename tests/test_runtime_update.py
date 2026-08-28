@@ -620,6 +620,10 @@ def test_rebuild_managed_llamacpp_builds_all_tools_before_swap(tmp_path, monkeyp
     assert not (target / "old").exists()
 
 
+def test_vulkan_rebuild_enables_vulkan_backend():
+    assert llamacpp_cmake_flags("vulkan") == ["-DGGML_VULKAN=ON"]
+
+
 def test_rebuild_managed_llamacpp_preserves_cpu_runtime_when_cuda_build_has_no_cuda(tmp_path,
                                                                                    monkeypatch):
     target = tmp_path / "llama.cpp"

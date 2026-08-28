@@ -248,6 +248,8 @@ def llamacpp_cmake_flags(backend: str, *, nvcc: str | None = None,
         return [
             "-DGGML_SYCL=ON", "-DCMAKE_C_COMPILER=icx", "-DCMAKE_CXX_COMPILER=icpx",
         ]
+    if backend == "vulkan":
+        return ["-DGGML_VULKAN=ON"]
     return []
 
 
