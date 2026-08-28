@@ -81,7 +81,7 @@ def test_multi_variant_model_expands_distinct_executable_records():
     assert default_model_variant(model())["tag"] == "demo:q4_K_M"
 
 
-def test_nondefault_variants_keep_llamacpp_mtp_but_not_vllm_capability():
+def test_nondefault_variants_keep_explicit_llamacpp_mtp_but_not_vllm_capability():
     native_mtp = {
         "llamacpp": {
             "num_speculative_tokens": 3,
@@ -91,13 +91,17 @@ def test_nondefault_variants_keep_llamacpp_mtp_but_not_vllm_capability():
         "vllm": {"num_speculative_tokens": 2},
     }
 
-    default, alternate = expanded_model_variants(model(
-        native_mtp=native_mtp, vllm_repo="owner/vllm",
-    ))
+    value = model(native_mtp=native_mtp, vllm_repo="owner/vllm")
+    value["variants"][1]["native_mtp"] = {
+        "llamacpp": {"num_speculative_tokens": 3},
+    }
+
+    default, alternate = expanded_model_variants(value)
 
     assert default["native_mtp"] == native_mtp
-    assert alternate["native_mtp"] == {"llamacpp": native_mtp["llamacpp"]}
-    assert alternate["default_variant_tag"] == "demo:q4_K_M"
+    assert alternate["native_mtp"] == {
+        "llamacpp": {"num_speculative_tokens": 3},
+    }
     assert "vllm_repo" not in alternate
 
 

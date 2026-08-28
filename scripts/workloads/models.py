@@ -390,12 +390,7 @@ LLM_MODELS_MEDIUM = sorted([
         "vllm_download_size": "~19.5 GB",
         "vllm_tool_parser": "qwen3_xml",
         "native_mtp":     {
-            "llamacpp": {
-                "num_speculative_tokens": 3,
-                "draft_repo": "unsloth/Qwen3.8-27B-GGUF",
-                "draft_file": "MTP/mtp-Qwen3.8-27B-Q4_0.gguf",
-                "draft_download_size": "~1.4 GB",
-            },
+            "llamacpp": {"num_speculative_tokens": 3},
             "vllm": {
                 "method": "qwen3_5_mtp",
                 "num_speculative_tokens": 2,
@@ -412,11 +407,13 @@ LLM_MODELS_MEDIUM = sorted([
                 "tag": "qwen3.8:27b-ud-q6_K_XL", "short": "qwen3.8-27b-q6",
                 "quantization": "Q6_K_XL", "hf_repo": "unsloth/Qwen3.8-27B-GGUF",
                 "hf_file": "Qwen3.8-27B-UD-Q6_K_XL.gguf", "download_size": "~25.3 GB",
+                "native_mtp": {"llamacpp": {"num_speculative_tokens": 3}},
             },
             {
                 "tag": "qwen3.8:27b-q8_0", "short": "qwen3.8-27b-q8",
                 "quantization": "Q8_0", "hf_repo": "unsloth/Qwen3.8-27B-GGUF",
                 "hf_file": "Qwen3.8-27B-Q8_0.gguf", "download_size": "~29.1 GB",
+                "native_mtp": {"llamacpp": {"num_speculative_tokens": 3}},
             },
         ],
     },

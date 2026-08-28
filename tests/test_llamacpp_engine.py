@@ -236,36 +236,6 @@ def test_enabled_separate_mtp_requires_downloaded_predictor(fake_catalog):
         engine.resume_artifact_paths("mtp:separate")
 
 
-def test_variant_uses_predictor_stored_with_default_quantization(monkeypatch, tmp_path):
-    family = {
-        "tag": "demo:q4", "short": "demo-q4", "label": "Demo", "base_model": "demo",
-        "hf_repo": "owner/demo", "hf_file": "demo-q4.gguf", "download_size": "~4 GB",
-        "native_mtp": {"llamacpp": {
-            "num_speculative_tokens": 3,
-            "draft_repo": "owner/demo", "draft_file": "MTP/draft.gguf",
-        }},
-        "variants": [
-            {"tag": "demo:q4", "short": "demo-q4", "quantization": "Q4_K_M",
-             "hf_repo": "owner/demo", "hf_file": "demo-q4.gguf",
-             "download_size": "~4 GB", "default": True},
-            {"tag": "demo:q6", "short": "demo-q6", "quantization": "Q6_K",
-             "hf_repo": "owner/demo", "hf_file": "demo-q6.gguf", "download_size": "~6 GB"},
-        ],
-    }
-    monkeypatch.setattr(config, "MODELS_DIR", tmp_path)
-    monkeypatch.setattr(llamacpp_module, "LLM_MODELS", [family])
-    monkeypatch.setattr(llamacpp_module, "EMBED_MODELS", [])
-    _write_model_file(tmp_path, "demo:q6", "demo-q6.gguf", b"model")
-    _write_model_file(tmp_path, "demo:q4", "draft.gguf", b"draft")
-
-    engine = LlamaCppEngine()
-    engine.set_mtp_enabled(True)
-
-    assert [path.name for path in engine.resume_artifact_paths("demo:q6")] == [
-        "demo-q6.gguf", "draft.gguf",
-    ]
-
-
 def test_enabled_mtp_rejects_unsupported_and_custom_models(fake_catalog):
     engine = LlamaCppEngine()
     engine.set_mtp_enabled(True)

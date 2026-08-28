@@ -64,7 +64,6 @@ def expanded_model_variants(model: dict) -> list[dict]:
             **deepcopy(variant),
             "base_model": model["base_model"],
             "base_label": model["label"],
-            "default_variant_tag": model["tag"],
             "variant": variant["quantization"],
             "label": (
                 f"{model['label']} — {variant['quantization']} "
@@ -74,9 +73,9 @@ def expanded_model_variants(model: dict) -> list[dict]:
         if not variant.get("default"):
             for key in [name for name in record if name.startswith("vllm_")]:
                 record.pop(key)
-            native_mtp = record.get("native_mtp")
+            native_mtp = variant.get("native_mtp")
             llamacpp_mtp = native_mtp.get("llamacpp") if isinstance(native_mtp, dict) else None
-            if isinstance(llamacpp_mtp, dict) and "draft_file" in llamacpp_mtp:
+            if isinstance(llamacpp_mtp, dict):
                 record["native_mtp"] = {"llamacpp": deepcopy(llamacpp_mtp)}
             else:
                 record.pop("native_mtp", None)

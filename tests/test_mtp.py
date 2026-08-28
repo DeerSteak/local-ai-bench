@@ -55,6 +55,14 @@ def test_qwen38_predictor_supports_every_llamacpp_quantization_variant():
     assert [model["tag"] for model in native_mtp_models(variants, "vllm")] == [
         "qwen3.8:27b-ud-q4_K_M",
     ]
+    assert active_mtp_configurations(variants, "llamacpp", True) == {
+        model["tag"]: {"num_speculative_tokens": 3, "predictor": "embedded"}
+        for model in variants
+    }
+    for model in variants:
+        config = native_mtp_config(model, "llamacpp")
+        assert config is not None
+        assert "draft_file" not in config
 
 
 @pytest.mark.parametrize("value", [None, {}, {"vllm": {}}, {"vllm": {"num_speculative_tokens": 0}},

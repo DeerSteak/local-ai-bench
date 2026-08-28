@@ -287,21 +287,8 @@ def catalog_mtp_artifact_downloaded(model: dict, engine: str, *, models_dir: Pat
     config = native_mtp_config(model, engine)
     if config is None or "draft_file" not in config:
         return True
-    directory = engine_model_dir(
-        models_dir, engine, model.get("default_variant_tag", model["tag"]),
-    )
+    directory = engine_model_dir(models_dir, engine, model["tag"])
     return (directory / Path(config["draft_file"]).name).is_file()
-
-
-def catalog_mtp_artifact_identity(model: dict, engine: str) -> tuple[str, str, str] | None:
-    config = native_mtp_config(model, engine)
-    if config is None or "draft_file" not in config:
-        return None
-    return (
-        engine,
-        model.get("default_variant_tag", model["tag"]),
-        Path(config["draft_file"]).name,
-    )
 
 
 def catalog_mtp_artifact_download_size(model: dict, engine: str) -> str | None:
@@ -310,21 +297,6 @@ def catalog_mtp_artifact_download_size(model: dict, engine: str) -> str | None:
         return None
     value = model["native_mtp"][engine].get("draft_download_size")
     return value if isinstance(value, str) and value.strip() else None
-
-
-def missing_catalog_mtp_download_size_gb(models: list[dict], engines: list[str], *,
-                                         models_dir: Path, parse_size_gb) -> float:
-    missing = set()
-    total = 0.0
-    for engine in engines:
-        for model in models:
-            identity = catalog_mtp_artifact_identity(model, engine)
-            if (identity is None or identity in missing
-                    or catalog_mtp_artifact_downloaded(model, engine, models_dir=models_dir)):
-                continue
-            missing.add(identity)
-            total += parse_size_gb(catalog_mtp_artifact_download_size(model, engine) or "")
-    return total
 
 
 def provision_catalog_models(models: list[dict], engines: list[str], *,
@@ -374,9 +346,7 @@ def provision_catalog_models(models: list[dict], engines: list[str], *,
                     and not catalog_mtp_artifact_downloaded(
                         model, engine, models_dir=models_dir,
                     )):
-                destination = engine_model_dir(
-                    models_dir, engine, model.get("default_variant_tag", tag),
-                )
+                destination = engine_model_dir(models_dir, engine, tag)
                 draft_size = catalog_mtp_artifact_download_size(model, engine) or "size unknown"
                 warn(f"{label} [{engine}] MTP predictor ({draft_size}) — downloading ...")
                 success = download_hf_files(
