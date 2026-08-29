@@ -2,6 +2,7 @@
 setup_check.py's picker — see docs/setup.md#memory-fit-estimate."""
 
 import json
+import math
 import re
 import shutil
 from pathlib import Path
@@ -173,20 +174,45 @@ def parse_rocm_smi_gpus(rocm_smi_output: str, names: list[str]) -> list[dict]:
     return devices
 
 
+def _vulkan_device_order(devices: list[dict]) -> list[int] | None:
+    if len(devices) < 2 or {device.get("backend") for device in devices} != {"vulkan"}:
+        return None
+    ranked = []
+    for index, device in enumerate(devices):
+        value = device.get("vram_gb")
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+            return None
+        kind = device.get("kind") or classify_gpu(str(device.get("name") or ""))
+        ranked.append((0 if kind == "discrete" else 1, -float(value), index))
+    ranked.sort()
+    return [index for _, _, index in ranked]
+
+
 def gpu_tensor_split(devices: list[dict]) -> str | None:
-    """llama.cpp proportions from per-device VRAM after the normal reserve."""
+    """Reduced llama.cpp proportions from nominal per-device VRAM."""
     if len(devices) < 2 or len({device.get("backend") for device in devices}) != 1:
         return None
-    usable = []
+    capacities = []
     for device in devices:
         value = device.get("vram_gb")
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             return None
-        available = float(value) - VRAM_RESERVE_GB
-        if available <= 0:
+        if value <= VRAM_RESERVE_GB:
             return None
-        usable.append(available)
-    return ",".join(f"{value:.3f}".rstrip("0").rstrip(".") for value in usable)
+        capacity = round(float(value))
+        if capacity <= 0:
+            return None
+        capacities.append(capacity)
+    if order := _vulkan_device_order(devices):
+        capacities = [capacities[index] for index in order]
+    divisor = math.gcd(*capacities)
+    return ",".join(str(value // divisor) for value in capacities)
+
+
+def gpu_device_selection(devices: list[dict]) -> str | None:
+    """Explicit llama.cpp device order when its identifiers are deterministic."""
+    order = _vulkan_device_order(devices)
+    return ",".join(f"Vulkan{index}" for index in order) if order else None
 
 
 _CUDA_BIN_RE    = re.compile(r"^llama-.*-bin-win-cuda-([\d.]+)-x64\.zip$", re.IGNORECASE)

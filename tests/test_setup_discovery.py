@@ -116,11 +116,13 @@ def test_parses_all_active_windows_amd_gpus_with_64_bit_vram():
     assert setup_discovery.parse_windows_amd_gpus(output) == [
         {
             "name": "AMD Radeon PRO W7800", "vram_gb": 32.0, "driver": "32.0.1",
-            "vendor": "amd", "backend": "vulkan", "pnp_device_id": "PCI\\GPU1",
+            "vendor": "amd", "backend": "vulkan", "kind": "discrete",
+            "pnp_device_id": "PCI\\GPU1",
         },
         {
             "name": "AMD Radeon RX 9060 XT", "vram_gb": 16.0, "driver": "32.0.1",
-            "vendor": "amd", "backend": "vulkan", "pnp_device_id": "PCI\\GPU2",
+            "vendor": "amd", "backend": "vulkan", "kind": "discrete",
+            "pnp_device_id": "PCI\\GPU2",
         },
     ]
 
@@ -136,7 +138,8 @@ def test_windows_amd_parser_keeps_unknown_vram_and_rejects_stale_duplicates():
 
     assert setup_discovery.parse_windows_amd_gpus(output) == [{
         "name": "AMD Radeon RX 9060 XT", "vram_gb": None, "driver": "",
-        "vendor": "amd", "backend": "vulkan", "pnp_device_id": "PCI\\GPU2",
+        "vendor": "amd", "backend": "vulkan", "kind": "discrete",
+        "pnp_device_id": "PCI\\GPU2",
     }]
     assert setup_discovery.parse_windows_amd_gpus("not json") == []
 

@@ -259,6 +259,7 @@ def parse_windows_amd_gpus(output: str) -> list[dict]:
             "driver": str(item.get("driver") or ""),
             "vendor": "amd",
             "backend": "vulkan",
+            "kind": hardware.classify_gpu(item["name"]),
             "pnp_device_id": identity,
         })
     return devices

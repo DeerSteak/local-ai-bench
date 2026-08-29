@@ -1489,7 +1489,8 @@ def test_layer_mode_applies_recorded_asymmetric_gpu_capacity(monkeypatch):
     )
 
     assert LlamaCppEngine.gpu_split_args() == [
-        "--split-mode", "layer", "--tensor-split", "30.984,14.922",
+        "--split-mode", "layer", "--device", "Vulkan0,Vulkan1",
+        "--tensor-split", "2,1",
     ]
 
 
