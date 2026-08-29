@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from scripts.runtime import config
+from scripts.runtime.hardware import classify_gpu
 from scripts.app.benchmark_frontend import (
     GUI_OPTION_DEFAULTS, LLM_BACKED_TESTS, TEST_DEFINITIONS, MenuEntry,
 )
@@ -51,10 +52,28 @@ def effective_gui_options(state: dict | None) -> dict:
     return effective
 
 
+def format_gpu_inventory(devices: list[dict]) -> str:
+    if not devices:
+        return "Not recorded"
+    rows = []
+    for index, device in enumerate(devices, 1):
+        name = str(device.get("name") or f"GPU {index}")
+        kind = str(device.get("kind") or classify_gpu(name)).capitalize()
+        backend = str(device.get("backend") or "unknown").upper()
+        vram = device.get("vram_gb")
+        memory = (
+            f"{float(vram):.1f} GB VRAM"
+            if isinstance(vram, (int, float)) and not isinstance(vram, bool) else "VRAM unknown"
+        )
+        rows.append(f"{index}. {name} · {kind} · {memory} · {backend}")
+    return "\n".join(rows)
+
+
 def build_discovery_report(*, platform_name: str, architecture: str, ram_gb: float,
                            backend: str, tools: dict[str, str | None],
                            comfyui_dir: Path | None,
-                           inventory: dict[str, list[dict]], free_storage_gb: float | None = None) -> dict:
+                           inventory: dict[str, list[dict]], gpu_devices: list[dict] | None = None,
+                           free_storage_gb: float | None = None) -> dict:
     counts = {key: len(inventory.get(key, [])) for key in ("llm", "custom", "embedding", "image")}
     issues = []
     if not tools.get("llama-server"):
@@ -70,6 +89,7 @@ def build_discovery_report(*, platform_name: str, architecture: str, ram_gb: flo
                    f"{ram_gb:.1f} GB system RAM detected.")
     return {
         "system": f"{platform_name} {architecture} · {ram_gb:.1f} GB RAM · {backend}",
+        "gpus": format_gpu_inventory(gpu_devices or []),
         "models": (f"{counts['llm']} LLM, {counts['custom']} custom LLM, "
                    f"{counts['embedding']} embedding, {counts['image']} image"),
         "runtime": ", ".join(

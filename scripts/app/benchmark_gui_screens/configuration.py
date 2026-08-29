@@ -194,7 +194,8 @@ def _build_discovery(ttk, form, discovery: dict) -> None:
     box = ttk.LabelFrame(form, text="System inventory and preflight", padding=12)
     box.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 12))
     for row, (label, value) in enumerate((
-        ("System", discovery["system"]), ("Installed models", discovery["models"]),
+        ("System", discovery["system"]), ("GPUs", discovery.get("gpus", "Not recorded")),
+        ("Installed models", discovery["models"]),
         ("Storage", discovery["storage"]), ("Memory-fit context", discovery["memory_risk"]),
         ("llama.cpp tools", discovery["runtime"]), ("ComfyUI", discovery["comfyui"]),
     )):
@@ -206,7 +207,7 @@ def _build_discovery(ttk, form, discovery: dict) -> None:
         f"• {issue}" for issue in discovery["issues"]
     )
     ttk.Label(box, text=message, wraplength=900).grid(
-        row=6, column=0, columnspan=2, sticky="w", pady=(8, 0),
+        row=7, column=0, columnspan=2, sticky="w", pady=(8, 0),
     )
 
 

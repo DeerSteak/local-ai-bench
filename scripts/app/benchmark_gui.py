@@ -110,6 +110,7 @@ from scripts.app.benchmark_gui_support import (
     effective_gui_options,
     estimate_remaining_seconds,
     format_run_outcome,
+    format_gpu_inventory,
     gpu_split_mode_labels,
     gpu_split_mode_value,
     mtp_mode_value,
@@ -474,6 +475,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         ram_gb=system_ram_gb, backend=hardware_backend,
         tools=detected_tools,
         comfyui_dir=found_comfyui, inventory=inventory,
+        gpu_devices=configured_gpu_devices(setup),
         free_storage_gb=shutil.disk_usage(config.SCRIPT_DIR).free / 1e9,
     )
     loading_status.configure(text="Building benchmark controls…")

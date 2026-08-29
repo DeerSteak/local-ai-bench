@@ -24,7 +24,7 @@ from scripts.app.benchmark_gui import (
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
     gui_option_control_value,
     gpu_split_mode_availability_error, gpu_split_mode_labels, gpu_split_mode_value,
-    history_row_height,
+    format_gpu_inventory, history_row_height,
     launch_controlled_process, open_path_command, parse_progress_line,
     normalize_gui_option_values, prepare_benchmark_launch, restored_tg_tokens,
     pending_runtime_profiles,
@@ -854,10 +854,24 @@ def test_discovery_report_summarizes_readiness_without_mutation():
         comfyui_dir=None, inventory=inventory, free_storage_gb=120.5,
     )
     assert report["system"] == "Darwin arm64 · 64.0 GB RAM · metal"
+    assert report["gpus"] == "Not recorded"
     assert report["models"] == "1 LLM, 1 custom LLM, 1 embedding, 0 image"
     assert report["runtime"] == "llama-server: found, llama-bench: missing"
     assert report["storage"].endswith("120.5 GB free")
     assert report["issues"] == []
+
+
+def test_discovery_report_enumerates_gpu_type_vram_and_backend():
+    devices = [
+        {"name": "AMD Radeon PRO W7800", "kind": "discrete", "vram_gb": 31.984,
+         "backend": "vulkan"},
+        {"name": "AMD Radeon Graphics", "vram_gb": None, "backend": "vulkan"},
+    ]
+
+    assert format_gpu_inventory(devices) == (
+        "1. AMD Radeon PRO W7800 · Discrete · 32.0 GB VRAM · VULKAN\n"
+        "2. AMD Radeon Graphics · Integrated · VRAM unknown · VULKAN"
+    )
 
 
 def test_discovery_report_identifies_blockers_and_image_runtime_gap():
