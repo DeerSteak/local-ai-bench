@@ -278,6 +278,19 @@ def discover_windows_amd_gpus() -> list[dict]:
     return parse_windows_amd_gpus(output)
 
 
+def discover_wsl_windows_amd_gpus() -> list[dict]:
+    if not hardware.detect_wsl(platform.system(), platform.release()):
+        return []
+    try:
+        output = subprocess.check_output(
+            ["powershell.exe", "-NoProfile", "-Command", _WINDOWS_AMD_INVENTORY_SCRIPT],
+            text=True, stderr=subprocess.DEVNULL,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return []
+    return parse_windows_amd_gpus(output)
+
+
 def discover_linux_intel_gpu() -> DisplayDiscovery:
     if platform.system() != "Linux":
         return DisplayDiscovery(None, None, None)

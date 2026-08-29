@@ -42,7 +42,8 @@ from scripts.setup.intel_xpu_install import (
 from scripts.setup.rocm_install import (
     NATIVE_ROCM_VERSION, WINDOWS_DRIVER, native_rocm_install_plan,
     qualification_needs_native_rocm, qualification_needs_wsl_rocm, run_rocm_install,
-    ryzen_ai_halo_dkms_packages, ryzen_ai_halo_oem_kernel_ready, wsl_rocm_install_plan,
+    ryzen_ai_halo_dkms_packages, ryzen_ai_halo_oem_kernel_ready, setup_needs_wsl_rocm,
+    wsl_rocm_install_plan,
 )
 from scripts.setup.model_inventory import (
     delete_non_catalog_model_dirs, delete_non_catalog_vllm_repos,
@@ -78,7 +79,8 @@ from scripts.setup.setup_discovery import (
     discover_intel_vram_gb, discover_linux_amd_gpu, discover_linux_intel_gpu,
     discover_linux_nvidia_gpu,
     discover_metal, discover_nvidia, discover_rocm, discover_system,
-    discover_windows_amd_gpus, discover_windows_gpu, rocm_version,
+    discover_windows_amd_gpus, discover_windows_gpu, discover_wsl_windows_amd_gpus,
+    rocm_version,
 )
 from scripts.setup.setup_console import (
     BOLD, CYAN, GREEN, RESET, YELLOW, confirm, fail, info, link, ok, section, warn,
@@ -237,6 +239,9 @@ def main() -> None:  # pragma: no cover - real interactive installer
     if total_ram_gb is not None:
         print(f"  RAM:      {total_ram_gb:.0f} GB")
 
+    _wsl_windows_amd_gpus = discover_wsl_windows_amd_gpus()
+    _setup_wsl_rocm_plan = None
+
     if _qualification_target:
         if _host_error := qualification_host_error(_qualification_target):
             fail(_host_error)
@@ -351,6 +356,17 @@ def main() -> None:  # pragma: no cover - real interactive installer
         print(f"  Driver:  {device['driver']}")
 
     rocm = discover_rocm() if not nvidia.available else None
+    if not _qualification_target and setup_needs_wsl_rocm(
+        os_name=os_name, release=platform.release(), amd_gpus=_wsl_windows_amd_gpus,
+        rocm_available=bool(rocm and rocm.available),
+    ):
+        try:
+            _setup_wsl_rocm_plan = wsl_rocm_install_plan(
+                Path("/etc/os-release").read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError) as exc:
+            fail(str(exc))
+            sys.exit(1)
     rocm_gfx = rocm.gfx_targets if rocm else []
     rocm_gpu_kind = rocm.kind if rocm else None
     rocm_vram_gb = rocm.total_vram_gb if rocm else None
@@ -375,6 +391,20 @@ def main() -> None:  # pragma: no cover - real interactive installer
 
     if not nvidia_ok:
         rocm_ok = bool(rocm and rocm.available)
+    if _setup_wsl_rocm_plan:
+        rocm_ok = True
+        rocm_gpus = [{**device, "backend": "rocm"} for device in _wsl_windows_amd_gpus]
+        rocm_vram_gb = sum(
+            device["vram_gb"] for device in rocm_gpus if device["vram_gb"] is not None
+        ) or None
+        rocm_gpu_kind = (
+            "discrete" if any(device["kind"] == "discrete" for device in rocm_gpus)
+            else "integrated"
+        )
+        for device in rocm_gpus:
+            print(f"  WSL host GPU: {device['name']}")
+            vram = device["vram_gb"]
+            print(f"  VRAM:    {f'{vram:.1f} GB' if vram is not None else 'unknown'}")
     metal_ok, metal_details = discover_metal() if not nvidia_ok and not rocm_ok else (False, [])
     for detail in metal_details:
         print(f"  {detail}")
@@ -408,6 +438,9 @@ def main() -> None:  # pragma: no cover - real interactive installer
 
     if nvidia_ok:
         ok("CUDA / Nvidia GPU detected")
+    elif _setup_wsl_rocm_plan:
+        ok("AMD GPU detected through the Windows host")
+        info("Setup will install ROCm 7.2 for WSL2 before building llama.cpp")
     elif rocm_ok:
         ok("ROCm / AMD GPU detected")
     elif amd_windows:
@@ -768,6 +801,8 @@ def main() -> None:  # pragma: no cover - real interactive installer
     print(f"  {BOLD}local-ai-bench{RESET} needs a few things before it can run benchmarks.\n")
     print("  This will:")
     print("    • Install Python dependencies from requirements.txt")
+    if _setup_wsl_rocm_plan:
+        print("    • Install AMD ROCm 7.2 for WSL2 (requires sudo)")
     if intel_linux and not intel_linux_runtime:
         print("    • Install Intel GPU compute and oneAPI/SYCL prerequisites (requires sudo)")
     if needs_llamacpp_install and LLAMACPP in selected_engine_names(engine_entries):
@@ -972,6 +1007,26 @@ def main() -> None:  # pragma: no cover - real interactive installer
             warn(f"Could not open the graphical progress window: {exc}")
 
     section("Installing")
+
+    if _setup_wsl_rocm_plan:
+        info("Installing AMD ROCm 7.2 for WSL2 (requires sudo) ...")
+        info(f"Compatible Windows host driver required: {WINDOWS_DRIVER}")
+        try:
+            run_rocm_install(_setup_wsl_rocm_plan)
+        except (OSError, RuntimeError, urllib.error.URLError) as exc:
+            fail(f"ROCm installation failed: {exc}")
+            sys.exit(1)
+        rocm = discover_rocm()
+        if not rocm.available:
+            fail("ROCm installed but rocminfo cannot see an AMD GPU")
+            fail(f"Install {WINDOWS_DRIVER}, reboot Windows, then rerun setup")
+            sys.exit(1)
+        rocm_gfx = rocm.gfx_targets
+        rocm_gpu_kind = rocm.kind
+        rocm_vram_gb = rocm.total_vram_gb
+        if rocm.gpus:
+            rocm_gpus = rocm.gpus
+        ok("ROCm installed and GPU access verified")
 
     if intel_linux and not intel_linux_runtime:
         try:

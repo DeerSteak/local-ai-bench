@@ -170,6 +170,36 @@ def test_windows_amd_inventory_is_empty_off_windows(monkeypatch):
     assert setup_discovery.discover_windows_amd_gpus() == []
 
 
+def test_discovers_windows_amd_inventory_from_wsl(monkeypatch):
+    _platform(monkeypatch, "Linux")
+    monkeypatch.setattr(setup_discovery.platform, "release", lambda: "microsoft-standard-WSL2")
+    calls = []
+    monkeypatch.setattr(
+        setup_discovery.subprocess, "check_output",
+        lambda command, **_kwargs: calls.append(command) or (
+            '[{"name":"AMD Radeon PRO W7800","pnp_device_id":"PCI\\\\GPU1",'
+            '"driver":"32.0.1","vram_bytes":34359738368}]'
+        ),
+    )
+
+    devices = setup_discovery.discover_wsl_windows_amd_gpus()
+
+    assert len(devices) == 1
+    assert devices[0]["vram_gb"] == 32.0
+    assert calls[0][0] == "powershell.exe"
+
+
+def test_wsl_windows_amd_inventory_is_empty_off_wsl(monkeypatch):
+    _platform(monkeypatch, "Linux")
+    monkeypatch.setattr(setup_discovery.platform, "release", lambda: "6.14-generic")
+    monkeypatch.setattr(
+        setup_discovery.subprocess, "check_output",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not run")),
+    )
+
+    assert setup_discovery.discover_wsl_windows_amd_gpus() == []
+
+
 def test_discovers_linux_intel_arc(monkeypatch):
     _platform(monkeypatch, "Linux")
     monkeypatch.setattr(
