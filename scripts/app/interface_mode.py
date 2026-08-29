@@ -3,10 +3,15 @@
 
 INTERFACE_MODES = {"auto", "gui", "terminal", "none"}
 SSH_ENV_KEYS = ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY")
+WSL_ENV_KEYS = ("WSL_DISTRO_NAME", "WSL_INTEROP")
 
 
 def is_ssh_session(env: dict[str, str]) -> bool:
     return any(env.get(key) for key in SSH_ENV_KEYS)
+
+
+def is_wsl_session(platform_name: str, env: dict[str, str]) -> bool:
+    return platform_name.lower() == "linux" and any(env.get(key) for key in WSL_ENV_KEYS)
 
 
 def desktop_available(platform_name: str, env: dict[str, str]) -> bool:
@@ -29,6 +34,8 @@ def select_interface_mode(requested: str, *, platform_name: str, env: dict[str, 
         if requested == "gui" and not gui_available:
             raise ValueError("GUI assets are not installed")
         return requested
+    if stdin_is_tty and is_wsl_session(platform_name, env):
+        return "terminal"
     if gui_available and desktop_available(platform_name, env):
         return "gui"
     if stdin_is_tty:
