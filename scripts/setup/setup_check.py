@@ -78,7 +78,7 @@ from scripts.setup.setup_discovery import (
     discover_intel_vram_gb, discover_linux_amd_gpu, discover_linux_intel_gpu,
     discover_linux_nvidia_gpu,
     discover_metal, discover_nvidia, discover_rocm, discover_system,
-    discover_windows_gpu, rocm_version,
+    discover_windows_amd_gpus, discover_windows_gpu, rocm_version,
 )
 from scripts.setup.setup_console import (
     BOLD, CYAN, GREEN, RESET, YELLOW, confirm, fail, info, link, ok, section, warn,
@@ -379,13 +379,21 @@ def main() -> None:  # pragma: no cover - real interactive installer
     for detail in metal_details:
         print(f"  {detail}")
     if not nvidia_ok and os_name == "Windows":
-        windows_gpu = discover_windows_gpu()
-        windows_gpu_kind = windows_gpu.kind
-        amd_windows = windows_gpu.vendor == "amd"
-        intel_windows = windows_gpu.vendor == "intel"
-        if windows_gpu.name:
+        windows_amd_gpus = discover_windows_amd_gpus()
+        windows_gpu = discover_windows_gpu() if not windows_amd_gpus else None
+        windows_gpu_kind = "discrete" if windows_amd_gpus else windows_gpu.kind
+        amd_windows = bool(windows_amd_gpus) or windows_gpu.vendor == "amd"
+        intel_windows = not windows_amd_gpus and windows_gpu.vendor == "intel"
+        for device in windows_amd_gpus:
+            print(f"  GPU:     {device['name']}")
+            vram = device["vram_gb"]
+            print(f"  VRAM:    {f'{vram:.1f} GB' if vram is not None else 'unknown'}")
+            if device["driver"]:
+                print(f"  Driver:  {device['driver']}")
+        if windows_gpu and windows_gpu.name:
             print(f"  GPU:     {windows_gpu.name}")
     else:
+        windows_amd_gpus = []
         windows_gpu_kind = None
     if not nvidia_ok and not rocm_ok and os_name == "Linux":
         linux_gpu = discover_linux_intel_gpu()
@@ -432,7 +440,11 @@ def main() -> None:  # pragma: no cover - real interactive installer
         gpu_vram_gb = rocm_vram_gb
     elif amd_windows:
         gpu_vendor = "amd" if windows_gpu_kind == "discrete" else "integrated"
-        gpu_vram_gb = None  # no driver-agnostic VRAM query implemented on Windows
+        known_windows_vram = [
+            device["vram_gb"] for device in windows_amd_gpus
+            if device["vram_gb"] is not None
+        ]
+        gpu_vram_gb = sum(known_windows_vram) if known_windows_vram else None
     elif intel_windows:
         gpu_vendor = "intel" if windows_gpu_kind == "discrete" else "integrated"
         gpu_vram_gb = discover_intel_vram_gb() if gpu_vendor == "intel" else None
@@ -451,7 +463,9 @@ def main() -> None:  # pragma: no cover - real interactive installer
         device_vram_gb=(
             [device["vram_gb"] for device in nvidia_gpus if device["vram_gb"] is not None]
             if nvidia_ok else
-            [device["vram_gb"] for device in rocm_gpus] if rocm_ok else None
+            [device["vram_gb"] for device in rocm_gpus] if rocm_ok else
+            [device["vram_gb"] for device in windows_amd_gpus
+             if device["vram_gb"] is not None] if amd_windows else None
         ) or None,
     )
     if memory_ceiling_gb is not None:
@@ -1273,7 +1287,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
         },
         gpu_devices=(
             [{**device, "vendor": "nvidia", "backend": "cuda"} for device in nvidia_gpus]
-            if nvidia_ok else rocm_gpus
+            if nvidia_ok else rocm_gpus if rocm_ok else windows_amd_gpus
         ),
         vllm=vllm_setup_config(
             executable=VLLM_BIN, launcher=VLLM_LAUNCHER if VLLM_BIN is None else None,
