@@ -92,7 +92,8 @@ from scripts.app.benchmark_gui_process import (
     windows_host_utc_offset_minutes,
 )
 from scripts.app.benchmark_gui_resources import (
-    PsutilLike, parse_gpu_process_memory, parse_gpu_usage, process_resource_usage,
+    PsutilLike, configured_vram_total, parse_gpu_process_memory, parse_gpu_usage,
+    process_resource_usage,
     query_gpu_process_memory, query_gpu_usage, query_vram_usage,
     resource_usage_rows, show_vram_usage, system_memory_usage,
 )
@@ -1084,6 +1085,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     }
     system_memory_baseline = [0.0]
     has_discrete_vram = [False]
+    configured_vram_gb = [None]
 
     def show_progress_window(tests, entries, engines=None):
         nonlocal progress_metrics, progress_started_at
@@ -1091,7 +1093,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             "usage": None, "memory": None, "vram": None, "next_at": 0.0,
             "running": False, "generation": gpu_sample["generation"] + 1,
         })
-        has_discrete_vram[0] = show_vram_usage(configured_gpu_devices(setup))
+        devices = configured_gpu_devices(setup)
+        has_discrete_vram[0] = show_vram_usage(devices)
+        configured_vram_gb[0] = configured_vram_total(devices)
         system_memory_baseline[0] = system_memory_usage()[0]
         run_engines = list(engines or parse_engine_selection(engine_var.get()))
         progress_screen.show(
@@ -1194,7 +1198,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             resources = resource_usage_rows(
                 usage, system_memory_usage(), system_memory_baseline[0],
                 gpu_sample["usage"], gpu_sample["memory"], gpu_sample["vram"],
-                has_discrete_vram[0],
+                has_discrete_vram[0], configured_vram_gb[0],
             )
             progress_screen.set_resources(resources, estimate)
         root.after(100, poll_output)

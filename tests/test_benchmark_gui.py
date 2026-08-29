@@ -30,6 +30,7 @@ from scripts.app.benchmark_gui import (
     pending_runtime_profiles,
     process_completion_state, resolve_engine_selection,
     resolve_engine_names,
+    configured_vram_total,
     selected_catalog_models,
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
     query_gpu_process_memory, query_gpu_usage,
@@ -1163,6 +1164,10 @@ def test_vram_line_only_applies_to_discrete_memory_devices(monkeypatch):
         {"name": "AMD Radeon Graphics", "vendor": "amd", "vram_gb": 2},
         {"name": "NVIDIA GB10", "vendor": "nvidia", "vram_gb": None},
     ])
+    assert configured_vram_total([
+        {"name": "AMD Radeon Pro W7800", "vendor": "amd", "vram_gb": 32},
+        {"name": "AMD Radeon Graphics", "vendor": "amd", "vram_gb": 4},
+    ]) == 32
 
     monkeypatch.setattr(
         "scripts.runtime.telemetry.query_sampler_vram_usage", lambda: (10.25, 24.0),
@@ -1173,8 +1178,8 @@ def test_vram_line_only_applies_to_discrete_memory_devices(monkeypatch):
         "System RAM": "Unavailable", "GPU": "Unavailable",
     }
     assert resource_usage_rows(
-        None, None, 0, None, None, include_vram=True,
-    )["VRAM"] == "Unavailable"
+        None, None, 0, None, None, include_vram=True, configured_vram_gb=32,
+    )["VRAM"] == "Usage unavailable / 32.0 GB total"
 
 
 def test_workload_preflight_reports_specific_runtime_resolutions():
