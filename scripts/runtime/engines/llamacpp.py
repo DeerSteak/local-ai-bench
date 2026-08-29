@@ -41,6 +41,20 @@ from scripts.runtime.shared import (
 )
 
 
+ACCELERATOR_BACKENDS = {"cuda", "metal", "rocm", "vulkan", "xpu"}
+
+
+def model_placement_error(backend: str | None, placement: dict) -> str | None:
+    if backend not in ACCELERATOR_BACKENDS:
+        return None
+    gpu_layers = placement.get("gpu_layers")
+    if not isinstance(gpu_layers, int) or isinstance(gpu_layers, bool):
+        return f"{backend} model load did not report GPU layer placement"
+    if gpu_layers <= 0:
+        return f"{backend} model load offloaded zero layers to the GPU"
+    return None
+
+
 class LlamaCppEngine(InferenceEngine):
     name = "llamacpp"
 
@@ -92,6 +106,7 @@ class LlamaCppEngine(InferenceEngine):
         self._cpu_only_active = False
         self._mtp_enabled = False
         self._process_env: dict[str, str] | None = None
+        self._expected_backend: str | None = None
         self._model_lock = threading.RLock()
 
     @classmethod
@@ -278,10 +293,11 @@ class LlamaCppEngine(InferenceEngine):
                        "to install it, or build/install llama.cpp yourself: "
                        "https://github.com/ggml-org/llama.cpp")
             return False
-        if self.REQUIRED_BACKEND is not None:
-            backend = probe_llamacpp_backend(binary)
-            if backend != self.REQUIRED_BACKEND:
-                Shared.err(f"{self.name} requires {self.REQUIRED_BACKEND}, but its runtime "
+        required_backend = self.REQUIRED_BACKEND or self._expected_backend
+        if required_backend in ACCELERATOR_BACKENDS:
+            backend = probe_llamacpp_backend(binary, env=self._process_env)
+            if backend != required_backend:
+                Shared.err(f"{self.name} requires {required_backend}, but its runtime "
                            f"exposes {backend or 'no backend'}")
                 return False
         if not self._models_dir().exists():
@@ -400,11 +416,20 @@ class LlamaCppEngine(InferenceEngine):
             if hardware_backend == "xpu" and self.REQUIRED_BACKEND is None else None
         )
         if cpu_only:
-            return "cpu"
+            self._expected_backend = "cpu"
+            return self._expected_backend
         binary = self._binary_path()
         if binary is None:
-            return hardware_backend
-        return probe_llamacpp_backend(binary, env=self._process_env) or hardware_backend
+            detected_backend = hardware_backend
+        else:
+            detected_backend = (
+                probe_llamacpp_backend(binary, env=self._process_env) or hardware_backend
+            )
+        self._expected_backend = self.REQUIRED_BACKEND or (
+            detected_backend if detected_backend in ACCELERATOR_BACKENDS else
+            hardware_backend if hardware_backend in ACCELERATOR_BACKENDS else detected_backend
+        )
+        return detected_backend
 
     def process_environment(self) -> dict[str, str] | None:
         return self._process_env
@@ -607,13 +632,22 @@ class LlamaCppEngine(InferenceEngine):
                             f"port {config.LLAMACPP_PORT} is serving {serving}, not {paths[0].name} "
                             f"— another llama-server owns it; stop it before loading {tag}"
                         )
+                    placement = self.parse_model_placement(self.tail_log(self.SPAWN_LOG_LINES))
+                    if placement_error := model_placement_error(
+                        self._expected_backend, placement,
+                    ):
+                        log_tail = self.tail_log()
+                        self._stop_process()
+                        raise RuntimeError(
+                            f"{placement_error}; refusing silent CPU fallback loading {tag}"
+                            f" — last output:\n{log_tail}"
+                        )
                     self._loaded_tag = tag
                     self._loaded_num_ctx = num_ctx
                     self._loaded_embedding = embedding
                     self._loaded_n_parallel = n_parallel
                     self._loaded_mtp_config = mtp_config
-                    self._loaded_model_placement = self.parse_model_placement(
-                        self.tail_log(self.SPAWN_LOG_LINES))
+                    self._loaded_model_placement = placement
                     return
                 time.sleep(1)
 

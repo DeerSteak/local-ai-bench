@@ -11,7 +11,7 @@ import requests
 
 from scripts.runtime import config
 from scripts.runtime.engines.base import aggregate_generation_measurements, is_valid_measurement
-from scripts.runtime.engines.llamacpp import LlamaCppEngine
+from scripts.runtime.engines.llamacpp import LlamaCppEngine, model_placement_error
 import scripts.runtime.engines.llamacpp as llamacpp_module
 from scripts.runtime.shared import EngineBudgetExceeded, EngineLoopDetected, EngineTimeout
 
@@ -56,6 +56,21 @@ def test_parse_model_placement_uses_last_load_and_tolerates_missing_buffers():
         "gpu_layers": 41,
         "total_layers": 41,
     }
+
+
+def test_accelerated_model_placement_rejects_cpu_fallback_and_missing_evidence():
+    assert model_placement_error("rocm", {"gpu_layers": 0, "total_layers": 49}) == (
+        "rocm model load offloaded zero layers to the GPU"
+    )
+    assert model_placement_error("rocm", {}) == (
+        "rocm model load did not report GPU layer placement"
+    )
+    assert model_placement_error("rocm", {"gpu_layers": 49, "total_layers": 49}) is None
+
+
+def test_cpu_model_placement_does_not_require_gpu_layers():
+    assert model_placement_error("cpu", {}) is None
+    assert model_placement_error(None, {}) is None
 
 
 def test_binary_path_via_llamacpp_dir(monkeypatch, tmp_path):
@@ -1182,7 +1197,31 @@ def test_runtime_backend_uses_binary_device_listing_and_cpu_override(monkeypatch
     monkeypatch.setattr(llamacpp_module.subprocess, "run", lambda *args, **kwargs: completed)
     engine = LlamaCppEngine()
     assert engine.runtime_backend("rocm") == "vulkan"
+    assert engine._expected_backend == "vulkan"
     assert engine.runtime_backend("rocm", cpu_only=True) == "cpu"
+
+
+def test_runtime_backend_preserves_hardware_accelerator_when_device_probe_falls_to_cpu(
+        monkeypatch):
+    monkeypatch.setattr(LlamaCppEngine, "_binary_path", staticmethod(lambda: "llama-server"))
+    monkeypatch.setattr(llamacpp_module, "probe_llamacpp_backend", lambda *_args, **_kwargs: "cpu")
+    engine = LlamaCppEngine()
+
+    assert engine.runtime_backend("rocm") == "cpu"
+    assert engine._expected_backend == "rocm"
+
+
+def test_accelerated_preflight_rejects_runtime_device_loss(monkeypatch, tmp_path):
+    monkeypatch.setattr(LlamaCppEngine, "_binary_path", staticmethod(lambda: "llama-server"))
+    monkeypatch.setattr(LlamaCppEngine, "_models_dir", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(llamacpp_module, "probe_llamacpp_backend", lambda *_args, **_kwargs: "cpu")
+    errors = []
+    monkeypatch.setattr(llamacpp_module.Shared, "err", errors.append)
+    engine = LlamaCppEngine()
+    engine._expected_backend = "rocm"
+
+    assert not engine.ensure_running()
+    assert errors == ["llamacpp requires rocm, but its runtime exposes cpu"]
 
 
 def test_runtime_backend_sources_oneapi_for_xpu_probe_and_processes(monkeypatch):
