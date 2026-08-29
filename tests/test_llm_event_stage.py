@@ -350,6 +350,28 @@ def test_recovered_model_state_can_be_replaced_without_duplicate_start_transitio
         runner.close()
 
 
+def test_failed_model_state_preserves_unexpected_error_projection(tmp_path):
+    path = tmp_path / "events.sqlite3"
+    plan = make_plan()
+    stage = LLMEventStage(path, plan, lambda _: None)
+    try:
+        stage.record_model_state(MODEL, "failed", {
+            "error": "llamacpp_generate exceeded 300s wall-clock timeout",
+            "error_type": "EngineTimeout",
+            "unexpected_error": True,
+        })
+        assert stage.export()["model"] == {
+            "error": "llamacpp_generate exceeded 300s wall-clock timeout",
+            "error_type": "EngineTimeout",
+            "unexpected_error": True,
+        }
+        projection = stage.store.rebuild(plan.job_id)
+        model_state = next(iter(projection["cases"].values()))
+        assert model_state["state"] == "failed"
+    finally:
+        stage.close()
+
+
 def test_journal_export_preserves_schema_three_golden_llm_fields(tmp_path):
     fixture_path = Path(__file__).parent / "fixtures" / "results_v4_1_schema3_plan.json"
     fixture = json.loads(fixture_path.read_text(encoding="utf-8"))

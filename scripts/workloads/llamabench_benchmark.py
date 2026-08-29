@@ -351,7 +351,7 @@ class LlamaBenchBenchmark:
                 entry = unexpected_model_failure(label, exc)
                 results.setdefault(short, {}).update(entry)
                 if journal:
-                    journal.record_model_state(model, "crashed", entry)
+                    journal.record_model_state(model, "failed", entry)
             finally:
                 if save_fn:
                     save_fn(journal.export() if journal else results)
