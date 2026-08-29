@@ -225,3 +225,4 @@ README_VERY_IMPORTANT.txt
 /update
 vllm-env/
 .vscode
+/llama.cpp-vulkan
