@@ -1470,6 +1470,7 @@ def test_wait_until_unloaded_false_while_still_loaded():
 
 def test_tensor_split_uses_f16_cache_and_cpu_mode_disables_splitting(monkeypatch):
     monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "tensor")
+    monkeypatch.setattr(llamacpp_module, "load_setup_config", lambda path: {})
     assert LlamaCppEngine.gpu_split_args(include_cache=True) == [
         "--split-mode", "tensor", "--cache-type-k", "f16", "--cache-type-v", "f16",
     ]
@@ -1481,9 +1482,23 @@ def test_tensor_split_uses_f16_cache_and_cpu_mode_disables_splitting(monkeypatch
 
 def test_single_gpu_mode_disables_splitting_but_keeps_normal_cache(monkeypatch):
     monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "single")
+    monkeypatch.setattr(llamacpp_module, "load_setup_config", lambda path: {})
     assert LlamaCppEngine.gpu_split_args(include_cache=True) == [
         "--split-mode", "none", "--cache-type-k", config.LLAMACPP_KV_CACHE_TYPE,
         "--cache-type-v", config.LLAMACPP_KV_CACHE_TYPE,
+    ]
+
+
+def test_single_gpu_mode_pins_first_prioritized_vulkan_device(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "single")
+    monkeypatch.setattr(llamacpp_module, "load_setup_config", lambda path: {
+        "gpu": {"devices": [
+            {"backend": "vulkan", "type": "integrated", "vram_gb": 16},
+            {"backend": "vulkan", "type": "discrete", "vram_gb": 32},
+        ]},
+    })
+    assert LlamaCppEngine.gpu_split_args() == [
+        "--split-mode", "none", "--device", "Vulkan1",
     ]
 
 
@@ -1512,7 +1527,9 @@ def test_explicit_gpu_ratio_is_omitted_for_single_and_cpu_modes(monkeypatch):
         ]}},
     )
     monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "single")
-    assert LlamaCppEngine.gpu_split_args() == ["--split-mode", "none"]
+    assert LlamaCppEngine.gpu_split_args() == [
+        "--split-mode", "none", "--device", "Vulkan0",
+    ]
     monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "layer")
     assert LlamaCppEngine.gpu_split_args(cpu_only=True) == ["--split-mode", "none"]
 

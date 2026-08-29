@@ -126,6 +126,16 @@ def test_split_modes_use_runtime_backend_intersection_and_cpu_constraint():
     ) == ("layer",)
 
 
+def test_vulkan_runtime_exposes_single_gpu_without_tensor_mode():
+    setup = {"gpu": {"devices": [
+        {"backend": "vulkan"}, {"backend": "vulkan"},
+    ]}}
+    profiles = {"llamacpp": {"runtime_backend": "vulkan"}}
+    assert split_modes_for_runtime_profiles(
+        setup, ["llamacpp"], profiles, cpu_only=False,
+    ) == ("single", "layer")
+
+
 def test_split_mode_capability_is_unknown_until_selected_runtime_backends_resolve():
     pending = pending_runtime_profiles(["llamacpp"])
     resolved = {"llamacpp": {"runtime_backend": "cuda"}}

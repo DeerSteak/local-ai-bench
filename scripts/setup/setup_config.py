@@ -107,4 +107,6 @@ def available_gpu_split_modes(data: dict, runtime_backend: str) -> tuple[str, ..
     matching = [device for device in devices if device.get("backend") == runtime_backend]
     if runtime_backend in {"cuda", "rocm"} and len(matching) >= 2:
         return "single", "layer", "tensor"
+    if runtime_backend in {"cuda", "rocm", "vulkan", "xpu"} and matching:
+        return "single", "layer"
     return ("layer",)

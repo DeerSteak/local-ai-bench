@@ -62,9 +62,12 @@ class LlamaCppEngine(InferenceEngine):
         configured_mode = config.LLAMACPP_GPU_SPLIT_MODE
         mode = "none" if cpu_only or configured_mode == "single" else configured_mode
         args = ["--split-mode", mode]
-        if mode != "none":
-            setup = load_setup_config(config.SETUP_CONFIG_PATH)
-            devices = configured_gpu_devices(setup)
+        setup = load_setup_config(config.SETUP_CONFIG_PATH)
+        devices = configured_gpu_devices(setup)
+        if configured_mode == "single" and not cpu_only:
+            if selection := gpu_device_selection(devices):
+                args += ["--device", selection.split(",", 1)[0]]
+        elif mode != "none":
             if selection := gpu_device_selection(devices):
                 args += ["--device", selection]
             if tensor_split := gpu_tensor_split(devices):

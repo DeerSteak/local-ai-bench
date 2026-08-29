@@ -70,11 +70,18 @@ def test_tensor_split_requires_two_matching_cuda_or_rocm_devices():
     assert available_gpu_split_modes(rocm, "vulkan") == ("layer",)
 
 
+def test_vulkan_supports_single_gpu_but_not_tensor_split():
+    vulkan = {"gpu": {"devices": [
+        {"backend": "vulkan"}, {"backend": "vulkan"},
+    ]}}
+    assert available_gpu_split_modes(vulkan, "vulkan") == ("single", "layer")
+
+
 def test_tensor_split_rejects_single_or_unrecorded_devices():
     single = {"gpu": {"devices": [{"backend": "rocm"}]}}
     legacy = {"gpu": {"devices": [{"name": "AMD GPU"}, {"name": "AMD GPU"}]}}
 
-    assert available_gpu_split_modes(single, "rocm") == ("layer",)
+    assert available_gpu_split_modes(single, "rocm") == ("single", "layer")
     assert available_gpu_split_modes(legacy, "rocm") == ("layer",)
     assert available_gpu_split_modes({}, "cuda") == ("layer",)
 
