@@ -100,6 +100,19 @@ def test_build_prefill_command_never_passes_unsupported_repack_option(monkeypatc
     assert "--no-repack" not in cmd
 
 
+def test_build_prefill_command_can_disable_host_buffer_except_on_cpu(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_NO_HOST", True)
+    gpu_cmd = LlamaBenchBenchmark.build_prefill_command(
+        "llama-bench", Path("/models/x.gguf"), [512], 2048, 512, 3, 999,
+    )
+    cpu_cmd = LlamaBenchBenchmark.build_prefill_command(
+        "llama-bench", Path("/models/x.gguf"), [512], 2048, 512, 3, 0,
+    )
+    index = gpu_cmd.index("--no-host")
+    assert gpu_cmd[index:index + 2] == ["--no-host", "1"]
+    assert "--no-host" not in cpu_cmd
+
+
 def test_build_decode_command_shape():
     cmd = LlamaBenchBenchmark.build_decode_command(
         "llama-bench", Path("/models/x.gguf"), [512, 2048], [128, 512], 2048, 512, 3, 999,

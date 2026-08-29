@@ -66,6 +66,9 @@ PUBLIC_OPTION_SCHEMA = {
     "--llamacpp-no-repack": _spec(
         "boolean", "advanced", "exposed", "Graphical execution settings", default=False,
     ),
+    "--llamacpp-no-host": _spec(
+        "boolean", "advanced", "exposed", "Graphical execution settings", default=False,
+    ),
     "--force-all": _spec("boolean", "advanced", "exposed", "Graphical execution settings", default=False),
     "--retry-crashed-models": _spec(
         "boolean", "advanced", "exposed", "Graphical execution settings", default=False,
@@ -96,6 +99,7 @@ GUI_OPTION_FLAGS = {
     "cpu_only": "--cpu-only", "gpu_split_mode": "--gpu-split-mode",
     "mtp": "--mtp",
     "llamacpp_no_repack": "--llamacpp-no-repack",
+    "llamacpp_no_host": "--llamacpp-no-host",
     "force_all": "--force-all", "retry_crashed_models": "--retry-crashed-models",
     "offline": "--offline", "memory_telemetry": "--memory-telemetry",
     "power_telemetry": "--power-telemetry",

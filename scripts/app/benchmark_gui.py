@@ -267,7 +267,7 @@ def normalize_gui_option_values(values: dict[str, Any]) -> dict[str, Any]:
     options["gpu_split_mode"] = gpu_split_mode_value(values["gpu_split_mode"])
     options["mtp"] = mtp_mode_value(values["mtp"])
     for key in ("cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
-                "power_telemetry", "llamacpp_no_repack"):
+                "power_telemetry", "llamacpp_no_repack", "llamacpp_no_host"):
         options[key] = values[key]
     for key in ("out", "comfyui"):
         options[key] = str(values[key]).strip()
@@ -782,6 +782,15 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         repack_row, text="Reset", width=6,
         command=lambda: option_vars["llamacpp_no_repack"].set(False),
     ).grid(row=0, column=2, padx=(8, 0))
+    no_host_row = execution_row()
+    ttk.Checkbutton(
+        no_host_row, text="Bypass llama.cpp host model buffer (--no-host)",
+        variable=option_vars["llamacpp_no_host"],
+    ).grid(row=0, column=0, columnspan=2, sticky="w")
+    ttk.Button(
+        no_host_row, text="Reset", width=6,
+        command=lambda: option_vars["llamacpp_no_host"].set(False),
+    ).grid(row=0, column=2, padx=(8, 0))
     ttk.Label(
         execution_row(pady=(8, 0)), text="More warmups/runs improve repeatability but increase time. CPU-only changes the tested device; force-all can make runs much longer.",
         wraplength=430,
@@ -846,7 +855,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                     "sustained_duration", "ambient_temp_c", "gpu_split_mode",
                     "mtp",
                     "cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
-                    "power_telemetry", "llamacpp_no_repack"):
+                    "power_telemetry", "llamacpp_no_repack", "llamacpp_no_host"):
             variable = option_vars[key]
             variable.set(gui_option_control_value(key, defaults[key]))
 

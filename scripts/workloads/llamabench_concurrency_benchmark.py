@@ -66,6 +66,7 @@ class LlamaBenchConcurrencyBenchmark:
             "-ub", str(ubatch_size),
             "-ngl", str(ngl),
             *LlamaCppEngine.repack_args(),
+            *LlamaCppEngine.no_host_args(cpu_only=ngl == 0),
             *LlamaCppEngine.gpu_split_args(cpu_only=ngl == 0),
             "--cache-type-k", cache_type,
             "--cache-type-v", cache_type,

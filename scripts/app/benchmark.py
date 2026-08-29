@@ -867,6 +867,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "(default: false).",
     )
     parser.add_argument(
+        "--llamacpp-no-host", action="store_true",
+        help="Bypass llama.cpp host model buffers when GPU offload is active. This can reduce "
+             "system-memory use but may affect backend compatibility or performance (default: false).",
+    )
+    parser.add_argument(
         "--maxtier", type=str, default=None,
         choices=TIER_CHOICES,
         help="Cap LLM models (single-shot and conversation tests) at this size tier "
@@ -948,6 +953,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     apply_quick_preset(args)
     config.LLAMACPP_GPU_SPLIT_MODE = args.gpu_split_mode
     config.LLAMACPP_NO_REPACK = args.llamacpp_no_repack
+    config.LLAMACPP_NO_HOST = args.llamacpp_no_host
     config.RETRY_CRASHED_MODELS = args.retry_crashed_models
     if args.offline:
         apply_offline_mode()
@@ -1284,6 +1290,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "retry_crashed_models": args.retry_crashed_models,
             "gpu_split_mode": args.gpu_split_mode,
             "llamacpp_no_repack": args.llamacpp_no_repack,
+            "llamacpp_no_host": args.llamacpp_no_host,
             "offline": args.offline,
             "mtp_enabled": mtp_enabled,
             "mtp_configurations": methodology.get("mtp_configurations", {}),

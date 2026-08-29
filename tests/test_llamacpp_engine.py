@@ -28,6 +28,15 @@ def test_repack_args_follow_the_explicit_runtime_setting(monkeypatch):
     assert LlamaCppEngine.repack_args() == ["--no-repack"]
 
 
+def test_no_host_args_follow_runtime_setting_and_tool_syntax(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_NO_HOST", False)
+    assert LlamaCppEngine.no_host_args() == []
+    monkeypatch.setattr(config, "LLAMACPP_NO_HOST", True)
+    assert LlamaCppEngine.no_host_args() == ["--no-host"]
+    assert LlamaCppEngine.no_host_args(value_required=True) == ["--no-host", "1"]
+    assert LlamaCppEngine.no_host_args(cpu_only=True) == []
+
+
 def test_parse_model_placement_reports_layers_and_cpu_side_model_buffers():
     log = """0.05.100.001 I load_tensors: offloaded 35/41 layers to GPU
 0.05.101.002 I load_tensors:          CPU_Mapped model buffer size =   272.81 MiB

@@ -23,6 +23,7 @@ LLAMACPP_NUM_BATCH = 512
 LLAMACPP_KV_CACHE_TYPE = "q8_0"
 LLAMACPP_GPU_SPLIT_MODE = "layer"
 LLAMACPP_NO_REPACK = False
+LLAMACPP_NO_HOST = False
 
 # Repository root shared by all package groups.
 SCRIPT_DIR   = Path(__file__).resolve().parents[2]

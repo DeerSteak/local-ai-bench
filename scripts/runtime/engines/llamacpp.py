@@ -169,6 +169,12 @@ class LlamaCppEngine(InferenceEngine):
     def repack_args() -> list[str]:
         return ["--no-repack"] if config.LLAMACPP_NO_REPACK else []
 
+    @staticmethod
+    def no_host_args(*, cpu_only: bool = False, value_required: bool = False) -> list[str]:
+        if cpu_only or not config.LLAMACPP_NO_HOST:
+            return []
+        return ["--no-host", "1"] if value_required else ["--no-host"]
+
     # ── local model-file resolution ──
 
     @classmethod
@@ -549,6 +555,7 @@ class LlamaCppEngine(InferenceEngine):
                 # Quantized KV cache needs flash attention explicitly on — see config.LLAMACPP_KV_CACHE_TYPE.
                 "--flash-attn", "on",
                 *self.repack_args(),
+                *self.no_host_args(cpu_only=not self._gpu_visible),
                 *self.gpu_split_args(include_cache=True, cpu_only=not self._gpu_visible),
             ]
             if num_ctx is not None:

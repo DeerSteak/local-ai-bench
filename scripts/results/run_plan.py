@@ -27,6 +27,7 @@ SAFE_CONFIG_KEYS = {
     "mtp_enabled", "mtp_configurations", "progress_engine_name",
     "gpu_split_mode",
     "llamacpp_no_repack",
+    "llamacpp_no_host",
     "memory_telemetry", "memory_telemetry_interval_sec",
     "power_telemetry", "power_telemetry_interval_sec", "power_source", "power_scope",
     "temperature_telemetry", "temperature_telemetry_interval_sec", "temperature_sources",
@@ -39,7 +40,7 @@ SAFE_MODEL_KEYS = {"tag", "short", "size_gb", "params_b", "base_model", "variant
 EXECUTION_CONFIG_KEYS = set(SAFE_CONFIG_KEYS) - {
     "methodology_profile", "effective_optimizations", "sampling_profile", "offline", "gpu_split_mode",
     "mtp_enabled", "mtp_configurations", "progress_engine_name",
-    "retry_crashed_models", "llamacpp_no_repack",
+    "retry_crashed_models", "llamacpp_no_repack", "llamacpp_no_host",
     "memory_telemetry", "memory_telemetry_interval_sec",
     "power_telemetry", "power_telemetry_interval_sec", "power_source", "power_scope",
     "temperature_telemetry", "temperature_telemetry_interval_sec", "temperature_sources",
@@ -260,12 +261,12 @@ class RunPlan:
                     or (maximum is not None and value > maximum)):
                 raise ValueError(f"invalid execution setting: {key}")
         for key in ("cpu_only", "force_all", "retry_crashed_models", "offline",
-                    "llamacpp_no_repack", "memory_telemetry", "power_telemetry",
+                    "llamacpp_no_repack", "llamacpp_no_host", "memory_telemetry", "power_telemetry",
                     "temperature_telemetry"):
             if key == "retry_crashed_models" and key not in settings:
                 continue
             if key not in settings and key in {
-                    "offline", "llamacpp_no_repack", "memory_telemetry", "power_telemetry",
+                    "offline", "llamacpp_no_repack", "llamacpp_no_host", "memory_telemetry", "power_telemetry",
                     "temperature_telemetry"}:
                 continue
             if not isinstance(settings[key], bool):

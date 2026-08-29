@@ -17,9 +17,11 @@ def test_neutral_profile_records_only_settings_for_selected_runtime_paths():
             "llamacpp:gpu_split=layer",
             "llamacpp:flash_attention=on",
             "llamacpp:repack=enabled",
+            "llamacpp:host_buffer=enabled",
             f"llama.cpp:native_kv_cache={config.LLAMACPP_KV_CACHE_TYPE}",
             "llama.cpp:native_gpu_split=layer",
             f"llama.cpp:llama_bench_gpu_layers={config.LLAMABENCH_FULL_OFFLOAD_NGL}",
+            "llama.cpp:llama_bench_host_buffer=enabled",
         "comfyui:dynamic_vram=disabled",
     ]
 
@@ -53,6 +55,22 @@ def test_no_repack_profile_records_server_and_supported_native_path(monkeypatch)
     assert "llama.cpp:native_repack=disabled" in optimizations
     assert "llama.cpp:llama_bench_gpu_layers=999" in optimizations
     assert "llama.cpp:llama_batched_bench_gpu_layers=auto" in optimizations
+
+
+def test_no_host_profile_records_gpu_paths_and_keeps_cpu_host_buffer(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_NO_HOST", True)
+    gpu = resolve_methodology_profile(
+        engine_name="llamacpp", tests=["llm", "llamabench", "llamabenchconc"], cpu_only=False,
+    )["effective_optimizations"]
+    cpu = resolve_methodology_profile(
+        engine_name="llamacpp", tests=["llm", "llamabench", "llamabenchconc"], cpu_only=True,
+    )["effective_optimizations"]
+    assert "llamacpp:host_buffer=disabled" in gpu
+    assert "llama.cpp:llama_bench_host_buffer=disabled" in gpu
+    assert "llama.cpp:llama_batched_bench_host_buffer=disabled" in gpu
+    assert "llamacpp:host_buffer=enabled" in cpu
+    assert "llama.cpp:llama_bench_host_buffer=enabled" in cpu
+    assert "llama.cpp:llama_batched_bench_host_buffer=enabled" in cpu
 
 
 def test_llamabench_profile_does_not_record_unsupported_repack_setting(monkeypatch):

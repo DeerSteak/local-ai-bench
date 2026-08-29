@@ -175,6 +175,20 @@ def test_build_command_can_disable_repacking(monkeypatch):
     assert "--no-repack" in cmd
 
 
+def test_build_command_can_disable_host_buffer_except_on_cpu(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_NO_HOST", True)
+    gpu_cmd = LBC.build_command(
+        "llama-batched-bench", Path("/models/x.gguf"), 4096, 512,
+        [128], [1], 2048, 512, 999,
+    )
+    cpu_cmd = LBC.build_command(
+        "llama-batched-bench", Path("/models/x.gguf"), 4096, 512,
+        [128], [1], 2048, 512, 0,
+    )
+    assert "--no-host" in gpu_cmd
+    assert "--no-host" not in cpu_cmd
+
+
 def test_build_command_uses_f16_cache_for_tensor_split(monkeypatch):
     monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "tensor")
     cmd = LBC.build_command(

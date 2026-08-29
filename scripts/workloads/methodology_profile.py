@@ -38,6 +38,7 @@ def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
             f"{engine_name}:gpu_split={effective_gpu_split_mode(cpu_only)}",
             f"{engine_name}:flash_attention=on",
             f"{engine_name}:repack={'disabled' if config.LLAMACPP_NO_REPACK else 'enabled'}",
+            f"{engine_name}:host_buffer={'disabled' if config.LLAMACPP_NO_HOST and not cpu_only else 'enabled'}",
         ))
         if mtp_enabled and selected & TEXT_GENERATION_STAGES:
             optimizations.append("llamacpp:native_mtp=on")
@@ -59,13 +60,15 @@ def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
             f"llama.cpp:native_gpu_split={effective_gpu_split_mode(cpu_only)}",
         ))
         if "llamabench" in selected:
-            optimizations.append(
-                f"llama.cpp:llama_bench_gpu_layers={'0' if cpu_only else config.LLAMABENCH_FULL_OFFLOAD_NGL}"
-            )
+            optimizations.extend((
+                f"llama.cpp:llama_bench_gpu_layers={'0' if cpu_only else config.LLAMABENCH_FULL_OFFLOAD_NGL}",
+                f"llama.cpp:llama_bench_host_buffer={'disabled' if config.LLAMACPP_NO_HOST and not cpu_only else 'enabled'}",
+            ))
         if "llamabenchconc" in selected:
             optimizations.extend((
                 f"llama.cpp:llama_batched_bench_gpu_layers={'0' if cpu_only else config.LLAMABENCH_CONC_GPU_LAYERS}",
                 f"llama.cpp:native_repack={'disabled' if config.LLAMACPP_NO_REPACK else 'enabled'}",
+                f"llama.cpp:llama_batched_bench_host_buffer={'disabled' if config.LLAMACPP_NO_HOST and not cpu_only else 'enabled'}",
             ))
     if "img" in selected:
         optimizations.append("comfyui:dynamic_vram=disabled")
