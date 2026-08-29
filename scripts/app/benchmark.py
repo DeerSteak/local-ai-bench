@@ -472,6 +472,12 @@ def preflight_result(preflight, power_availability, temperature_availability) ->
     }
 
 
+def all_preflight_models_excluded(models: list[dict], preflight) -> bool:
+    return bool(models) and not any(
+        model.get("tag") in preflight.runnable_tags for model in models
+    )
+
+
 def apply_preflight_plan(plan: RunPlan, preflight, *, engine_name: str,
                          tests: list[str], stage_order: list[str],
                          llm_models: list[dict], concurrency_models: list[dict],
@@ -1557,6 +1563,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     plan, engine, **resume_identity_options,
                 )
             _checkpoint("runtime preflight complete")
+            if all_preflight_models_excluded(preflight_models, preflight):
+                raise RuntimeError(
+                    "Runtime preflight excluded every selected text model; "
+                    "refusing to report an empty accelerator pass as complete"
+                )
         context = RunContext(
             plan, RunPaths(Path(out_path), comfyui_dir), engine, store, lifecycle,
         )

@@ -4,7 +4,8 @@ from types import SimpleNamespace
 import pytest
 
 from scripts.app.benchmark import (
-    apply_preflight_plan, checkpoint_terminal_exception, cleanup_signal_numbers, cli_main,
+    all_preflight_models_excluded, apply_preflight_plan, checkpoint_terminal_exception,
+    cleanup_signal_numbers, cli_main,
     finish_event_job, fork_provenance, interruption_exit_code, preflight_result,
     runtime_shaping_config, validated_run_plan,
 )
@@ -99,6 +100,15 @@ def test_apply_preflight_plan_filters_both_llm_scopes_and_preserves_job_identity
     assert [model["tag"] for model in selected_llm] == ["keep"]
     assert [model["tag"] for model in selected_concurrency] == ["keep"]
     assert [model["tag"] for model in rebuilt.models["llm"]] == ["keep"]
+
+
+def test_runtime_preflight_cannot_complete_when_every_selected_model_was_excluded():
+    models = [{"tag": "first"}, {"tag": "second"}]
+    assert all_preflight_models_excluded(models, SimpleNamespace(runnable_tags=set()))
+    assert not all_preflight_models_excluded(
+        models, SimpleNamespace(runnable_tags={"second"}),
+    )
+    assert not all_preflight_models_excluded([], SimpleNamespace(runnable_tags=set()))
 
 
 def test_interrupted_exception_checkpoints_pending_data_without_relabeling():

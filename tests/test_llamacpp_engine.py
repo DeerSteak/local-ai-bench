@@ -58,6 +58,18 @@ def test_parse_model_placement_uses_last_load_and_tolerates_missing_buffers():
     }
 
 
+def test_full_log_keeps_placement_evidence_older_than_the_diagnostic_tail(tmp_path):
+    engine = LlamaCppEngine()
+    engine._log_path = tmp_path / "server.log"
+    engine._log_path.write_text(
+        "load_tensors: offloaded 41/41 layers to GPU\n" + "recent line\n" * 250,
+        encoding="utf-8",
+    )
+
+    assert "offloaded 41/41" not in engine.tail_log(engine.SPAWN_LOG_LINES)
+    assert LlamaCppEngine.parse_model_placement(engine._full_log())["gpu_layers"] == 41
+
+
 def test_accelerated_model_placement_rejects_cpu_fallback_and_missing_evidence():
     assert model_placement_error("rocm", {"gpu_layers": 0, "total_layers": 49}) == (
         "rocm model load offloaded zero layers to the GPU"
@@ -1331,6 +1343,7 @@ def test_ensure_model_ngl_lets_llama_server_fit_layers(monkeypatch, tmp_path, gp
 
     args = captured_args["args"]
     assert args[args.index("-ngl") + 1] == expected_ngl
+    assert args[args.index("-lv") + 1] == "4"
     assert captured_args["env"] == {"ONEAPI": "ready"}
 
 

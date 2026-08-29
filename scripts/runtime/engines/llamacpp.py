@@ -364,6 +364,13 @@ class LlamaCppEngine(InferenceEngine):
     def tail_log(self, n_lines: int = 40) -> str:
         return Shared._tail_log(self._log_path, "llama.cpp", n_lines)
 
+    def _full_log(self) -> str:
+        try:
+            return self._log_path.read_text(encoding="utf-8", errors="replace") \
+                if self._log_path else ""
+        except OSError:
+            return ""
+
     # ── model lifecycle ──
 
     def model_pulled(self, tag: str) -> bool:
@@ -573,6 +580,8 @@ class LlamaCppEngine(InferenceEngine):
                 "-m", str(paths[0]),
                 "--host", "127.0.0.1",
                 "--port", str(config.LLAMACPP_PORT),
+                # Current llama.cpp hides placement summaries at its default verbosity.
+                "-lv", "4",
                 # "auto" lets llama-server's own --fit logic offload as many layers as fit in
                 # free VRAM and run the rest on CPU, instead of forcing all layers and OOM-ing.
                 "-ngl", "0" if not self._gpu_visible else (
@@ -632,7 +641,7 @@ class LlamaCppEngine(InferenceEngine):
                             f"port {config.LLAMACPP_PORT} is serving {serving}, not {paths[0].name} "
                             f"— another llama-server owns it; stop it before loading {tag}"
                         )
-                    placement = self.parse_model_placement(self.tail_log(self.SPAWN_LOG_LINES))
+                    placement = self.parse_model_placement(self._full_log())
                     if placement_error := model_placement_error(
                         self._expected_backend, placement,
                     ):
