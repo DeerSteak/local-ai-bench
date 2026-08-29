@@ -1478,6 +1478,35 @@ def test_single_gpu_mode_disables_splitting_but_keeps_normal_cache(monkeypatch):
     ]
 
 
+def test_layer_mode_applies_recorded_asymmetric_gpu_capacity(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "layer")
+    monkeypatch.setattr(
+        "scripts.runtime.engines.llamacpp.load_setup_config",
+        lambda _path: {"gpu": {"devices": [
+            {"backend": "vulkan", "vram_gb": 31.984375},
+            {"backend": "vulkan", "vram_gb": 15.921875},
+        ]}},
+    )
+
+    assert LlamaCppEngine.gpu_split_args() == [
+        "--split-mode", "layer", "--tensor-split", "30.984,14.922",
+    ]
+
+
+def test_explicit_gpu_ratio_is_omitted_for_single_and_cpu_modes(monkeypatch):
+    monkeypatch.setattr(
+        "scripts.runtime.engines.llamacpp.load_setup_config",
+        lambda _path: {"gpu": {"devices": [
+            {"backend": "vulkan", "vram_gb": 32},
+            {"backend": "vulkan", "vram_gb": 16},
+        ]}},
+    )
+    monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "single")
+    assert LlamaCppEngine.gpu_split_args() == ["--split-mode", "none"]
+    monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "layer")
+    assert LlamaCppEngine.gpu_split_args(cpu_only=True) == ["--split-mode", "none"]
+
+
 # ── server identity on /props ──
 
 def test_serving_model_file_reads_the_modern_model_path_key():

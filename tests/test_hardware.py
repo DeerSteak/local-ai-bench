@@ -170,6 +170,26 @@ def test_parse_rocm_smi_gpus_preserves_each_device_capacity():
     assert hardware.parse_rocm_smi_gpus("not json", []) == []
 
 
+def test_gpu_tensor_split_uses_each_devices_reserved_capacity():
+    devices = [
+        {"backend": "vulkan", "vram_gb": 31.984375},
+        {"backend": "vulkan", "vram_gb": 15.921875},
+    ]
+
+    assert hardware.gpu_tensor_split(devices) == "30.984,14.922"
+
+
+@pytest.mark.parametrize("devices", [
+    [],
+    [{"backend": "vulkan", "vram_gb": 16}],
+    [{"backend": "vulkan", "vram_gb": 16}, {"backend": "cuda", "vram_gb": 16}],
+    [{"backend": "vulkan", "vram_gb": 16}, {"backend": "vulkan", "vram_gb": None}],
+    [{"backend": "vulkan", "vram_gb": 16}, {"backend": "vulkan", "vram_gb": 1}],
+])
+def test_gpu_tensor_split_rejects_incomplete_or_mixed_topologies(devices):
+    assert hardware.gpu_tensor_split(devices) is None
+
+
 # ── select_cuda_release_assets ──
 
 def _asset(name, size=100):

@@ -20,6 +20,7 @@ import gguf
 import requests
 
 from scripts.runtime import config
+from scripts.runtime.hardware import gpu_tensor_split
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool, probe_llamacpp_backend
 from scripts.runtime.engines.base import ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine
 from scripts.runtime.engines import openai_api
@@ -28,6 +29,7 @@ from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
 from scripts.workloads.model_variants import expanded_variant_catalog
 from scripts.setup.custom_models import custom_model
 from scripts.setup.intel_xpu_install import oneapi_environment
+from scripts.setup.setup_config import configured_gpu_devices, load_setup_config
 from scripts.runtime.model_identity import model_tag_slug
 from scripts.runtime.mtp import native_mtp_config
 from scripts.runtime.generation_guard import looks_like_loop
@@ -60,6 +62,10 @@ class LlamaCppEngine(InferenceEngine):
         configured_mode = config.LLAMACPP_GPU_SPLIT_MODE
         mode = "none" if cpu_only or configured_mode == "single" else configured_mode
         args = ["--split-mode", mode]
+        if mode != "none":
+            setup = load_setup_config(config.SETUP_CONFIG_PATH)
+            if tensor_split := gpu_tensor_split(configured_gpu_devices(setup)):
+                args += ["--tensor-split", tensor_split]
         if include_cache:
             cache_type = "f16" if mode == "tensor" else config.LLAMACPP_KV_CACHE_TYPE
             args += ["--cache-type-k", cache_type, "--cache-type-v", cache_type]

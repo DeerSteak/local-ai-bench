@@ -173,6 +173,22 @@ def parse_rocm_smi_gpus(rocm_smi_output: str, names: list[str]) -> list[dict]:
     return devices
 
 
+def gpu_tensor_split(devices: list[dict]) -> str | None:
+    """llama.cpp proportions from per-device VRAM after the normal reserve."""
+    if len(devices) < 2 or len({device.get("backend") for device in devices}) != 1:
+        return None
+    usable = []
+    for device in devices:
+        value = device.get("vram_gb")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        available = float(value) - VRAM_RESERVE_GB
+        if available <= 0:
+            return None
+        usable.append(available)
+    return ",".join(f"{value:.3f}".rstrip("0").rstrip(".") for value in usable)
+
+
 _CUDA_BIN_RE    = re.compile(r"^llama-.*-bin-win-cuda-([\d.]+)-x64\.zip$", re.IGNORECASE)
 _CUDA_CUDART_RE = re.compile(r"^cudart-llama-bin-win-cuda-([\d.]+)-x64\.zip$", re.IGNORECASE)
 
