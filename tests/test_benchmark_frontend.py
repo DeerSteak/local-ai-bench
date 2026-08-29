@@ -733,9 +733,10 @@ def test_choose_engine_auto_selects_only_registered_engine():
 
 def test_choose_engine_accepts_number_when_multiple_registered():
     messages, output = output_collector()
-    selected = choose_engine(["llamacpp", "mlx"], InputSequence(["2"]), output)
+    selected = choose_engine(["llamacpp", "mlx"], InputSequence(["2", ""]), output)
     assert selected == "mlx"
     assert any("CLI-only" in message for message in messages)
+    assert messages.count("Choose one inference engine (`--engine all` remains CLI-only):") == 2
 
 
 def test_choose_engine_can_cancel():
@@ -1493,7 +1494,7 @@ def test_run_frontend_uses_selected_engine_and_setup_comfyui_path():
     commands = []
     seen = []
     result = run_frontend(
-        input_fn=InputSequence(["2", "", "", "", "y"]),
+        input_fn=InputSequence(["2", "", "", "", "", "y"]),
         output_fn=lambda _: None,
         process_runner=lambda command: commands.append(command) or 0,
         engine_names_fn=lambda: ["llamacpp", "mlx"],

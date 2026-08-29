@@ -438,7 +438,8 @@ def choose_engine(available: list[str], input_fn, output_fn, clear_fn=lambda: No
             return available[selected]
         if raw.isdigit() and 1 <= int(raw) <= len(available):
             selected = int(raw) - 1
-            return available[selected]
+            feedback = None
+            continue
         feedback = "Couldn't parse that engine selection."
 
 
