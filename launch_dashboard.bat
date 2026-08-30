@@ -66,6 +66,19 @@ if not exist "%DASHBOARD_DIR%\node_modules" (
     echo.
 )
 
+set OPEN_PATH=/
+if "%HAS_RESULTS%"=="1" set OPEN_PATH=/?autoload=1
+node "%DASHBOARD_DIR%\stage_selected_results.mjs" "%DASHBOARD_DIR%\dist" %RESULT_ARGS%
+if errorlevel 1 exit /b 1
+pushd "%SCRIPT_DIR%"
+"%SCRIPT_DIR%bench-env\Scripts\python.exe" -m scripts.app.dashboard_reuse --port %PORT% --open-path "%OPEN_PATH%"
+set REUSE_STATUS=%errorlevel%
+popd
+if "%REUSE_STATUS%"=="0" (
+    echo Dashboard already running -^> http://localhost:%PORT%%OPEN_PATH%
+    exit /b 0
+)
+
 echo Building dashboard ...
 pushd "%DASHBOARD_DIR%"
 call npm run build
@@ -89,8 +102,6 @@ if "%HAS_RESULTS%"=="0" if exist "%RESULTS_DIR%" (
     start "" explorer "%RESULTS_DIR%"
 )
 
-set OPEN_PATH=/
-if "%HAS_RESULTS%"=="1" set OPEN_PATH=/?autoload=1
 pushd "%SCRIPT_DIR%"
 "%SCRIPT_DIR%bench-env\Scripts\python.exe" -m scripts.app.workspace_server --dist "%DASHBOARD_DIR%\dist" --port %PORT% --open-path "%OPEN_PATH%"
 set PREVIEW_STATUS=%errorlevel%

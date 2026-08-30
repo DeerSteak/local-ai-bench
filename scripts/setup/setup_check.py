@@ -411,9 +411,13 @@ def main() -> None:  # pragma: no cover - real interactive installer
     if not nvidia_ok and os_name == "Windows":
         windows_amd_gpus = discover_windows_amd_gpus()
         windows_gpu = discover_windows_gpu() if not windows_amd_gpus else None
-        windows_gpu_kind = "discrete" if windows_amd_gpus else windows_gpu.kind
-        amd_windows = bool(windows_amd_gpus) or windows_gpu.vendor == "amd"
-        intel_windows = not windows_amd_gpus and windows_gpu.vendor == "intel"
+        windows_gpu_kind = (
+            "discrete" if windows_amd_gpus else windows_gpu.kind if windows_gpu else None
+        )
+        amd_windows = bool(windows_amd_gpus) or bool(windows_gpu and windows_gpu.vendor == "amd")
+        intel_windows = not windows_amd_gpus and bool(
+            windows_gpu and windows_gpu.vendor == "intel"
+        )
         for device in windows_amd_gpus:
             print(f"  GPU:     {device['name']}")
             vram = device["vram_gb"]

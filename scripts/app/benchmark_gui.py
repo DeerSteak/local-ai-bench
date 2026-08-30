@@ -1085,7 +1085,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     }
     system_memory_baseline = [0.0]
     has_discrete_vram = [False]
-    configured_vram_gb = [None]
+    configured_vram_gb: list[float | None] = [None]
 
     def show_progress_window(tests, entries, engines=None):
         nonlocal progress_metrics, progress_started_at

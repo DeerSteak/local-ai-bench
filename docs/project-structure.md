@@ -22,8 +22,8 @@
 | `Launch Local AI Bench Dashboard.bat` | Double-clickable Windows launcher that builds, serves, and opens the dashboard |
 | `run_bench.sh` | Activates the venv; auto-selects GUI/terminal with no arguments or forwards benchmark arguments directly on Linux / macOS |
 | `run_bench.bat` | Windows equivalent of `run_bench.sh` |
-| `launch_dashboard.sh` | Builds and serves the dashboard on Linux / macOS, optionally stages selected `--result` files, and opens the browser automatically |
-| `launch_dashboard.bat` | Windows equivalent of `launch_dashboard.sh` |
+| `launch_dashboard.sh` | Reuses an existing Local AI Bench dashboard server or builds and serves one on Linux / macOS, optionally stages selected `--result` files, and opens the browser automatically |
+| `launch_dashboard.bat` | Windows equivalent of `launch_dashboard.sh`, including existing-server reuse |
 | `tests.sh` | Activates the venv and runs unit/integration tests on Linux / macOS — see [Testing](testing.md) |
 | `tests.bat` | Activates the venv and runs unit/integration tests on Windows — see [Testing](testing.md) |
 | `qualification/` | Platform qualification, telemetry-trial, power, temperature, and sustained-load runners |
@@ -122,6 +122,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `results/support_bundle.py` | Allowlisted, deterministic support diagnostics with private-path and credential redaction |
 | `app/benchmark_launcher.py` | Automatic GUI/terminal benchmark frontend dispatcher |
 | `app/workspace_server.py` | Authenticated loopback static dashboard and bounded workspace-export endpoint |
+| `app/dashboard_reuse.py` | Verifies an existing Local AI Bench workspace server and reopens it with the newly staged result selection |
 | `results/run_plan.py` / `results/canonical_json.py` | Immutable execution plans plus the single canonical JSON and digest contract for durable identities |
 | `workloads/methodology_profile.py` | Resolves the neutral profile and records selected workloads' effective runtime settings |
 | `results/event_store.py` | Transactional append-only SQLite job events, immutable plan loading, digest verification, and rebuildable projections |
