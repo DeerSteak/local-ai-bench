@@ -76,7 +76,7 @@ The same position lookup drives the `crashed`, `timed_out`, and `slow_tps` casca
 
 ## What the charts mean
 
-**Cached vs Uncached → Prompt Processing Speed.** Engine-reported prefill tokens/sec from the cached and uncached tests plotted together for each model. Higher is better. A cached point reflects an exact-prompt prefix-cache hit after the excluded priming request; an uncached point reflects full cold prompt ingestion.
+**Cached vs Uncached → Prompt Processing Speed.** Effective full-prompt tokens/sec from the cached and uncached tests plotted together for each model. Higher is better. A cached point divides the excluded priming request's full prompt-token count by the measured exact-prompt cache-hit duration; an uncached point divides the engine-reported cold prompt count by its full ingestion duration. This makes the two points comparable as the speed of serving the same complete prompt while raw cached samples still retain any small residual token count reported by the engine.
 
 **Cached vs Uncached → Generation Speed.** Decode tokens/sec from the same two tests plotted together for each model and context depth. Higher is better. This makes any generation-side effect of cache reuse visible without mixing it into the much larger prompt-processing delta.
 

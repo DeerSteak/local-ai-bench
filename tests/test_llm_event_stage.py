@@ -65,6 +65,25 @@ def test_existing_runner_stage_and_independent_export_reuse_the_journal_job(tmp_
     assert export_llm_section(path, plan.job_id)["model"]["2K"]["tps_mean"] == 50
 
 
+def test_journal_preserves_full_cached_prefill_basis_and_residual_engine_count(tmp_path):
+    path = tmp_path / "events.sqlite3"
+    plan = make_plan()
+    cached = GenerationMeasurement(
+        client_ttft_sec=0.1, generated_tokens=100, tokens_per_sec=50,
+        client_wall_sec=2.1, decode_sec=2.0, server_prompt_sec=0.125,
+        prompt_tokens=5, prefill_tokens=32768,
+    )
+    stage = LLMEventStage(path, plan, lambda _: None)
+    try:
+        stage.record_case(MODEL, 32768, "32K", [cached], "ok", 1)
+    finally:
+        stage.close()
+    result = export_llm_section(path, plan.job_id)["model"]["32K"]
+    assert result["prefill_tps_mean"] == 262144.0
+    assert result["valid_samples"][0]["prompt_tokens"] == 5
+    assert result["valid_samples"][0]["prefill_tokens"] == 32768
+
+
 def test_case_telemetry_survives_journal_reopen_and_projection(tmp_path):
     memory = {
         "windows": [{"name": "measured", "sample_count": 1}],

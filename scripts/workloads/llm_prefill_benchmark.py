@@ -1,11 +1,12 @@
 """Uncached and cached LLM prefill/generation benchmarks."""
 
+from dataclasses import replace
 from pathlib import Path
 
 from scripts.runtime import config
 from scripts.runtime.engines.base import (
-    TIMING_DECIMALS, aggregate_generation_measurements, measurement_validation_errors,
-    prefill_tokens_per_sec,
+    TIMING_DECIMALS, GenerationMeasurement, aggregate_generation_measurements,
+    measurement_validation_errors, measurement_prefill_tokens, prefill_tokens_per_sec,
 )
 from scripts.runtime.shared import Shared
 from scripts.runtime.failure_handling import unexpected_model_failure
@@ -38,6 +39,15 @@ class LLMPrefillBenchmark:
             prompt = prompt_factory(ctx_len)
             return prompt, [prompt] * runs
         return None, [prompt_factory(ctx_len) for _ in range(runs)]
+
+    @staticmethod
+    def with_cached_prefill_basis(
+            measurement: GenerationMeasurement,
+            primed_prompt_tokens: int | None) -> GenerationMeasurement:
+        basis = primed_prompt_tokens \
+            if isinstance(primed_prompt_tokens, int) \
+            and not isinstance(primed_prompt_tokens, bool) and primed_prompt_tokens > 0 else 0
+        return replace(measurement, prefill_tokens=basis)
 
     def run(self, engine, models, context_lengths, warmup_runs, force_all=False,
             save_fn=None, journal=None):  # pragma: no cover — orchestrates real engine runs
@@ -117,12 +127,14 @@ class LLMPrefillBenchmark:
                         ctx_len, config.N_RUNS, self.cache_prompt,
                         Shared.build_prompt_for_context,
                     )
+                    primed_prompt_tokens = None
                     if prime_prompt is not None:
                         Shared.log(f"Priming cached context {label_ctx} ...")
-                        engine.generate(
+                        prime_measurement = engine.generate(
                             tag, prime_prompt, timeout=config.RUN_TIMEOUT, num_ctx=server_ctx,
                             cache_prompt=True,
                         )
+                        primed_prompt_tokens = prime_measurement.prompt_tokens
 
                     def _prefill_once(run_i):
                         measurement = Shared.retry_implausible_tps(
@@ -134,10 +146,15 @@ class LLMPrefillBenchmark:
                             f"{tag} {label_ctx} run {run_i + 1}",
                             self.stage_name,
                         )
+                        if self.cache_prompt:
+                            measurement = self.with_cached_prefill_basis(
+                                measurement, primed_prompt_tokens,
+                            )
                         ttft = measurement.client_ttft_sec
                         tps = measurement.tokens_per_sec
                         prefill_tps = prefill_tokens_per_sec(
-                            measurement.prompt_tokens, measurement.server_prompt_sec,
+                            measurement_prefill_tokens(measurement),
+                            measurement.server_prompt_sec,
                         )
                         Shared.output(
                             f"    run {run_i+1}/{config.N_RUNS}: "

@@ -18,12 +18,12 @@ def test_setup_coordinator_retains_install_and_summary_stages():
     assert 'section("Summary")' in source
 
 
-def test_intel_prerequisite_failure_stops_before_llamacpp_install():
+def test_gpu_prerequisite_failures_stop_before_llamacpp_install():
     source = SETUP_CHECK.read_text(encoding="utf-8")
     install_block = source[source.index("if intel_linux and not intel_linux_runtime:"):
                            source.index("req_file = SCRIPT_DIR / \"requirements.txt\"")]
 
-    assert install_block.count("sys.exit(1)") == 3
+    assert install_block.count("sys.exit(1)") == 5
     assert "issues.append" not in install_block
 
 
