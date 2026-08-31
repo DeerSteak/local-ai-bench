@@ -62,6 +62,10 @@ from scripts.setup.comfyui_assets import (
     missing_download_size_gb, provision as provision_comfyui_assets,
 )
 from scripts.setup.comfyui_runtime import prepare as prepare_comfyui_runtime
+
+
+def vulkan_install_backend_flags(nvidia: bool, rocm: bool) -> dict:
+    return {"nvidia": nvidia, "rocm": rocm, "intel_xpu": False, "vulkan": True}
 from scripts.setup.comfyui_install import ensure as ensure_comfyui
 from scripts.workloads.models import (
     EMBED_MODELS, IMAGE_MODELS, LLM_MODELS_LARGE, LLM_MODELS_MEDIUM,
@@ -540,10 +544,10 @@ def main() -> None:  # pragma: no cover - real interactive installer
 
         return llamacpp_install.install(
             LLAMACPP_VULKAN_DIR, SCRIPT_DIR, os_name,
-            nvidia=nvidia_ok, rocm=rocm_ok, intel_xpu=intel_linux or intel_windows,
+            **vulkan_install_backend_flags(nvidia_ok, rocm_ok),
             compute_capability=nvidia_compute_cap,
             max_cuda_version=nvidia_max_cuda_version,
-            info=info, warn=warn, fail=record_failure, ok=ok, vulkan=True,
+            info=info, warn=warn, fail=record_failure, ok=ok,
         )
 
     # ── 4a. llama.cpp detection (read-only) ────────────────────────────────────────
