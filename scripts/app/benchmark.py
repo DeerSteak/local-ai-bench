@@ -696,6 +696,10 @@ def resolve_engine_names(engine: str, available: list[str], *,
     return [name for name in available if name in requested]
 
 
+def engines_requiring_install_probe(engine: str, available: list[str]) -> list[str]:
+    return available if engine == "all" else []
+
+
 def add_model_selection_arguments(parser: argparse.ArgumentParser) -> None:
     """Register the public per-family model selector arguments."""
     parser.add_argument(
@@ -993,7 +997,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         managed_dir=config.COMFYUI_DIR,
     ) or config.COMFYUI_DIR
     try:
-        installed_engines = [name for name in _engines if get_engine(name).is_installed()]
+        installed_engines = None
+        probe_names = engines_requiring_install_probe(args.engine, _engines)
+        if probe_names:
+            installed_engines = [name for name in probe_names if get_engine(name).is_installed()]
         run_engine_names = resolve_engine_names(
             args.engine, _engines, installed=installed_engines,
         )

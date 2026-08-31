@@ -1,4 +1,4 @@
-from scripts.app.benchmark import resolve_engine_names
+from scripts.app.benchmark import engines_requiring_install_probe, resolve_engine_names
 
 
 def test_single_engine_passes_through():
@@ -14,6 +14,13 @@ def test_all_expands_only_to_installed_engines_when_inventory_is_known():
         "all", ["llamacpp", "llamacpp-vulkan", "vllm"],
         installed=["llamacpp", "vllm"],
     ) == ["llamacpp", "vllm"]
+
+
+def test_only_all_engine_selection_probes_the_registered_inventory():
+    available = ["llamacpp", "llamacpp-vulkan", "vllm"]
+    assert engines_requiring_install_probe("all", available) == available
+    assert engines_requiring_install_probe("llamacpp", available) == []
+    assert engines_requiring_install_probe("llamacpp-vulkan,vllm", available) == []
 
 
 def test_all_with_one_registered_engine_is_a_no_op():
