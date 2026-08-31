@@ -21,7 +21,7 @@ import gguf
 import requests
 
 from scripts.runtime import config
-from scripts.runtime.hardware import gpu_device_selection, gpu_tensor_split
+from scripts.runtime.hardware import gpu_tensor_split
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool, probe_llamacpp_backend
 from scripts.runtime.engines.base import ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine
 from scripts.runtime.engines import openai_api
@@ -91,12 +91,7 @@ class LlamaCppEngine(InferenceEngine):
         args = ["--split-mode", mode]
         devices = (list(configured_split_devices(str(config.SETUP_CONFIG_PATH)))
                    if devices is None else devices)
-        if configured_mode == "single" and not cpu_only:
-            if selection := gpu_device_selection(devices):
-                args += ["--device", selection.split(",", 1)[0]]
-        elif mode != "none":
-            if selection := gpu_device_selection(devices):
-                args += ["--device", selection]
+        if mode != "none":
             if tensor_split := gpu_tensor_split(devices):
                 args += ["--tensor-split", tensor_split]
         if include_cache:

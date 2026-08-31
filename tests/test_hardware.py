@@ -194,19 +194,11 @@ def test_gpu_tensor_split_rejects_incomplete_or_mixed_topologies(devices):
     assert hardware.gpu_tensor_split(devices) is None
 
 
-def test_gpu_device_selection_pins_vulkan_inventory_order_only():
-    vulkan = [{"backend": "vulkan"}, {"backend": "vulkan"}]
-    assert hardware.gpu_device_selection(vulkan) is None
-    assert hardware.gpu_device_selection([{"backend": "cuda"}, {"backend": "cuda"}]) is None
-    assert hardware.gpu_device_selection([{"backend": "vulkan"}]) is None
-
-
 def test_vulkan_split_omits_unverified_device_indices_and_ratios():
     devices = [
         {"backend": "vulkan", "vram_gb": 16},
         {"backend": "vulkan", "vram_gb": 32},
     ]
-    assert hardware.gpu_device_selection(devices) is None
     assert hardware.gpu_tensor_split(devices) is None
 
 
@@ -216,7 +208,6 @@ def test_vulkan_split_does_not_assume_discovery_matches_runtime_order():
         {"backend": "vulkan", "name": "AMD Radeon RX 7600", "vram_gb": 8},
         {"backend": "vulkan", "name": "AMD Radeon PRO W7800", "vram_gb": 32},
     ]
-    assert hardware.gpu_device_selection(devices) is None
     assert hardware.gpu_tensor_split(devices) is None
 
 

@@ -195,11 +195,6 @@ def gpu_tensor_split(devices: list[dict]) -> str | None:
     return ",".join(str(value // divisor) for value in capacities)
 
 
-def gpu_device_selection(devices: list[dict]) -> str | None:
-    """Explicit llama.cpp device order when its identifiers are deterministic."""
-    return None
-
-
 _CUDA_BIN_RE    = re.compile(r"^llama-.*-bin-win-cuda-([\d.]+)-x64\.zip$", re.IGNORECASE)
 _CUDA_CUDART_RE = re.compile(r"^cudart-llama-bin-win-cuda-([\d.]+)-x64\.zip$", re.IGNORECASE)
 
