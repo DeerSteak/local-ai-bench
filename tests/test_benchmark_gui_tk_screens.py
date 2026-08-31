@@ -173,7 +173,9 @@ def test_history_screen_constructs_selectable_result_table(tk_shell):
     root, notebook, tk, ttk = tk_shell
     screen = build_history_screen(notebook, tk=tk, ttk=ttk)
     item = screen.tree.insert(
-        "", "end", values=("now", "system", "complete", "vllm", "default", 2),
+        "", "end", values=(
+            "now", "system", "complete", "llamacpp", "Vulkan", "On", "default", 2,
+        ),
     )
     screen.tree.selection_set(item)
     root.update_idletasks()
@@ -182,6 +184,11 @@ def test_history_screen_constructs_selectable_result_table(tk_shell):
     assert screen.tree.selection() == (item,)
     assert screen.status_filter.get() == "all"
     assert screen.engine_filter.get() == "all"
+    assert screen.tree["columns"] == (
+        "date", "system", "status", "engine", "backend", "mtp", "profile", "models",
+    )
+    assert screen.tree.heading("backend", "text") == "Backend"
+    assert screen.tree.heading("mtp", "text") == "MTP"
 
 
 def test_history_keyboard_selection_can_extend_and_toggle(tk_shell):

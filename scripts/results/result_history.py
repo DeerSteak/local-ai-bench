@@ -41,6 +41,10 @@ SUSTAINED_ETA_KEYS = (
     "sustained_duration_sec", "sustained_window_sec", "sustained_context_tokens",
 )
 HARDWARE_IDENTITY_KEYS = ("hostname", "os", "arch", "ram_gb", "backend", "wsl")
+BACKEND_LABELS = {
+    "cuda": "CUDA", "rocm": "ROCm", "metal": "Metal",
+    "vulkan": "Vulkan", "xpu": "XPU", "cpu": "CPU",
+}
 
 
 def hardware_identity(profile: dict) -> dict:
@@ -196,6 +200,23 @@ def _run_settings(result: dict) -> dict:
     return settings
 
 
+def history_backend_label(profile: dict) -> str:
+    backend = profile.get("backend")
+    if not isinstance(backend, str) or not backend.strip():
+        return "Not recorded"
+    normalized = backend.strip().casefold()
+    return BACKEND_LABELS.get(normalized, backend.strip())
+
+
+def history_mtp_label(settings: dict) -> str:
+    enabled = settings.get("mtp_enabled")
+    if enabled is True:
+        return "On"
+    if enabled is False:
+        return "Off"
+    return "Not recorded"
+
+
 def summarize_result(result: dict, path: Path | str) -> dict:
     if not isinstance(result, dict) or not isinstance(result.get("profile"), dict):
         raise ValueError("not a benchmark result")
@@ -203,14 +224,17 @@ def summarize_result(result: dict, path: Path | str) -> dict:
     run = as_dict(result.get("run"))
     profile = result["profile"]
     stages = as_dict(run.get("stages"))
+    settings = _run_settings(result)
     return {
         "path": str(Path(path).resolve()),
         "started_at": run.get("started_at") or "Not recorded",
         "system": str(profile.get("hostname") or "Unnamed system"),
         "status": str(run.get("status") or "legacy"),
         "engine": str(result.get("engine") or run.get("engine") or "Not recorded"),
+        "runtime_backend": history_backend_label(profile),
+        "mtp": history_mtp_label(settings),
         "version": str(result.get("version") or "Not recorded"),
-        "methodology_profile": str(_run_settings(result).get("methodology_profile") or "unrecorded"),
+        "methodology_profile": str(settings.get("methodology_profile") or "unrecorded"),
         "models_with_results": sum(
             int(stage.get("models_with_results") or 0)
             for stage in stages.values() if isinstance(stage, dict)
@@ -241,6 +265,7 @@ def filter_results(entries, *, query: str = "", status: str = "all", engine: str
         and (engine == "all" or entry["engine"] == engine)
         and (not needle or needle in " ".join((
             entry["system"], entry["path"], entry["version"], entry["methodology_profile"],
+            entry["runtime_backend"], f"MTP {entry['mtp']}",
         )).casefold())
     )]
 

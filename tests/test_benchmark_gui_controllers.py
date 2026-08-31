@@ -211,7 +211,8 @@ def test_history_controller_filters_and_maps_visible_rows(monkeypatch):
     controller.item_paths = {"old": Path("old.json")}
     visible = [{
         "started_at": "2026-01-01", "system": "DGX", "status": "complete",
-        "engine": "vllm", "methodology_profile": "default", "models_with_results": 2,
+        "engine": "vllm", "runtime_backend": "CUDA", "mtp": "On",
+        "methodology_profile": "default", "models_with_results": 2,
         "path": Path("result.json"),
     }]
     calls = []
@@ -232,6 +233,9 @@ def test_history_controller_filters_and_maps_visible_rows(monkeypatch):
     assert controller.entries["visible"] == visible
     assert controller.item_paths == {"row-0": Path("result.json")}
     assert tree.rows["row-0"]["tags"] == ("history_even",)
+    assert tree.rows["row-0"]["values"] == (
+        "2026-01-01", "DGX", "complete", "vllm", "CUDA", "On", "default", 2,
+    )
     assert tree.focused == "row-0"
     assert screen.message.get() == (
         "Showing 1 of 1 local results. Keyboard: Shift+Up/Down extends selection; "
