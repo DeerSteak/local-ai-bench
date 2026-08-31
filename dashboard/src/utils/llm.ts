@@ -1,6 +1,6 @@
 import {
   CTX_ORDER, FALLBACK_COLORS, FILE_COLORS, MODEL_DASH_PATTERNS, LLM_DISPLAY_ORDER,
-  CTX_COLORS, ACCURACY_TESTS,
+  CTX_COLORS, ACCURACY_TESTS, CATEGORY_COLORS,
 } from "../constants";
 import { getModelColor, modelLabel, getSkipInfo, entriesOf, valuesOf, lookup } from "./shared";
 import type { JsonRecord } from "./shared";
@@ -152,8 +152,10 @@ export function buildLLMCacheComparisonData(
     files.forEach((file, index) => {
       const uncached = file.data.llm?.[model]?.[ctx];
       const cached = file.data.llm_cached?.[model]?.[ctx];
-      if (uncached) row[`f${index}_uncached`] = llmMetricValue(uncached, metric);
-      if (cached) row[`f${index}_cached`] = llmMetricValue(cached, metric);
+      const uncachedValue = llmMetricValue(uncached, metric);
+      const cachedValue = llmMetricValue(cached, metric);
+      if (uncachedValue != null) row[`f${index}_uncached`] = uncachedValue;
+      if (cachedValue != null) row[`f${index}_cached`] = cachedValue;
     });
     return row;
   }).filter(row => Object.keys(row).length > 1);
@@ -162,8 +164,8 @@ export function buildLLMCacheComparisonData(
 export function buildLLMCacheComparisonConfigs(files: ResultsFile[]): LineConfig[] {
   if (files.length === 1) {
     return [
-      { dataKey: "f0_uncached", stroke: "#0969da", name: "Uncached" },
-      { dataKey: "f0_cached", stroke: "#1a7f37", name: "Cached" },
+      { dataKey: "f0_uncached", stroke: CATEGORY_COLORS[0], name: "Uncached" },
+      { dataKey: "f0_cached", stroke: CATEGORY_COLORS[1], name: "Cached" },
     ];
   }
   return files.flatMap((file, index) => {

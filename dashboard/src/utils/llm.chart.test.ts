@@ -11,7 +11,7 @@ import {
   buildLLMLineDataByCtx,
   getBarStatusLabel,
 } from "./llm";
-import { CTX_COLORS } from "../constants";
+import { CATEGORY_COLORS, CTX_COLORS } from "../constants";
 
 const sample = (tps_mean: number) => ({ tps_mean });
 
@@ -38,14 +38,23 @@ describe("cached versus uncached comparison", () => {
   });
 
   it("uses cache-state colors for one file and file colors plus line styles for several", () => {
-    expect(buildLLMCacheComparisonConfigs([file("alpha", {})]).map(config => config.name))
-      .toEqual(["Uncached", "Cached"]);
+    const single = buildLLMCacheComparisonConfigs([file("alpha", {})]);
+    expect(single.map(config => config.name)).toEqual(["Uncached", "Cached"]);
+    expect(single.map(config => config.stroke)).toEqual(CATEGORY_COLORS.slice(0, 2));
     const configs = buildLLMCacheComparisonConfigs([file("alpha", {}), file("beta", {})]);
     expect(configs.map(config => config.name)).toEqual([
       "alpha — Uncached", "alpha — Cached", "beta — Uncached", "beta — Cached",
     ]);
     expect(dash(configs[0])).toBe("8 5");
     expect(dash(configs[1])).toBeUndefined();
+  });
+
+  it("drops rows whose present samples do not contain the requested metric", () => {
+    const files = [{ id: "a", hostname: "alpha", data: {
+      llm: { m: { "2K": { tps_mean: 40 } } },
+      llm_cached: { m: { "2K": {} } },
+    } }];
+    expect(buildLLMCacheComparisonData(files, "m", "prefill")).toEqual([]);
   });
 });
 
