@@ -383,7 +383,7 @@ def fake_engine(monkeypatch):
         LlamaCppEngine, "_resolve_model_files",
         classmethod(lambda cls, tag: [Path(f"/models/{tag}.gguf")]),
     )
-    monkeypatch.setattr(LlamaBenchBenchmark, "find_binary", staticmethod(lambda: "llama-bench"))
+    monkeypatch.setattr(engine, "tool_path", lambda name: f"/fake/{name}")
     return engine
 
 
@@ -402,8 +402,9 @@ def test_run_skips_non_llamacpp_engine():
 
 
 def test_run_returns_empty_when_binary_missing(monkeypatch):
-    monkeypatch.setattr(LlamaBenchBenchmark, "find_binary", staticmethod(lambda: None))
-    result = LlamaBenchBenchmark().run(LlamaCppEngine(), _MODELS, reps=3)
+    engine = LlamaCppEngine()
+    monkeypatch.setattr(engine, "tool_path", lambda _name: None)
+    result = LlamaBenchBenchmark().run(engine, _MODELS, reps=3)
     assert result == {}
 
 

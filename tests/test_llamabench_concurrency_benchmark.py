@@ -380,7 +380,7 @@ def fake_engine(monkeypatch):
         LlamaCppEngine, "_resolve_model_files",
         classmethod(lambda cls, tag: [Path(f"/models/{tag}.gguf")]),
     )
-    monkeypatch.setattr(LBC, "find_binary", staticmethod(lambda: "llama-batched-bench"))
+    monkeypatch.setattr(engine, "tool_path", lambda name: f"/fake/{name}")
     return engine
 
 
@@ -392,8 +392,9 @@ def test_run_skips_non_llamacpp_engine():
 
 
 def test_run_returns_empty_when_binary_missing(monkeypatch):
-    monkeypatch.setattr(LBC, "find_binary", staticmethod(lambda: None))
-    assert LBC().run(LlamaCppEngine(), _MODELS) == {}
+    engine = LlamaCppEngine()
+    monkeypatch.setattr(engine, "tool_path", lambda _name: None)
+    assert LBC().run(engine, _MODELS) == {}
 
 
 def test_run_skips_unpulled_models(fake_engine, monkeypatch):
