@@ -1005,13 +1005,15 @@ class VllmEngine(InferenceEngine):
 
     def _chat_request(self, tag: str, messages: list, tools: list | None,
                       deadline: float, num_predict: int,
-                      check_loop: bool, budget_nudged: bool) -> dict:
+                      check_loop: bool, budget_nudged: bool,
+                      cache_prompt: bool = False) -> dict:
         payload = {
             **self.sampling_payload(),
             "model": self._loaded_model_id or self._repo(tag),
             "messages": messages,
             "stream": True,
             "stream_options": {"include_usage": True},
+            "cache_salt": tag if cache_prompt else secrets.token_urlsafe(32),
         }
         if num_predict is not None and num_predict > 0:
             payload["max_tokens"] = num_predict
@@ -1089,7 +1091,8 @@ class VllmEngine(InferenceEngine):
 
     def _chat_with_optional_finalize(self, tag: str, messages: list, tools: list | None,
                                       timeout: int, num_ctx: int | None, num_predict: int,
-                                      check_loop: bool, token_budget: int | None):
+                                      check_loop: bool, token_budget: int | None,
+                                      cache_prompt: bool = False):
         validate_chat_budget(num_predict, token_budget)
         tool_parser = self._tool_parser(tag) if tools is not None else None
         if tools is not None and tool_parser is None:
@@ -1109,6 +1112,7 @@ class VllmEngine(InferenceEngine):
             lambda req_messages, req_tools, req_deadline, req_predict, req_check, nudged:
                 self._chat_request(
                     tag, req_messages, req_tools, req_deadline, req_predict, req_check, nudged,
+                    cache_prompt,
                 ),
             messages, tools, deadline, num_predict, check_loop, token_budget,
             config.ACC_FINALIZE_FRACTION, config.ACC_FINALIZE_MESSAGE, "vllm_chat",
@@ -1117,9 +1121,11 @@ class VllmEngine(InferenceEngine):
 
     def _chat_measurement(self, tag: str, messages: list, tools: list | None,
                           timeout: int, num_ctx: int | None, num_predict: int,
-                          check_loop: bool, token_budget: int | None) -> ChatMeasurement:
+                          check_loop: bool, token_budget: int | None,
+                          cache_prompt: bool = False) -> ChatMeasurement:
         first, second, budget_nudged, model_load_sec = self._chat_with_optional_finalize(
-            tag, messages, tools, timeout, num_ctx, num_predict, check_loop, token_budget)
+            tag, messages, tools, timeout, num_ctx, num_predict, check_loop, token_budget,
+            cache_prompt)
         return chat_measurement(
             first, second, budget_nudged, model_load_sec, openai_api.sanitize_tps,
             self._loaded_cpu_offload_gb,
@@ -1127,9 +1133,11 @@ class VllmEngine(InferenceEngine):
 
     def chat(self, tag: str, messages: list, timeout: int = 600,
              num_ctx: int | None = None, num_predict: int = 1024,
-             check_loop: bool = False, token_budget: int | None = None) -> ChatMeasurement:
+             check_loop: bool = False, token_budget: int | None = None,
+             cache_prompt: bool = False) -> ChatMeasurement:
         return self._chat_measurement(
             tag, messages, None, timeout, num_ctx, num_predict, check_loop, token_budget,
+            cache_prompt,
         )
 
     def chat_tools(self, tag: str, messages: list, tools: list, timeout: int = 600,

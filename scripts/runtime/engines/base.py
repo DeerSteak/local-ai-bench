@@ -339,7 +339,8 @@ class InferenceEngine(ABC):
     @abstractmethod
     def chat(self, tag: str, messages: list, timeout: int = 600,
              num_ctx: int | None = None, num_predict: int = 1024,
-             check_loop: bool = False, token_budget: int | None = None) -> ChatMeasurement:
+             check_loop: bool = False, token_budget: int | None = None,
+             cache_prompt: bool = False) -> ChatMeasurement:
         """Return one named chat measurement."""
 
     def supports_tool_calls(self, tag: str) -> bool:
