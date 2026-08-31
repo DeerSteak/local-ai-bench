@@ -46,8 +46,20 @@ class LLMPrefillBenchmark:
             primed_prompt_tokens: int | None) -> GenerationMeasurement:
         basis = primed_prompt_tokens \
             if isinstance(primed_prompt_tokens, int) \
-            and not isinstance(primed_prompt_tokens, bool) and primed_prompt_tokens > 0 else 0
+            and not isinstance(primed_prompt_tokens, bool) and primed_prompt_tokens > 0 else None
         return replace(measurement, prefill_tokens=basis)
+
+    @staticmethod
+    def failure_markers(status: str, context_label: str, crash_cache: dict,
+                        tag: str) -> dict | None:
+        if status == "timed_out":
+            return {"timed_out": context_label}
+        if status == "crashed":
+            return {
+                "crashed": context_label,
+                "crashed_at": crash_cache.get(tag, {}).get("crashed_at", "an earlier run"),
+            }
+        return None
 
     def run(self, engine, models, context_lengths, warmup_runs, force_all=False,
             save_fn=None, journal=None):  # pragma: no cover — orchestrates real engine runs
@@ -57,7 +69,7 @@ class LLMPrefillBenchmark:
             Shared.err("Inference engine not reachable — skipping LLM benchmarks")
             return results
 
-        crash_cache = load_crash_cache(LLMPrefillBenchmark.LLM_CRASH_CACHE)
+        crash_cache = load_crash_cache(self.LLM_CRASH_CACHE)
 
         for model in models:
             tag   = model["tag"]
@@ -77,7 +89,7 @@ class LLMPrefillBenchmark:
                     continue
 
                 skip_entry = check_crash_cache(
-                    tag, label, crash_cache, LLMPrefillBenchmark.LLM_CRASH_CACHE,
+                    tag, label, crash_cache, self.LLM_CRASH_CACHE,
                     engine_name=engine.name,
                 )
                 if skip_entry is not None:
@@ -106,7 +118,7 @@ class LLMPrefillBenchmark:
                     if journal:
                         journal.begin_model_load()
                     if not engine.warmup(tag, label, server_ctx, warmup_runs,
-                                         crash_cache, LLMPrefillBenchmark.LLM_CRASH_CACHE):
+                                         crash_cache, self.LLM_CRASH_CACHE):
                         results[short]["crashed"] = label_ctx
                         results[short]["crashed_at"] = crash_cache.get(tag, {}).get(
                             "crashed_at", "during warmup",
@@ -130,11 +142,26 @@ class LLMPrefillBenchmark:
                     primed_prompt_tokens = None
                     if prime_prompt is not None:
                         Shared.log(f"Priming cached context {label_ctx} ...")
-                        prime_measurement = engine.generate(
-                            tag, prime_prompt, timeout=config.RUN_TIMEOUT, num_ctx=server_ctx,
-                            cache_prompt=True,
+                        prime_samples, prime_status, _, _ = Shared.run_measured_calls(
+                            1, lambda _run_i: engine.generate(
+                                tag, prime_prompt, timeout=config.RUN_TIMEOUT,
+                                num_ctx=server_ctx, cache_prompt=True,
+                            ), tag, crash_cache, self.LLM_CRASH_CACHE,
+                            f"priming cached context {label_ctx}", engine,
                         )
-                        primed_prompt_tokens = prime_measurement.prompt_tokens
+                        if markers := self.failure_markers(
+                                prime_status, label_ctx, crash_cache, tag):
+                            results[short].update(markers)
+                            model_timed_out = prime_status == "timed_out"
+                            if journal:
+                                journal.record_case(
+                                    model, ctx_len, label_ctx, [], prime_status, config.N_RUNS,
+                                    markers, attempt_number=attempt_number,
+                                )
+                            break
+                        if not prime_samples:
+                            raise RuntimeError("cached-context priming returned no measurement")
+                        primed_prompt_tokens = prime_samples[0].prompt_tokens
 
                     def _prefill_once(run_i):
                         measurement = Shared.retry_implausible_tps(
@@ -164,7 +191,7 @@ class LLMPrefillBenchmark:
 
                     samples, status, _, _metadata = Shared.run_measured_calls(
                         config.N_RUNS, _prefill_once, tag, crash_cache,
-                        LLMPrefillBenchmark.LLM_CRASH_CACHE, f"running {label}", engine)
+                        self.LLM_CRASH_CACHE, f"running {label}", engine)
                     aggregate = aggregate_generation_measurements(samples, config.N_RUNS)
                     valid_samples = [sample for sample in samples
                                      if not measurement_validation_errors(sample)]
@@ -190,26 +217,25 @@ class LLMPrefillBenchmark:
                             )
                         )
 
+                    markers = self.failure_markers(status, label_ctx, crash_cache, tag)
                     if status == "timed_out":
                         Shared.err(f"Skipping remaining runs and context lengths for {label}")
                         model_timed_out = True
-                        results[short]["timed_out"] = label_ctx
+                        results[short].update(markers or {})
                         if journal:
                             journal.record_case(
                                 model, ctx_len, label_ctx, samples, status, config.N_RUNS,
-                                {"timed_out": label_ctx},
+                                markers,
                                 attempt_number=attempt_number,
                             )
                         break
 
                     if status == "crashed":
-                        crashed_at = crash_cache.get(tag, {}).get("crashed_at", "an earlier run")
-                        results[short]["crashed"] = label_ctx
-                        results[short]["crashed_at"] = crashed_at
+                        results[short].update(markers or {})
                         if journal:
                             journal.record_case(
                                 model, ctx_len, label_ctx, samples, status, config.N_RUNS,
-                                {"crashed": label_ctx, "crashed_at": crashed_at},
+                                markers,
                                 attempt_number=attempt_number,
                             )
                         break

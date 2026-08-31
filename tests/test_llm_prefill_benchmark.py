@@ -49,7 +49,24 @@ def test_cached_prefill_basis_marks_missing_or_invalid_prime_count_unavailable(
         measurement, primed_prompt_tokens,
     )
     assert cached.prompt_tokens == 5
-    assert measurement_prefill_tokens(cached) == 0
+    assert cached.prefill_tokens is None
+    assert measurement_prefill_tokens(cached) == 5
+
+
+def test_prefill_failure_markers_distinguish_timeout_crash_and_other_statuses():
+    cache = {"tag": {"crashed_at": "now"}}
+    assert LLMPrefillBenchmark.failure_markers("timed_out", "128K", cache, "tag") == {
+        "timed_out": "128K",
+    }
+    assert LLMPrefillBenchmark.failure_markers("crashed", "128K", cache, "tag") == {
+        "crashed": "128K", "crashed_at": "now",
+    }
+    assert LLMPrefillBenchmark.failure_markers("ok", "128K", cache, "tag") is None
+
+
+def test_cached_and_uncached_prefill_use_separate_crash_cache_files():
+    assert LLMPrefillBenchmark.LLM_CRASH_CACHE.name == ".llm_crash_cache.json"
+    assert LLMCachedPrefillBenchmark.LLM_CRASH_CACHE.name == ".llm_cached_crash_cache.json"
 
 
 def test_runner_resolves_each_prefill_stage_to_its_methodology():

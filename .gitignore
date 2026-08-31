@@ -200,6 +200,7 @@ local_ai_bench_config.json
 /dashboard/public/__selected_results__.json
 .embed_crash_cache.json
 .llm_crash_cache.json
+.llm_cached_crash_cache.json
 .conv_crash_cache.json
 .mcq_crash_cache.json
 .math_crash_cache.json
