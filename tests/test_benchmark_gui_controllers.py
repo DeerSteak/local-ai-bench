@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from scripts.runtime import config
 from scripts.app.benchmark_gui_screens.configuration_files import ConfigurationFileActions
 from scripts.app.benchmark_gui_screens.configuration_state import ConfigurationStateController
 from scripts.app.benchmark_gui_screens.engines import EngineUpdateActions
@@ -14,6 +15,7 @@ from scripts.app.benchmark_frontend import MenuEntry
 from scripts.app.benchmark_gui_resources import (
     process_resource_usage, query_gpu_process_memory, query_gpu_usage,
 )
+from scripts.setup.runtime_update import RuntimeUpdateResult
 
 
 class FakeVariable:
@@ -136,6 +138,51 @@ def test_configuration_state_applies_imported_controls():
     assert controller.option_vars["gpu_split_mode"].get() == "Layer split (recommended)"
 
 
+def test_configuration_state_preserves_models_when_preset_omits_them():
+    controller = ConfigurationStateController.__new__(ConfigurationStateController)
+    controller.test_vars = {"llm": FakeVariable(False)}
+    controller.model_vars = {"small": FakeVariable(False), "large": FakeVariable(True)}
+    controller.cap_var = FakeVariable("8192")
+    controller.tg_vars = {128: FakeVariable(True)}
+    controller.option_vars = {"runs": FakeVariable(3)}
+    controller.set_selected_engines = lambda _engines: None
+
+    controller.apply_control_values({
+        "tests": {"llm": True}, "max_prompt_tokens": "No cap", "tg_tokens": {128},
+        "options": {"runs": 5},
+    })
+
+    assert {name: var.get() for name, var in controller.model_vars.items()} == {
+        "small": False, "large": True,
+    }
+
+
+@pytest.mark.parametrize("error", [KeyError("popdown"), RuntimeError("window closed")])
+def test_configuration_scroll_ignores_unregistered_or_destroyed_pointer_window(error):
+    class TclError(RuntimeError):
+        pass
+
+    if isinstance(error, RuntimeError):
+        error = TclError(str(error))
+
+    class Root:
+        def winfo_pointerx(self):
+            return 10
+
+        def winfo_pointery(self):
+            return 20
+
+        def winfo_containing(self, _x, _y):
+            raise error
+
+    controller = ConfigurationStateController.__new__(ConfigurationStateController)
+    controller.root = Root()
+    controller.tk = SimpleNamespace(TclError=TclError)
+    controller.screen = SimpleNamespace(canvas=object(), form=object())
+
+    assert controller.scroll_form(SimpleNamespace(delta=-1, num=0)) is None
+
+
 def test_configuration_file_action_translates_portable_preset():
     applied = []
     controller = ConfigurationFileActions.__new__(ConfigurationFileActions)
@@ -164,7 +211,8 @@ def test_history_controller_filters_and_maps_visible_rows(monkeypatch):
     controller.item_paths = {"old": Path("old.json")}
     visible = [{
         "started_at": "2026-01-01", "system": "DGX", "status": "complete",
-        "engine": "vllm", "methodology_profile": "default", "models_with_results": 2,
+        "engine": "vllm", "runtime_backend": "CUDA", "mtp": "On",
+        "methodology_profile": "default", "models_with_results": 2,
         "path": Path("result.json"),
     }]
     calls = []
@@ -185,6 +233,9 @@ def test_history_controller_filters_and_maps_visible_rows(monkeypatch):
     assert controller.entries["visible"] == visible
     assert controller.item_paths == {"row-0": Path("result.json")}
     assert tree.rows["row-0"]["tags"] == ("history_even",)
+    assert tree.rows["row-0"]["values"] == (
+        "2026-01-01", "DGX", "complete", "vllm", "CUDA", "On", "default", 2,
+    )
     assert tree.focused == "row-0"
     assert screen.message.get() == (
         "Showing 1 of 1 local results. Keyboard: Shift+Up/Down extends selection; "
@@ -405,10 +456,13 @@ def test_llamacpp_update_rejects_unmanaged_non_macos_runtime(monkeypatch):
 
 @pytest.mark.parametrize("platform_name", ["Darwin", "Windows", "Linux"])
 @pytest.mark.parametrize("tag", [None, "b1234"])
-def test_llamacpp_update_dispatches_platform_and_release(monkeypatch, platform_name, tag):
+def test_llamacpp_update_dispatches_platform_and_release(monkeypatch, tmp_path, platform_name, tag):
     actions = EngineUpdateActions({}, "cuda")
     status = SimpleNamespace(engine="llamacpp", managed=True, backend="cuda")
     calls = []
+    runtime = tmp_path / "llama.cpp"
+    runtime.mkdir()
+    monkeypatch.setattr(config, "LLAMACPP_DIR", runtime)
     monkeypatch.setattr(
         "scripts.app.benchmark_gui_screens.engines.collect_engine_management",
         lambda *_args: SimpleNamespace(statuses=[status]),
@@ -435,7 +489,7 @@ def test_llamacpp_update_dispatches_platform_and_release(monkeypatch, platform_n
     def capture(name):
         def updater(*_args, release_fetcher, **_kwargs):
             calls.append((name, release_fetcher(), _kwargs.get("intel_xpu")))
-            return name
+            return RuntimeUpdateResult(True, name, "version")
         return updater
 
     monkeypatch.setattr(
@@ -451,17 +505,106 @@ def test_llamacpp_update_dispatches_platform_and_release(monkeypatch, platform_n
     result = actions.update_llamacpp_version(tag, SimpleNamespace(log=lambda _text: None))
 
     expected_platform = {"Darwin": "mac", "Windows": "windows", "Linux": "linux"}[platform_name]
-    assert result == expected_platform
+    assert result.success is True
     expected_xpu = False if platform_name == "Windows" else None
     assert calls == [(
         expected_platform, "latest" if tag is None else f"tag:{tag}", expected_xpu,
     )]
 
 
-def test_windows_intel_llamacpp_update_preserves_sycl_backend(monkeypatch):
+def test_llamacpp_update_rebuilds_native_and_vulkan_from_one_release(monkeypatch, tmp_path):
+    actions = EngineUpdateActions({}, "cuda")
+    statuses = [
+        SimpleNamespace(engine="llamacpp", managed=True, backend="cuda"),
+        SimpleNamespace(engine="llamacpp-vulkan", managed=True, backend="vulkan"),
+    ]
+    releases = []
+    calls = []
+    native = tmp_path / "llama.cpp"
+    vulkan = tmp_path / "llama.cpp-vulkan"
+    native.mkdir()
+    vulkan.mkdir()
+    monkeypatch.setattr(config, "LLAMACPP_DIR", native)
+    monkeypatch.setattr(config, "LLAMACPP_VULKAN_DIR", vulkan)
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.collect_engine_management",
+        lambda *_args: SimpleNamespace(statuses=statuses),
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.platform.system", lambda: "Linux",
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.fetch_llamacpp_release",
+        lambda: releases.append("fetched") or {"tag_name": "b1234"},
+    )
+
+    def rebuild(target, backend, *, release_fetcher, **_kwargs):
+        calls.append((target, backend, release_fetcher()))
+        return RuntimeUpdateResult(True, f"updated {backend}", "b1234")
+
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.rebuild_managed_llamacpp", rebuild,
+    )
+
+    result = actions.update_llamacpp(SimpleNamespace(log=lambda _text: None))
+
+    assert result.success is True
+    assert releases == ["fetched"]
+    assert [(path.name.split("-family-stage-")[0], backend, release) for path, backend, release in calls] == [
+        (".llama.cpp", "cuda", {"tag_name": "b1234"}),
+        (".llama.cpp-vulkan", "vulkan", {"tag_name": "b1234"}),
+    ]
+
+
+def test_llamacpp_update_preserves_both_runtimes_when_later_staging_fails(monkeypatch, tmp_path):
+    actions = EngineUpdateActions({}, "cuda")
+    statuses = [
+        SimpleNamespace(engine="llamacpp", managed=True, backend="cuda"),
+        SimpleNamespace(engine="llamacpp-vulkan", managed=True, backend="vulkan"),
+    ]
+    native = tmp_path / "llama.cpp"
+    vulkan = tmp_path / "llama.cpp-vulkan"
+    native.mkdir()
+    vulkan.mkdir()
+    (native / "old").touch()
+    (vulkan / "old").touch()
+    monkeypatch.setattr(config, "LLAMACPP_DIR", native)
+    monkeypatch.setattr(config, "LLAMACPP_VULKAN_DIR", vulkan)
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.collect_engine_management",
+        lambda *_args: SimpleNamespace(statuses=statuses),
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.platform.system", lambda: "Linux",
+    )
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.fetch_llamacpp_release",
+        lambda: {"tag_name": "b1234"},
+    )
+    results = iter([
+        RuntimeUpdateResult(True, "native updated", "b1234"),
+        RuntimeUpdateResult(False, "Vulkan validation failed"),
+    ])
+    monkeypatch.setattr(
+        "scripts.app.benchmark_gui_screens.engines.rebuild_managed_llamacpp",
+        lambda *_args, **_kwargs: next(results),
+    )
+
+    result = actions.update_llamacpp(SimpleNamespace(log=lambda _text: None))
+
+    assert result.success is False
+    assert "no runtime was replaced" in result.detail
+    assert (native / "old").is_file()
+    assert (vulkan / "old").is_file()
+
+
+def test_windows_intel_llamacpp_update_preserves_sycl_backend(monkeypatch, tmp_path):
     actions = EngineUpdateActions({}, "xpu")
     status = SimpleNamespace(engine="llamacpp", managed=True, backend="xpu")
     calls = []
+    runtime = tmp_path / "llama.cpp"
+    runtime.mkdir()
+    monkeypatch.setattr(config, "LLAMACPP_DIR", runtime)
     monkeypatch.setattr(
         "scripts.app.benchmark_gui_screens.engines.collect_engine_management",
         lambda *_args: SimpleNamespace(statuses=[status]),
@@ -474,10 +617,14 @@ def test_windows_intel_llamacpp_update_preserves_sycl_backend(monkeypatch):
     )
     monkeypatch.setattr(
         "scripts.app.benchmark_gui_screens.engines.update_windows_llamacpp",
-        lambda *_args, **kwargs: calls.append(kwargs) or "updated",
+        lambda *_args, **kwargs: calls.append(kwargs) or RuntimeUpdateResult(
+            True, "updated", "version",
+        ),
     )
 
-    assert actions.update_llamacpp_version(None, SimpleNamespace(log=lambda _text: None)) == "updated"
+    assert actions.update_llamacpp_version(
+        None, SimpleNamespace(log=lambda _text: None),
+    ).success is True
     assert calls[0]["intel_xpu"] is True
 
 

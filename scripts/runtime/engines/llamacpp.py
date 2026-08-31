@@ -13,6 +13,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from functools import lru_cache
 from pathlib import Path, PurePosixPath
 from typing import cast
 
@@ -20,6 +21,7 @@ import gguf
 import requests
 
 from scripts.runtime import config
+from scripts.runtime.hardware import gpu_tensor_split
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool, probe_llamacpp_backend
 from scripts.runtime.engines.base import ChatMeasurement, EmbeddingMeasurement, GenerationMeasurement, InferenceEngine
 from scripts.runtime.engines import openai_api
@@ -28,6 +30,7 @@ from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
 from scripts.workloads.model_variants import expanded_variant_catalog
 from scripts.setup.custom_models import custom_model
 from scripts.setup.intel_xpu_install import oneapi_environment
+from scripts.setup.setup_config import configured_gpu_devices, load_setup_config
 from scripts.runtime.model_identity import model_tag_slug
 from scripts.runtime.mtp import native_mtp_config
 from scripts.runtime.generation_guard import looks_like_loop
@@ -39,14 +42,40 @@ from scripts.runtime.shared import (
 )
 
 
+ACCELERATOR_BACKENDS = {"cuda", "metal", "rocm", "vulkan", "xpu"}
+
+
+def model_placement_error(backend: str | None, placement: dict) -> str | None:
+    if backend not in ACCELERATOR_BACKENDS:
+        return None
+    gpu_layers = placement.get("gpu_layers")
+    if not isinstance(gpu_layers, int) or isinstance(gpu_layers, bool):
+        return f"{backend} model load did not report GPU layer placement"
+    if gpu_layers <= 0:
+        return f"{backend} model load offloaded zero layers to the GPU"
+    return None
+
+
+def model_placement_evidence_missing(backend: str | None, placement: dict) -> bool:
+    return backend in ACCELERATOR_BACKENDS and "gpu_layers" not in placement
+
+
+@lru_cache(maxsize=1)
+def configured_split_devices(config_path: str) -> tuple[dict, ...]:
+    setup = load_setup_config(Path(config_path))
+    return tuple(configured_gpu_devices(setup))
+
+
 class LlamaCppEngine(InferenceEngine):
     name = "llamacpp"
 
     BINARY = "llama-server"
+    REQUIRED_BACKEND: str | None = None
 
     # Model *load* time (disk read + VRAM placement), not inference time. Matches VllmEngine's
     # LOAD_TIMEOUT — large catalog entries (e.g. 120B split GGUFs) can still be loading at 300s.
     LOAD_TIMEOUT = 900
+    PLACEMENT_EVIDENCE_GRACE_SEC = 10
     SPAWN_LOG_LINES = 200
     _GPU_LAYERS_RE = re.compile(r"offloaded\s+(\d+)/(\d+)\s+layers to GPU", re.I)
     _MODEL_BUFFER_RE = re.compile(
@@ -55,10 +84,16 @@ class LlamaCppEngine(InferenceEngine):
     )
 
     @staticmethod
-    def gpu_split_args(*, include_cache: bool = False, cpu_only: bool = False) -> list[str]:
+    def gpu_split_args(*, include_cache: bool = False, cpu_only: bool = False,
+                       devices: list[dict] | None = None) -> list[str]:
         configured_mode = config.LLAMACPP_GPU_SPLIT_MODE
         mode = "none" if cpu_only or configured_mode == "single" else configured_mode
         args = ["--split-mode", mode]
+        devices = (list(configured_split_devices(str(config.SETUP_CONFIG_PATH)))
+                   if devices is None else devices)
+        if mode != "none":
+            if tensor_split := gpu_tensor_split(devices):
+                args += ["--tensor-split", tensor_split]
         if include_cache:
             cache_type = "f16" if mode == "tensor" else config.LLAMACPP_KV_CACHE_TYPE
             args += ["--cache-type-k", cache_type, "--cache-type-v", cache_type]
@@ -79,6 +114,7 @@ class LlamaCppEngine(InferenceEngine):
         self._cpu_only_active = False
         self._mtp_enabled = False
         self._process_env: dict[str, str] | None = None
+        self._expected_backend: str | None = None
         self._model_lock = threading.RLock()
 
     @classmethod
@@ -98,13 +134,22 @@ class LlamaCppEngine(InferenceEngine):
 
     # ── binary resolution ──
 
-    @staticmethod
-    def _binary_path() -> str | None:
-        """Locate llama-server — see docs/engines.md's "Binary resolution"."""
+    @classmethod
+    def _runtime_dir(cls) -> Path:
+        return config.LLAMACPP_DIR
+
+    @classmethod
+    def tool_path(cls, name: str) -> str | None:
         return find_llamacpp_tool(
-            "llama-server", vendored_dir=config.LLAMACPP_DIR,
+            name, vendored_dir=cls._runtime_dir(),
             platform_name=platform.system(), which_fn=shutil.which,
+            engine_name=cls.name,
         )
+
+    @classmethod
+    def _binary_path(cls) -> str | None:
+        """Locate llama-server — see docs/engines.md's "Binary resolution"."""
+        return cls.tool_path("llama-server")
 
     def runtime_location(self) -> str | None:
         return self._binary_path()
@@ -126,7 +171,7 @@ class LlamaCppEngine(InferenceEngine):
         ), None)
         if model is None:
             raise RuntimeError(f"{tag} has no cataloged native MTP configuration for llama.cpp")
-        config = native_mtp_config(model, self.name)
+        config = native_mtp_config(model, self.family)
         if config is None:
             raise RuntimeError(f"{tag} does not support native MTP with llama.cpp")
         return config
@@ -150,12 +195,19 @@ class LlamaCppEngine(InferenceEngine):
     def repack_args() -> list[str]:
         return ["--no-repack"] if config.LLAMACPP_NO_REPACK else []
 
+    @staticmethod
+    def no_host_args(*, cpu_only: bool = False, value_required: bool = False) -> list[str]:
+        if cpu_only or not config.LLAMACPP_NO_HOST:
+            return []
+        return ["--no-host", "1"] if value_required else ["--no-host"]
+
     # ── local model-file resolution ──
 
     @classmethod
     def _models_dir(cls) -> Path:
         """This engine's namespaced model directory — see docs/engines.md."""
-        return config.MODELS_DIR / cls.name
+        from scripts.runtime.engine_identity import engine_family
+        return config.MODELS_DIR / engine_family(cls.name)
 
     @staticmethod
     def _slug(tag: str) -> str:
@@ -235,21 +287,32 @@ class LlamaCppEngine(InferenceEngine):
             return None
 
     def is_installed(self) -> bool:
-        return self._binary_path() is not None
+        binary = self._binary_path()
+        if binary is None:
+            return False
+        return self.REQUIRED_BACKEND is None or probe_llamacpp_backend(binary) == self.REQUIRED_BACKEND
 
     def ensure_running(self) -> bool:
         """Preflight only (binary + model dir exist) — see docs/engines.md's
         "No standalone up-but-idle state". The real spawn is lazy, per tag, in _ensure_model."""
-        if self._binary_path() is None:
+        binary = self._binary_path()
+        if binary is None:
             Shared.err(f"'{self.BINARY}' not found — run setup_check.py "
                        "to install it, or build/install llama.cpp yourself: "
                        "https://github.com/ggml-org/llama.cpp")
             return False
+        required_backend = self.REQUIRED_BACKEND or self._expected_backend
+        if required_backend in ACCELERATOR_BACKENDS:
+            backend = probe_llamacpp_backend(binary, env=self._process_env)
+            if backend != required_backend:
+                Shared.err(f"{self.name} requires {required_backend}, but its runtime "
+                           f"exposes {backend or 'no backend'}")
+                return False
         if not self._models_dir().exists():
             Shared.err(f"Model directory not found at {self._models_dir()} — "
                        "run setup_check.py to download at least one model first")
             return False
-        Shared.ok(f"{self.BINARY} found at {self._binary_path()} — models load on demand per test")
+        Shared.ok(f"{self.BINARY} found at {binary} — models load on demand per test")
         return True
 
     def start(self, *, gpu_visible: bool = True, timeout: int = 15) -> bool:  # pragma: no cover — thin wrapper over ensure_running
@@ -309,6 +372,13 @@ class LlamaCppEngine(InferenceEngine):
     def tail_log(self, n_lines: int = 40) -> str:
         return Shared._tail_log(self._log_path, "llama.cpp", n_lines)
 
+    def _full_log(self) -> str:
+        try:
+            return self._log_path.read_text(encoding="utf-8", errors="replace") \
+                if self._log_path else ""
+        except OSError:
+            return ""
+
     # ── model lifecycle ──
 
     def model_pulled(self, tag: str) -> bool:
@@ -348,7 +418,7 @@ class LlamaCppEngine(InferenceEngine):
                     continue
                 ggufs = self._resolve_model_files(entry.name)
                 if ggufs is not None:
-                    imported = custom_model(self.name, entry.name)
+                    imported = custom_model(self.family, entry.name)
                     item = {"tag": entry.name, "size": sum(p.stat().st_size for p in ggufs)}
                     if imported and imported.get("label"):
                         item["label"] = imported["label"]
@@ -356,13 +426,25 @@ class LlamaCppEngine(InferenceEngine):
         return installed
 
     def runtime_backend(self, hardware_backend: str, *, cpu_only: bool = False) -> str:
-        self._process_env = oneapi_environment() if hardware_backend == "xpu" else None
+        self._process_env = (
+            oneapi_environment()
+            if hardware_backend == "xpu" and self.REQUIRED_BACKEND is None else None
+        )
         if cpu_only:
-            return "cpu"
+            self._expected_backend = "cpu"
+            return self._expected_backend
         binary = self._binary_path()
         if binary is None:
-            return hardware_backend
-        return probe_llamacpp_backend(binary, env=self._process_env) or hardware_backend
+            detected_backend = hardware_backend
+        else:
+            detected_backend = (
+                probe_llamacpp_backend(binary, env=self._process_env) or hardware_backend
+            )
+        self._expected_backend = self.REQUIRED_BACKEND or (
+            detected_backend if detected_backend in ACCELERATOR_BACKENDS else
+            hardware_backend if hardware_backend in ACCELERATOR_BACKENDS else detected_backend
+        )
+        return detected_backend
 
     def process_environment(self) -> dict[str, str] | None:
         return self._process_env
@@ -506,6 +588,8 @@ class LlamaCppEngine(InferenceEngine):
                 "-m", str(paths[0]),
                 "--host", "127.0.0.1",
                 "--port", str(config.LLAMACPP_PORT),
+                # Current llama.cpp hides placement summaries at its default verbosity.
+                "-lv", "4",
                 # "auto" lets llama-server's own --fit logic offload as many layers as fit in
                 # free VRAM and run the rest on CPU, instead of forcing all layers and OOM-ing.
                 "-ngl", "0" if not self._gpu_visible else (
@@ -516,6 +600,7 @@ class LlamaCppEngine(InferenceEngine):
                 # Quantized KV cache needs flash attention explicitly on — see config.LLAMACPP_KV_CACHE_TYPE.
                 "--flash-attn", "on",
                 *self.repack_args(),
+                *self.no_host_args(cpu_only=not self._gpu_visible),
                 *self.gpu_split_args(include_cache=True, cpu_only=not self._gpu_visible),
             ]
             if num_ctx is not None:
@@ -547,6 +632,7 @@ class LlamaCppEngine(InferenceEngine):
             Shared._managed_procs.append(proc)
 
             t0 = time.perf_counter()
+            healthy_since = None
             while time.perf_counter() - t0 < self.LOAD_TIMEOUT:
                 if deadline is not None and time.perf_counter() >= deadline:
                     self._stop_process()
@@ -557,6 +643,7 @@ class LlamaCppEngine(InferenceEngine):
                     raise RuntimeError(f"llama-server exited unexpectedly (code {proc.returncode}) "
                                        f"loading {tag} — last output:\n{self.tail_log()}")
                 if self.available():
+                    healthy_since = healthy_since or time.perf_counter()
                     serving = self.serving_model_file(self._fetch_props())
                     if serving is not None and serving != paths[0].name:
                         self._stop_process()
@@ -564,13 +651,26 @@ class LlamaCppEngine(InferenceEngine):
                             f"port {config.LLAMACPP_PORT} is serving {serving}, not {paths[0].name} "
                             f"— another llama-server owns it; stop it before loading {tag}"
                         )
+                    placement = self.parse_model_placement(self._full_log())
+                    required_backend = self.REQUIRED_BACKEND or self._expected_backend
+                    placement_error = model_placement_error(required_backend, placement)
+                    if model_placement_evidence_missing(required_backend, placement) and (
+                            time.perf_counter() - healthy_since < self.PLACEMENT_EVIDENCE_GRACE_SEC):
+                        time.sleep(1)
+                        continue
+                    if placement_error:
+                        log_tail = self.tail_log()
+                        self._stop_process()
+                        raise RuntimeError(
+                            f"{placement_error}; refusing silent CPU fallback loading {tag}"
+                            f" — last output:\n{log_tail}"
+                        )
                     self._loaded_tag = tag
                     self._loaded_num_ctx = num_ctx
                     self._loaded_embedding = embedding
                     self._loaded_n_parallel = n_parallel
                     self._loaded_mtp_config = mtp_config
-                    self._loaded_model_placement = self.parse_model_placement(
-                        self.tail_log(self.SPAWN_LOG_LINES))
+                    self._loaded_model_placement = placement
                     return
                 time.sleep(1)
 
@@ -580,7 +680,8 @@ class LlamaCppEngine(InferenceEngine):
     # ── inference ──
 
     def generate(self, tag: str, prompt: str, timeout: int = 600,
-                 num_ctx: int | None = None, n_parallel: int = 1) -> GenerationMeasurement:
+                 num_ctx: int | None = None, n_parallel: int = 1,
+                 cache_prompt: bool = False) -> GenerationMeasurement:
         """Generate via /completion; n_parallel must match prepare_concurrency."""
         operation_start = time.perf_counter()
         deadline = operation_start + timeout
@@ -593,7 +694,7 @@ class LlamaCppEngine(InferenceEngine):
             "n_predict": config.GENERATE_MAX_TOKENS,
             "stream": True,
             "return_tokens": True,
-            "cache_prompt": False,
+            "cache_prompt": cache_prompt,
         }).encode()
         req = urllib.request.Request(
             f"{config.LLAMACPP_URL}/completion",
@@ -817,7 +918,8 @@ class LlamaCppEngine(InferenceEngine):
 
     def chat(self, tag: str, messages: list, timeout: int = 600,
              num_ctx: int | None = None, num_predict: int = 1024,
-             check_loop: bool = False, token_budget: int | None = None) -> ChatMeasurement:
+             check_loop: bool = False, token_budget: int | None = None,
+             cache_prompt: bool = False) -> ChatMeasurement:
         """Chat once, or use a bounded final-answer pass after a length stop."""
         first, second, budget_nudged, model_load_sec = self._chat_with_optional_finalize(
             tag, messages, None, timeout, num_ctx, num_predict, check_loop, token_budget,

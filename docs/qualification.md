@@ -13,24 +13,24 @@ Shared engine coverage includes single-shot and conversational generation, embed
 List the explicit platform targets:
 
 ```bash
-./run_qualification.sh --list-targets
+./qualification/run_qualification.sh --list-targets
 ```
 
 Run one target on macOS, Linux, or WSL2:
 
 ```bash
-./run_qualification.sh dgx-spark-vllm-cuda
+./qualification/run_qualification.sh dgx-spark-vllm-cuda
 ```
 
 On Windows:
 
 ```text
-run_qualification.bat geforce-windows-llamacpp-cuda
+qualification/run_qualification.bat geforce-windows-llamacpp-cuda
 ```
 
 The launcher calls the normal `setup.sh` or `setup.bat` with a qualification preset that selects exactly one engine, the smallest LLM that supports every required engine workload, the smallest embedding model, and, for llama.cpp, the smallest image model. This is Gemma 3 1B for llama.cpp and Granite 4.1 3B for vLLM because vLLM requires a model-specific tool-call parser. It then verifies the requested platform, architecture, accelerator, and non-Vulkan backend against the shared execution profile before calling the normal `run_bench.sh` or `run_bench.bat` with those explicit selections. A missing ROCm or CUDA runtime therefore stops before an accidental CPU run. Existing installations and downloads are reused by the same setup code used by every other user.
 
-The Radeon WSL2 llama.cpp target installs AMD's pinned ROCm 7.2 WSL stack when `rocminfo` is unavailable, then requires `rocminfo` to see the GPU before setup can continue. This automated path supports AMD's qualified Ubuntu 22.04 and 24.04 WSL distributions and requires the compatible AMD Software: Adrenalin Edition 26.1.1 for WSL2 Windows host driver; another distribution or missing host driver stops with an actionable error instead of falling back to CPU. Radeon WSL2 vLLM is not a qualification target because the shipped wheel cannot discover the GPU through AMD SMI under WSL2. Native discrete-Radeon qualification installs AMD's pinned ROCm 7.2.1 graphics and compute stack after confirming an AMD display adapter, Ubuntu 24.04, and a supported 6.8 or 6.17 kernel. Ryzen AI Halo instead installs Ubuntu's `linux-oem-24.04` kernel and ROCm 7.2.1 without DKMS, as required for the APU's inbox driver; the first run stops after installation when an OEM-kernel reboot is required, and the rerun verifies GPU access before continuing.
+The shared setup path installs AMD's pinned ROCm 7.2 WSL stack when Windows reports Radeon hardware but `rocminfo` is unavailable, then requires `rocminfo` to see the GPU before setup can continue. The Radeon WSL2 llama.cpp qualification target invokes that setup capability with its fixed runtime preset and strict evidence checks. This automated path supports AMD's qualified Ubuntu 22.04 and 24.04 WSL distributions and requires the compatible AMD Software: Adrenalin Edition 26.1.1 for WSL2 Windows host driver; another distribution or missing host driver stops with an actionable error instead of falling back to CPU. Radeon WSL2 vLLM is not a qualification target because the shipped wheel cannot discover the GPU through AMD SMI under WSL2. Native discrete-Radeon qualification installs AMD's pinned ROCm 7.2.1 graphics and compute stack after confirming an AMD display adapter, Ubuntu 24.04, and a supported 6.8 or 6.17 kernel. Ryzen AI Halo instead installs Ubuntu's `linux-oem-24.04` kernel and ROCm 7.2.1 without DKMS, as required for the APU's inbox driver; the first run stops after installation when an OEM-kernel reboot is required, and the rerun verifies GPU access before continuing.
 
 Intel Arc Windows qualification is not supported while Windows Smart App Control's enforced `VerifiedAndReputableDesktop` policy is active. Real Arc Pro B65 attempts produced Code Integrity event 3077 for the official llama.cpp SYCL, Vulkan, and CPU DLLs under policy `{0283ac0f-fff1-49ae-ada1-8a933130cad6}`. Setup detects that active policy before runtime or model downloads and directs qualification to native Linux instead; it does not weaken or bypass the host security policy.
 

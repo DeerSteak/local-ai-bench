@@ -120,6 +120,8 @@ def inspection_placeholder(engine: str) -> EngineStatus:
 
 
 def engine_status_lines(status: EngineStatus) -> list[tuple[str, str]]:
+    if status.ownership == "missing":
+        return [("Status", "Not installed")]
     lines = [
         ("Ownership", OWNERSHIP_LABELS.get(status.ownership, status.ownership)),
         ("Location", status.location or "Not found"),
@@ -170,20 +172,33 @@ def vllm_update_support(status: EngineStatus, setup: dict,
 
 def collect_engine_statuses(engine_factory, hardware_backend: str) -> list[EngineStatus]:
     llama = engine_factory("llamacpp")
+    vulkan = engine_factory("llamacpp-vulkan")
     vllm = engine_factory("vllm")
     is_wsl = Shared.detect_wsl(platform.system(), platform.release())
-    return [
+    llama_location = llama.runtime_location()
+    statuses = [
         build_llamacpp_status(
-            llama.runtime_location(), config.LLAMACPP_DIR,
-            llama.runtime_backend(hardware_backend),
+            llama_location, config.LLAMACPP_DIR,
+            llama.runtime_backend(hardware_backend) if llama_location else "",
         ),
-        build_vllm_status(
+    ]
+    vulkan_location = vulkan.runtime_location()
+    vulkan_status = build_llamacpp_status(
+        vulkan_location, config.LLAMACPP_VULKAN_DIR,
+        vulkan.runtime_backend(hardware_backend) if vulkan_location else "",
+    )
+    statuses.append(EngineStatus(
+        "llamacpp-vulkan", vulkan_status.ownership, vulkan_status.location,
+        vulkan_status.version, vulkan_status.backend, vulkan_status.health,
+        vulkan_status.components, vulkan_status.warnings,
+    ))
+    statuses.append(build_vllm_status(
             vllm.runtime_location(), config.VLLM_VENV,
             vllm.runtime_backend(hardware_backend),
             launcher=vllm.runtime_launcher(), server_url=vllm.external_server_url(),
             is_wsl=is_wsl,
-        ),
-    ]
+        ))
+    return statuses
 
 
 def collect_engine_management(engine_factory, hardware_backend: str) -> EngineManagementSnapshot:
@@ -224,7 +239,7 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
     ttk.Label(header, text="Engine Management", style="Title.TLabel").pack(side="left")
     state = {
         "snapshot": EngineManagementSnapshot(
-            [inspection_placeholder(engine) for engine in ("llamacpp", "vllm")], [],
+            [inspection_placeholder(engine) for engine in ("llamacpp", "llamacpp-vulkan", "vllm")], [],
         ),
         "loading": False,
     }
@@ -234,8 +249,8 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
     ttk.Label(parent, textvariable=status_text).grid(row=2, column=0, sticky="w", pady=(8, 0))
     body = ttk.Frame(parent)
     body.grid(row=1, column=0, sticky="nsew")
-    body.columnconfigure(0, weight=1)
-    body.columnconfigure(1, weight=1)
+    for column in range(3):
+        body.columnconfigure(column, weight=1)
 
     output_box = ttk.LabelFrame(parent, text="Operation output", padding=8)
     output_box.grid(row=3, column=0, sticky="nsew", pady=(10, 0))
@@ -288,7 +303,9 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
                     ).pack(side="right", padx=(8, 0))
         if snapshot.models:
             models_box = ttk.LabelFrame(body, text="Imported model compatibility", padding=12)
-            models_box.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+            models_box.grid(
+                row=1, column=0, columnspan=len(snapshot.statuses), sticky="ew", pady=(14, 0),
+            )
             for row, model in enumerate(snapshot.models):
                 displayed = probe_results.get((model.engine, model.tag)) or model
                 text = (f"{displayed.tag} [{displayed.engine}] — "
@@ -391,7 +408,8 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
             update_engine(
                 "llamacpp", "llama.cpp",
                 lambda control: version_updater(tag, control),
-                f"Install llama.cpp {tag}? The current runtime will be retained for rollback.",
+                f"Install llama.cpp {tag} for every managed backend? Each current runtime "
+                "will be retained for rollback during its replacement.",
             )
         show_version_dialog(
             root=root, tk=tk, ttk=ttk, messagebox=messagebox,
@@ -507,7 +525,7 @@ def build_engine_management_tab(*, parent, root, tk, ttk, messagebox, status_loa
     copy_button.pack(side="left", padx=(8, 0))
     if llamacpp_updater is not None:
         ttk.Button(
-            header_actions, text="Update / Rebuild llama.cpp",
+            header_actions, text="Update / Rebuild llama.cpp Runtimes",
             command=lambda: update_engine(
                 "llamacpp", "llama.cpp", llamacpp_updater,
                 llamacpp_update_prompt or "Update the selected llama.cpp installation?",

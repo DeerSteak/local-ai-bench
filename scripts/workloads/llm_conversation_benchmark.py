@@ -26,9 +26,12 @@ class LLMConversationBenchmark:
     CONV_NUM_SECTIONS = 6
     CONV_RUNS = 1   # too expensive to repeat --runs times like the other benchmarks
 
-    CONV_TARGET_CTX = 131072   # above the top checkpoint (96K) so growth never scrapes the ceiling
+    CONV_TARGET_CTX = config.PREFILL_128K_TOKENS + 32768
 
-    CONV_CHECKPOINTS = [0, 2048, 4096, 8192, 16384, 32768, 49152, 65536, 81920, 98304]
+    CONV_CHECKPOINTS = [
+        0, 2048, 4096, 8192, 16384, 32768, 49152, 65536, 81920, 98304,
+        config.PREFILL_128K_TOKENS,
+    ]
 
     # See docs/workloads.md's conversation-test growth-step paragraph.
     CONV_STEP_MIN = 32
@@ -78,7 +81,10 @@ class LLMConversationBenchmark:
         configured_target = min(LLMConversationBenchmark.CONV_TARGET_CTX,
                                 max_prompt_tokens or LLMConversationBenchmark.CONV_TARGET_CTX)
         target_ctx = min(model_max, configured_target)
-        checkpoints = [c for c in LLMConversationBenchmark.CONV_CHECKPOINTS if c <= target_ctx]
+        checkpoints = Shared.supported_prompt_sizes(
+            LLMConversationBenchmark.CONV_CHECKPOINTS, model_max,
+        )
+        checkpoints = [c for c in checkpoints if c <= target_ctx]
         num_ctx = Shared.ctx_with_headroom(target_ctx, LLMConversationBenchmark.CONV_CTX_HEADROOM, model_max)
         return target_ctx, checkpoints, num_ctx
 
@@ -183,7 +189,7 @@ class LLMConversationBenchmark:
                         measurement = Shared.retry_implausible_tps(
                             lambda: engine.chat(
                                 tag, messages, timeout=config.RUN_TIMEOUT, num_ctx=num_ctx,
-                                num_predict=num_predict,
+                                num_predict=num_predict, cache_prompt=True,
                             ),
                             f"{tag} conversation turn",
                             "conv",
@@ -373,7 +379,7 @@ class LLMConversationBenchmark:
                 entry = unexpected_model_failure(label, exc)
                 results.setdefault(short, {}).update(entry)
                 if journal:
-                    journal.record_model_state(model, "crashed", entry)
+                    journal.record_model_state(model, "failed", entry)
             finally:
                 if save_fn:
                     save_fn(journal.export() if journal else results)

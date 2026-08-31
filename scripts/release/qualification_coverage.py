@@ -11,7 +11,7 @@ SMALLEST_IMAGE_MODEL = IMAGE_MODELS[0]["short"]
 
 
 RESULT_SECTIONS = {
-    "llm": "llm", "conv": "llm_conversation", "emb": "embeddings",
+    "llm": "llm", "llm_cached": "llm_cached", "conv": "llm_conversation", "emb": "embeddings",
     "mcq": "mcq", "math": "math", "reasoning": "reasoning", "code": "code",
     "tool": "tool", "conc_tool": "concurrency_tool", "conc_chat": "concurrency_chat",
     "sustained": "sustained", "llamabench": "llamabench",

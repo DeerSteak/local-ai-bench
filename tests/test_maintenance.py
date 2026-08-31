@@ -16,13 +16,14 @@ def repo(tmp_path):
 
 def test_default_uninstall_preserves_models_results_config_and_credentials(tmp_path):
     root = repo(tmp_path)
-    for name in ("bench-env", "ComfyUI", "llama.cpp", "models", "results"):
+    for name in ("bench-env", "ComfyUI", "llama.cpp", "llama.cpp-vulkan", "models", "results"):
         (root / name).mkdir()
     for name in ("local_ai_bench_config.json", "hf.txt"):
         (root / name).write_text("private", encoding="utf-8")
     plan = build_uninstall_plan(root)
     actions = {(Path(item.path).name, item.kind) for item in plan}
     assert ("bench-env", "remove") in actions
+    assert ("llama.cpp-vulkan", "remove") in actions
     assert ("models", "preserve") in actions
     assert ("results", "preserve") in actions
     assert ("hf.txt", "preserve") in actions
@@ -38,7 +39,7 @@ def test_optional_data_removal_is_previewed_and_executed_exactly(tmp_path):
         root, remove_models=True, remove_results=True, remove_credentials=True,
     )
     removed = execute_uninstall_plan(root, plan, "REMOVE LOCAL AI BENCH COMPONENTS")
-    assert set(map(Path, removed)) == {root / "bench-env", root / "ComfyUI", root / "llama.cpp", root / "models", root / "results", root / "hf.txt"}
+    assert set(map(Path, removed)) == {root / "bench-env", root / "ComfyUI", root / "llama.cpp", root / "llama.cpp-vulkan", root / "models", root / "results", root / "hf.txt"}
     assert not any((root / name).exists() for name in ("bench-env", "models", "results", "hf.txt"))
     assert (root / "README.md").is_file()
 

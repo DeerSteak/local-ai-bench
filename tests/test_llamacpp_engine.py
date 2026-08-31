@@ -11,7 +11,9 @@ import requests
 
 from scripts.runtime import config
 from scripts.runtime.engines.base import aggregate_generation_measurements, is_valid_measurement
-from scripts.runtime.engines.llamacpp import LlamaCppEngine
+from scripts.runtime.engines.llamacpp import (
+    LlamaCppEngine, model_placement_error, model_placement_evidence_missing,
+)
 import scripts.runtime.engines.llamacpp as llamacpp_module
 from scripts.runtime.shared import EngineBudgetExceeded, EngineLoopDetected, EngineTimeout
 
@@ -26,6 +28,15 @@ def test_repack_args_follow_the_explicit_runtime_setting(monkeypatch):
     assert LlamaCppEngine.repack_args() == []
     monkeypatch.setattr(config, "LLAMACPP_NO_REPACK", True)
     assert LlamaCppEngine.repack_args() == ["--no-repack"]
+
+
+def test_no_host_args_follow_runtime_setting_and_tool_syntax(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_NO_HOST", False)
+    assert LlamaCppEngine.no_host_args() == []
+    monkeypatch.setattr(config, "LLAMACPP_NO_HOST", True)
+    assert LlamaCppEngine.no_host_args() == ["--no-host"]
+    assert LlamaCppEngine.no_host_args(value_required=True) == ["--no-host", "1"]
+    assert LlamaCppEngine.no_host_args(cpu_only=True) == []
 
 
 def test_parse_model_placement_reports_layers_and_cpu_side_model_buffers():
@@ -47,6 +58,40 @@ def test_parse_model_placement_uses_last_load_and_tolerates_missing_buffers():
         "gpu_layers": 41,
         "total_layers": 41,
     }
+
+
+def test_full_log_keeps_placement_evidence_older_than_the_diagnostic_tail(tmp_path):
+    engine = LlamaCppEngine()
+    log_path = tmp_path / "server.log"
+    engine._log_path = log_path
+    log_path.write_text(
+        "load_tensors: offloaded 41/41 layers to GPU\n" + "recent line\n" * 250,
+        encoding="utf-8",
+    )
+
+    assert "offloaded 41/41" not in engine.tail_log(engine.SPAWN_LOG_LINES)
+    assert LlamaCppEngine.parse_model_placement(engine._full_log())["gpu_layers"] == 41
+
+
+def test_accelerated_model_placement_rejects_cpu_fallback_and_missing_evidence():
+    assert model_placement_error("rocm", {"gpu_layers": 0, "total_layers": 49}) == (
+        "rocm model load offloaded zero layers to the GPU"
+    )
+    assert model_placement_error("rocm", {}) == (
+        "rocm model load did not report GPU layer placement"
+    )
+    assert model_placement_error("rocm", {"gpu_layers": 49, "total_layers": 49}) is None
+
+
+def test_cpu_model_placement_does_not_require_gpu_layers():
+    assert model_placement_error("cpu", {}) is None
+    assert model_placement_error(None, {}) is None
+
+
+def test_model_placement_evidence_wait_only_applies_to_accelerators():
+    assert model_placement_evidence_missing("vulkan", {}) is True
+    assert model_placement_evidence_missing("vulkan", {"gpu_layers": 0}) is False
+    assert model_placement_evidence_missing("cpu", {}) is False
 
 
 def test_binary_path_via_llamacpp_dir(monkeypatch, tmp_path):
@@ -458,6 +503,19 @@ def test_generate_uses_server_reported_timings(monkeypatch):
     assert result.server_prompt_sec == pytest.approx(0.5)
     assert result.generated_tokens == 10
     assert result.tokens_per_sec == pytest.approx(5.0)
+
+
+def test_generate_enables_prompt_cache_when_requested(monkeypatch):
+    _patch_ensure_model(monkeypatch)
+    captured = []
+
+    def urlopen(req, timeout):
+        captured.append(json.loads(req.data))
+        return _FakeResponse([{"content": "x", "tokens": [1], "stop": True}])
+
+    monkeypatch.setattr(LlamaCppEngine, "_urlopen", staticmethod(urlopen))
+    LlamaCppEngine().generate("tag", "prompt", cache_prompt=True)
+    assert captured[0]["cache_prompt"] is True
 
 
 def test_generate_falls_back_to_wall_clock_ttft_when_server_omits_it(monkeypatch):
@@ -1160,7 +1218,31 @@ def test_runtime_backend_uses_binary_device_listing_and_cpu_override(monkeypatch
     monkeypatch.setattr(llamacpp_module.subprocess, "run", lambda *args, **kwargs: completed)
     engine = LlamaCppEngine()
     assert engine.runtime_backend("rocm") == "vulkan"
+    assert engine._expected_backend == "vulkan"
     assert engine.runtime_backend("rocm", cpu_only=True) == "cpu"
+
+
+def test_runtime_backend_preserves_hardware_accelerator_when_device_probe_falls_to_cpu(
+        monkeypatch):
+    monkeypatch.setattr(LlamaCppEngine, "_binary_path", staticmethod(lambda: "llama-server"))
+    monkeypatch.setattr(llamacpp_module, "probe_llamacpp_backend", lambda *_args, **_kwargs: "cpu")
+    engine = LlamaCppEngine()
+
+    assert engine.runtime_backend("rocm") == "cpu"
+    assert engine._expected_backend == "rocm"
+
+
+def test_accelerated_preflight_rejects_runtime_device_loss(monkeypatch, tmp_path):
+    monkeypatch.setattr(LlamaCppEngine, "_binary_path", staticmethod(lambda: "llama-server"))
+    monkeypatch.setattr(LlamaCppEngine, "_models_dir", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(llamacpp_module, "probe_llamacpp_backend", lambda *_args, **_kwargs: "cpu")
+    errors = []
+    monkeypatch.setattr(llamacpp_module.Shared, "err", errors.append)
+    engine = LlamaCppEngine()
+    engine._expected_backend = "rocm"
+
+    assert not engine.ensure_running()
+    assert errors == ["llamacpp requires rocm, but its runtime exposes cpu"]
 
 
 def test_runtime_backend_sources_oneapi_for_xpu_probe_and_processes(monkeypatch):
@@ -1270,6 +1352,7 @@ def test_ensure_model_ngl_lets_llama_server_fit_layers(monkeypatch, tmp_path, gp
 
     args = captured_args["args"]
     assert args[args.index("-ngl") + 1] == expected_ngl
+    assert args[args.index("-lv") + 1] == "4"
     assert captured_args["env"] == {"ONEAPI": "ready"}
 
 
@@ -1448,6 +1531,7 @@ def test_wait_until_unloaded_false_while_still_loaded():
 
 def test_tensor_split_uses_f16_cache_and_cpu_mode_disables_splitting(monkeypatch):
     monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "tensor")
+    monkeypatch.setattr(llamacpp_module, "load_setup_config", lambda path: {})
     assert LlamaCppEngine.gpu_split_args(include_cache=True) == [
         "--split-mode", "tensor", "--cache-type-k", "f16", "--cache-type-v", "f16",
     ]
@@ -1457,12 +1541,71 @@ def test_tensor_split_uses_f16_cache_and_cpu_mode_disables_splitting(monkeypatch
     ]
 
 
+def test_configured_split_devices_reads_setup_once(monkeypatch):
+    calls = []
+    llamacpp_module.configured_split_devices.cache_clear()
+    monkeypatch.setattr(llamacpp_module, "load_setup_config", lambda path: calls.append(path) or {})
+    assert llamacpp_module.configured_split_devices("/setup.json") == ()
+    assert llamacpp_module.configured_split_devices("/setup.json") == ()
+    assert calls == [Path("/setup.json")]
+    llamacpp_module.configured_split_devices.cache_clear()
+
+
 def test_single_gpu_mode_disables_splitting_but_keeps_normal_cache(monkeypatch):
     monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "single")
+    monkeypatch.setattr(llamacpp_module, "load_setup_config", lambda path: {})
     assert LlamaCppEngine.gpu_split_args(include_cache=True) == [
         "--split-mode", "none", "--cache-type-k", config.LLAMACPP_KV_CACHE_TYPE,
         "--cache-type-v", config.LLAMACPP_KV_CACHE_TYPE,
     ]
+
+
+def test_single_gpu_mode_does_not_pin_unverified_vulkan_index(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "single")
+    monkeypatch.setattr(llamacpp_module, "load_setup_config", lambda path: {
+        "gpu": {"devices": [
+            {"backend": "vulkan", "type": "integrated", "vram_gb": 16},
+            {"backend": "vulkan", "type": "discrete", "vram_gb": 32},
+        ]},
+    })
+    assert LlamaCppEngine.gpu_split_args(devices=[
+        {"backend": "vulkan", "type": "integrated", "vram_gb": 16},
+        {"backend": "vulkan", "type": "discrete", "vram_gb": 32},
+    ]) == ["--split-mode", "none"]
+
+
+def test_layer_mode_omits_unverified_vulkan_capacity_order(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "layer")
+    monkeypatch.setattr(
+        "scripts.runtime.engines.llamacpp.load_setup_config",
+        lambda _path: {"gpu": {"devices": [
+            {"backend": "vulkan", "vram_gb": 31.984375},
+            {"backend": "vulkan", "vram_gb": 15.921875},
+        ]}},
+    )
+
+    assert LlamaCppEngine.gpu_split_args(devices=[
+        {"backend": "vulkan", "vram_gb": 31.984375},
+        {"backend": "vulkan", "vram_gb": 15.921875},
+    ]) == ["--split-mode", "layer"]
+
+
+def test_explicit_gpu_ratio_is_omitted_for_single_and_cpu_modes(monkeypatch):
+    monkeypatch.setattr(
+        "scripts.runtime.engines.llamacpp.load_setup_config",
+        lambda _path: {"gpu": {"devices": [
+            {"backend": "vulkan", "vram_gb": 32},
+            {"backend": "vulkan", "vram_gb": 16},
+        ]}},
+    )
+    monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "single")
+    devices = [
+        {"backend": "vulkan", "vram_gb": 32},
+        {"backend": "vulkan", "vram_gb": 16},
+    ]
+    assert LlamaCppEngine.gpu_split_args(devices=devices) == ["--split-mode", "none"]
+    monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "layer")
+    assert LlamaCppEngine.gpu_split_args(cpu_only=True) == ["--split-mode", "none"]
 
 
 # ── server identity on /props ──

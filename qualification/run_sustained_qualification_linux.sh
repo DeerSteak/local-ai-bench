@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 MODEL=""
 AMBIENT=""
 DURATION=600
@@ -11,7 +12,7 @@ OUT_DIR=""
 DRY_RUN=false
 
 usage() {
-    echo "Usage: bash run_sustained_qualification_linux.sh --model TAG --ambient-temp-c C"
+    echo "Usage: bash qualification/run_sustained_qualification_linux.sh --model TAG --ambient-temp-c C"
     echo "       [--duration SEC] [--repeats N] [--wait SEC] [--out-dir DIR] [--dry-run]"
 }
 
@@ -50,16 +51,16 @@ if [ "$(uname -s)" != "Linux" ] && [ "$DRY_RUN" = false ]; then
     exit 1
 fi
 if [ -z "$OUT_DIR" ]; then
-    OUT_DIR="$SCRIPT_DIR/results/qualification/sustained-linux-$(date '+%Y%m%d-%H%M%S')"
+    OUT_DIR="$ROOT/results/qualification/sustained-linux-$(date '+%Y%m%d-%H%M%S')"
 fi
-if [ "$DRY_RUN" = false ] && [ -n "$(git -C "$SCRIPT_DIR" status --porcelain)" ]; then
+if [ "$DRY_RUN" = false ] && [ -n "$(git -C "$ROOT" status --porcelain)" ]; then
     echo "Qualification requires a clean Git worktree; run git status --short." >&2
     exit 1
 fi
 
 for ((run=1; run<=REPEATS; run++)); do
     label="$(printf '%02d' "$run")"
-    command=(bash "$SCRIPT_DIR/run_bench.sh" --ui none --tests sustained
+    command=(bash "$ROOT/run_bench.sh" --ui none --tests sustained
         --llm-models "$MODEL" --memory-telemetry --power-telemetry
         --sustained-duration "$DURATION" --ambient-temp-c "$AMBIENT"
         --out "$OUT_DIR/run-$label.json")

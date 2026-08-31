@@ -108,7 +108,7 @@ def test_frontend_gap_gate_can_report_declared_and_unbound_gaps():
 def test_build_command_includes_execution_modes_when_selected():
     options = dict(
         GUI_OPTION_DEFAULTS, offline=True, gpu_split_mode="tensor",
-        retry_crashed_models=True, llamacpp_no_repack=True, mtp="both",
+        retry_crashed_models=True, llamacpp_no_repack=True, llamacpp_no_host=True, mtp="both",
     )
     command = build_benchmark_command(
         "llamacpp", Path("ComfyUI"), ["llm"],
@@ -117,6 +117,7 @@ def test_build_command_includes_execution_modes_when_selected():
     assert "--offline" in command
     assert "--retry-crashed-models" in command
     assert "--llamacpp-no-repack" in command
+    assert "--llamacpp-no-host" in command
     assert command[command.index("--gpu-split-mode") + 1] == "tensor"
     assert command[command.index("--mtp") + 1] == "both"
 
@@ -382,6 +383,15 @@ def test_saved_gui_state_defaults_legacy_missing_no_repack_to_false(tmp_path):
     assert loaded is not None and loaded["gui_options"]["llamacpp_no_repack"] is False
 
 
+def test_saved_gui_state_defaults_legacy_missing_no_host_to_false(tmp_path):
+    path = tmp_path / "state.json"
+    options = dict(GUI_OPTION_DEFAULTS)
+    del options["llamacpp_no_host"]
+    path.write_text(json.dumps(saved_state(gui_options=options)), encoding="utf-8")
+    loaded = load_frontend_state(path)
+    assert loaded is not None and loaded["gui_options"]["llamacpp_no_host"] is False
+
+
 @pytest.mark.parametrize("contents", [
     "{",
     "[]",
@@ -584,7 +594,7 @@ def test_saved_model_selection_keeps_family_defaults_when_all_values_are_stale()
 def test_default_test_state_matches_documented_matrix():
     entries = {entry.value: entry for entry in build_test_entries(sample_inventory())}
     assert {name for name, entry in entries.items() if entry.checked} == {
-        "llm", "conv", "emb", "img",
+        "llm", "llm_cached", "conv", "emb", "img",
     }
     assert all(entries[name].available for name in entries)
     assert all(not entries[name].checked for name in (
@@ -681,7 +691,7 @@ def test_test_shortcut_all_selects_every_available_test_only():
 @pytest.mark.parametrize(
     ("shortcut", "expected"),
     [
-        ("l", {"llm", "conv", "llamabench", "vllmbench"}),
+        ("l", {"llm", "llm_cached", "conv", "llamabench", "vllmbench"}),
         ("x", {"mcq", "math", "reasoning", "code", "tool"}),
         ("c", {"conc_tool", "conc_chat"}),
         ("e", {"emb"}),
@@ -723,9 +733,10 @@ def test_choose_engine_auto_selects_only_registered_engine():
 
 def test_choose_engine_accepts_number_when_multiple_registered():
     messages, output = output_collector()
-    selected = choose_engine(["llamacpp", "mlx"], InputSequence(["2"]), output)
+    selected = choose_engine(["llamacpp", "mlx"], InputSequence(["2", ""]), output)
     assert selected == "mlx"
     assert any("CLI-only" in message for message in messages)
+    assert messages.count("Choose one inference engine (`--engine all` remains CLI-only):") == 2
 
 
 def test_choose_engine_can_cancel():
@@ -809,7 +820,7 @@ def test_choose_tests_clears_each_redraw_and_keeps_feedback_visible():
         entries, InputSequence(["invalid", ""]), output,
         clear_fn=lambda: clears.append(len(messages)),
     )
-    assert selected == ["llm", "conv", "emb", "img"]
+    assert selected == ["llm", "llm_cached", "conv", "emb", "img"]
     assert len(clears) == 1
     second_menu = messages[clears[0]:]
     assert "Couldn't parse that selection; use numbers/ranges or a shortcut from the legend." in second_menu
@@ -1222,7 +1233,7 @@ def test_run_frontend_launches_argument_list_and_propagates_exit_code(tmp_path):
     state = load_frontend_state(tmp_path / ".benchmark_frontend_state.json")
     assert state is not None
     assert state["engine"] == "fake"
-    assert state["tests"] == ["llm", "conv", "emb", "img"]
+    assert state["tests"] == ["llm", "llm_cached", "conv", "emb", "img"]
 
 
 def test_run_frontend_default_output_function_is_untimestamped(capsys):
@@ -1385,7 +1396,7 @@ def test_run_frontend_skips_max_prompt_tokens_prompt_for_unrelated_tests():
     commands = []
     messages, output = output_collector()
     result = run_frontend(
-        input_fn=InputSequence(["1 2 8", "", "", ""]),
+        input_fn=InputSequence(["1 2 3", "", "", ""]),
         output_fn=output,
         process_runner=lambda command: commands.append(command) or 0,
         engine_names_fn=lambda: ["fake"],
@@ -1422,7 +1433,7 @@ def test_run_frontend_prompts_for_max_prompt_tokens_when_llamabench_selected():
     assert commands[0][commands[0].index("--tg-tokens") + 1:commands[0].index("--llm-models")] == ["128", "512"]
 
 
-@pytest.mark.parametrize("test_toggles", ["2 4 13", "1 4 13"])
+@pytest.mark.parametrize("test_toggles", ["2 3 7 15", "1 2 7 15"])
 def test_run_frontend_applies_max_prompt_tokens_to_llm_and_conversation(test_toggles):
     commands = []
     messages, output = output_collector()
@@ -1483,7 +1494,7 @@ def test_run_frontend_uses_selected_engine_and_setup_comfyui_path():
     commands = []
     seen = []
     result = run_frontend(
-        input_fn=InputSequence(["2", "", "", "", "y"]),
+        input_fn=InputSequence(["2", "", "", "", "", "y"]),
         output_fn=lambda _: None,
         process_runner=lambda command: commands.append(command) or 0,
         engine_names_fn=lambda: ["llamacpp", "mlx"],

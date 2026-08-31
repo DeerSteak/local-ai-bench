@@ -105,6 +105,101 @@ def test_discovers_windows_amd_gpu(monkeypatch):
     assert result.kind == "discrete"
 
 
+def test_parses_all_active_windows_amd_gpus_with_64_bit_vram():
+    output = """[
+        {"name":"AMD Radeon PRO W7800","pnp_device_id":"PCI\\\\GPU1",
+         "driver":"32.0.1","vram_bytes":34359738368},
+        {"name":"AMD Radeon RX 9060 XT","pnp_device_id":"PCI\\\\GPU2",
+         "driver":"32.0.1","vram_bytes":"17179869184"}
+    ]"""
+
+    assert setup_discovery.parse_windows_amd_gpus(output) == [
+        {
+            "name": "AMD Radeon PRO W7800", "vram_gb": 32.0, "driver": "32.0.1",
+            "vendor": "amd", "backend": "vulkan", "kind": "discrete",
+            "pnp_device_id": "PCI\\GPU1",
+        },
+        {
+            "name": "AMD Radeon RX 9060 XT", "vram_gb": 16.0, "driver": "32.0.1",
+            "vendor": "amd", "backend": "vulkan", "kind": "discrete",
+            "pnp_device_id": "PCI\\GPU2",
+        },
+    ]
+
+
+def test_windows_amd_parser_keeps_unknown_vram_and_rejects_stale_duplicates():
+    output = """[
+        {"name":"AMD Radeon RX 9060 XT","pnp_device_id":"PCI\\\\GPU2",
+         "driver":null,"vram_bytes":null},
+        {"name":"stale duplicate","pnp_device_id":"PCI\\\\GPU2","vram_bytes":999},
+        {"name":"missing identity","vram_bytes":17179869184},
+        "junk"
+    ]"""
+
+    assert setup_discovery.parse_windows_amd_gpus(output) == [{
+        "name": "AMD Radeon RX 9060 XT", "vram_gb": None, "driver": "",
+        "vendor": "amd", "backend": "vulkan", "kind": "discrete",
+        "pnp_device_id": "PCI\\GPU2",
+    }]
+    assert setup_discovery.parse_windows_amd_gpus("not json") == []
+
+
+def test_discovers_windows_amd_inventory(monkeypatch):
+    _platform(monkeypatch, "Windows")
+    monkeypatch.setattr(
+        setup_discovery.subprocess, "check_output",
+        lambda *_args, **_kwargs: (
+            '[{"name":"AMD Radeon RX 9060 XT","pnp_device_id":"PCI\\\\GPU2",'
+            '"driver":"32.0.1","vram_bytes":17179869184}]'
+        ),
+    )
+
+    devices = setup_discovery.discover_windows_amd_gpus()
+
+    assert len(devices) == 1
+    assert devices[0]["vram_gb"] == 16.0
+
+
+def test_windows_amd_inventory_is_empty_off_windows(monkeypatch):
+    _platform(monkeypatch, "Linux")
+    monkeypatch.setattr(
+        setup_discovery.subprocess, "check_output",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not run")),
+    )
+
+    assert setup_discovery.discover_windows_amd_gpus() == []
+
+
+def test_discovers_windows_amd_inventory_from_wsl(monkeypatch):
+    _platform(monkeypatch, "Linux")
+    monkeypatch.setattr(setup_discovery.platform, "release", lambda: "microsoft-standard-WSL2")
+    calls = []
+    monkeypatch.setattr(
+        setup_discovery.subprocess, "check_output",
+        lambda command, **_kwargs: calls.append(command) or (
+            '[{"name":"AMD Radeon PRO W7800","pnp_device_id":"PCI\\\\GPU1",'
+            '"driver":"32.0.1","vram_bytes":34359738368}]'
+        ),
+    )
+
+    devices = setup_discovery.discover_wsl_windows_amd_gpus()
+
+    assert len(devices) == 1
+    assert devices[0]["vram_gb"] == 32.0
+    assert calls[0][0] == "powershell.exe"
+
+
+def test_wsl_windows_amd_inventory_is_empty_off_wsl(monkeypatch):
+    _platform(monkeypatch, "Linux")
+    monkeypatch.setattr(setup_discovery.platform, "release", lambda: "6.14-generic")
+    monkeypatch.setattr(
+        setup_discovery.subprocess, "check_output",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not run")),
+    )
+
+    assert setup_discovery.discover_wsl_windows_amd_gpus() == []
+
+
 def test_discovers_linux_intel_arc(monkeypatch):
     _platform(monkeypatch, "Linux")
     monkeypatch.setattr(

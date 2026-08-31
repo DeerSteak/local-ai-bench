@@ -55,6 +55,7 @@ describe("llamaBenchPromptLabel", () => {
     expect(llamaBenchPromptLabel(512)).toBe("0.5K");
     expect(llamaBenchPromptLabel(2048)).toBe("2K");
     expect(llamaBenchPromptLabel(98304)).toBe("96K");
+    expect(llamaBenchPromptLabel(131072)).toBe("128K");
   });
 });
 

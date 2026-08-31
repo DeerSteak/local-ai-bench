@@ -22,7 +22,7 @@ from scripts.workloads.model_variants import (
     variant_selection_target,
 )
 from scripts.runtime.comfyui_installation import normalize_comfyui_dir
-from scripts.setup.engine_selection import LLAMACPP, VLLM
+from scripts.setup.engine_selection import LLAMACPP, VLLM, model_engine_names
 from scripts.setup.model_inventory import (
     engine_fit_report, engine_fit_warnings, fits_any_engine, format_engine_sizes,
 )
@@ -59,7 +59,7 @@ def focus_scroll_fraction(*, widget_top: int, widget_bottom: int, view_top: int,
 
 def model_row_label(model: dict, engines, memory_ceiling_gb: float | None) -> str:
     """One model row: per-engine sizes, plus a warning per engine it won't fit."""
-    report = engine_fit_report(model, engines, memory_ceiling_gb)
+    report = engine_fit_report(model, model_engine_names(list(engines)), memory_ceiling_gb)
     if not report:  # image checkpoints carry no per-engine weights
         return f"{model['label']}  {model.get('download_size', '')}".rstrip()
     label = f"{model['label']}  {format_engine_sizes(report)}"
@@ -72,6 +72,7 @@ def default_model_selection(memory_ceiling_gb: float | None,
                             engines=(LLAMACPP,)) -> dict[str, bool]:
     """Memory-aware defaults, matching terminal setup. Checked if it fits any engine."""
     selected: dict[str, bool] = {}
+    engines = model_engine_names(list(engines))
     for _, models in LLM_GROUPS:
         for model in models:
             selected[model["tag"]] = (not model.get("variant") or model.get("default", False)) and fits_any_engine(
@@ -84,6 +85,20 @@ def default_model_selection(memory_ceiling_gb: float | None,
             model["checkpoint"], model["short"], memory_ceiling_gb,
         ) is not False
     return selected
+
+
+def variant_parent_widget_state(selection_state: str) -> tuple[str, str]:
+    """Map child selection to an explicit Tk checked, partial, or empty state."""
+    if selection_state == "all":
+        return "selected", "!alternate"
+    if selection_state == "some":
+        return "!selected", "alternate"
+    return "!selected", "!alternate"
+
+
+def apply_variant_parent_state(widget, variable, selection_state: str) -> None:
+    variable.set(selection_state == "all")
+    widget.state(variant_parent_widget_state(selection_state))
 
 
 def validate_gui_plan(plan: dict) -> list[str]:
@@ -378,12 +393,11 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
 
     def sync_variant_parents() -> None:
         selected = selected_model_tags()
-        for base_model, (widget, _row) in variant_parent_widgets.items():
+        for base_model, (widget, variable, _row) in variant_parent_widgets.items():
             state = variant_selection_state(
                 [model["tag"] for model in variant_groups[base_model]], selected,
             )
-            widget.state(["selected" if state == "all" else "!selected"])
-            widget.state(["alternate" if state == "some" else "!alternate"])
+            apply_variant_parent_state(widget, variable, state)
 
     def toggle_variant_parent(base_model: str) -> None:
         tags = [model["tag"] for model in variant_groups[base_model]]
@@ -422,12 +436,14 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             key = model.get("tag") or model["short"]
             base_model = model.get("base_model")
             if base_model and model.get("variant") and base_model not in rendered_variant_parents:
+                parent_var = tk.BooleanVar(value=False)
                 parent = ttk.Checkbutton(
                     model_list, text=model.get("base_label", base_model),
+                    variable=parent_var,
                     command=lambda base=base_model: toggle_variant_parent(base),
                 )
                 parent.grid(row=row, column=0, sticky="w", padx=(16, 12), pady=(5, 1))
-                variant_parent_widgets[base_model] = (parent, row)
+                variant_parent_widgets[base_model] = (parent, parent_var, row)
                 rendered_variant_parents.add(base_model)
                 row += 1
             option_row = ttk.Frame(model_list)
@@ -459,7 +475,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     sync_variant_parents()
 
     def apply_variant_engine_mode(engines: list[str]) -> None:
-        llamacpp_only = engines == [LLAMACPP]
+        llamacpp_only = bool(engines) and model_engine_names(engines) == [LLAMACPP]
         if not llamacpp_only:
             collapsed = collapse_variant_selection(
                 [model for variants in variant_groups.values() for model in variants],
@@ -468,7 +484,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             for variants in variant_groups.values():
                 for model in variants:
                     model_vars[model["tag"]].set(model["tag"] in collapsed)
-        for widget, parent_row in variant_parent_widgets.values():
+        for widget, _variable, parent_row in variant_parent_widgets.values():
             if llamacpp_only:
                 widget.grid(row=parent_row, column=0, sticky="w", padx=(16, 12), pady=(5, 1))
             else:
@@ -703,6 +719,8 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             *page_controls, back_button, next_button, cancel_button,
         ])
         if pages[index] is models_page:
+            sync_variant_parents()
+
             def reveal_model_control(event) -> None:
                 region = canvas.bbox("all")
                 if region is None:

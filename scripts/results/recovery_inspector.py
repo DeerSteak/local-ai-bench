@@ -126,7 +126,7 @@ def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find
     stages = set(plan.stage_order) & JOURNAL_STAGES
     families = []
     accuracy_stages = stages & set(ACCURACY_TESTS)
-    if stages & {"llm", "conv", "llamabench", "llamabenchconc", "vllmbench", "sustained", *ACCURACY_TESTS}:
+    if stages & {"llm", "llm_cached", "conv", "llamabench", "llamabenchconc", "vllmbench", "sustained", *ACCURACY_TESTS}:
         families.append("llm")
     if stages & {"conc_tool", "conc_chat"}:
         families.append("concurrency")
@@ -173,7 +173,7 @@ def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find
     return build_engine_resume_identity(
         plan, engine, model_families=families,
         include_engine_runtime=bool(stages & {
-            "llm", "conv", "vllmbench", "sustained", "emb", "conc_tool", "conc_chat",
+            "llm", "llm_cached", "conv", "vllmbench", "sustained", "emb", "conc_tool", "conc_chat",
             *ACCURACY_TESTS,
         }), extra_runtimes=extra,
         extra_artifacts=extra_artifacts,

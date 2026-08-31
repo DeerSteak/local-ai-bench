@@ -20,6 +20,7 @@ class GenerationMeasurement:
     decode_sec: float
     server_prompt_sec: float | None = None
     prompt_tokens: int | None = None
+    prefill_tokens: int | None = None
     response_text: str = ""
     finish_reason: str | None = None
     model_load_sec: float = 0
@@ -104,6 +105,11 @@ def prefill_tokens_per_sec(prompt_tokens, server_prompt_sec) -> float | None:
     return prompt_tokens / server_prompt_sec
 
 
+def measurement_prefill_tokens(measurement: GenerationMeasurement) -> int | None:
+    return measurement.prefill_tokens \
+        if measurement.prefill_tokens is not None else measurement.prompt_tokens
+
+
 def aggregate_generation_measurements(samples: list[GenerationMeasurement],
                                       requested_runs: int) -> dict:
     valid = [sample for sample in samples if not measurement_validation_errors(sample)]
@@ -127,9 +133,11 @@ def aggregate_generation_measurements(samples: list[GenerationMeasurement],
                 "generated_tokens": sample.generated_tokens,
                 "tokens_per_sec": round(sample.tokens_per_sec, 2),
                 "prompt_tokens": sample.prompt_tokens,
+                "prefill_tokens": measurement_prefill_tokens(sample),
                 "prefill_tps": (
                     round(value, 2) if (value := prefill_tokens_per_sec(
-                        sample.prompt_tokens, sample.server_prompt_sec)) is not None else None
+                        measurement_prefill_tokens(sample),
+                        sample.server_prompt_sec)) is not None else None
                 ),
                 "finish_reason": sample.finish_reason,
                 "model_load_sec": round(sample.model_load_sec, TIMING_DECIMALS),
@@ -172,7 +180,8 @@ def aggregate_generation_measurements(samples: list[GenerationMeasurement],
             statistics.mean(server_times), TIMING_DECIMALS)
     prefill_rates = [rate for sample in valid
                      if (rate := prefill_tokens_per_sec(
-                         sample.prompt_tokens, sample.server_prompt_sec)) is not None]
+                         measurement_prefill_tokens(sample),
+                         sample.server_prompt_sec)) is not None]
     if prefill_rates:
         result.update({
             "prefill_tps_mean": round(statistics.mean(prefill_rates), 2),
@@ -195,14 +204,19 @@ def aggregate_generation_measurements(samples: list[GenerationMeasurement],
 class InferenceEngine(ABC):
     name: str  # e.g. "llamacpp"
 
+    @property
+    def family(self) -> str:
+        from scripts.runtime.engine_identity import engine_family
+        return engine_family(self.name)
+
     def set_sampling_profile(self, profile: dict) -> None:
         from scripts.runtime.sampling import sampling_profile_payload
-        sampling_profile_payload(self.name, profile)
+        sampling_profile_payload(self.family, profile)
         self._sampling_profile = profile
 
     def sampling_payload(self) -> dict:
         from scripts.runtime.sampling import sampling_profile_payload
-        return sampling_profile_payload(self.name, getattr(self, "_sampling_profile", None))
+        return sampling_profile_payload(self.family, getattr(self, "_sampling_profile", None))
 
     # ── server / process lifecycle ──
 
@@ -318,13 +332,15 @@ class InferenceEngine(ABC):
 
     @abstractmethod
     def generate(self, tag: str, prompt: str, timeout: int = 600,
-                 num_ctx: int | None = None, n_parallel: int = 1) -> GenerationMeasurement:
+                 num_ctx: int | None = None, n_parallel: int = 1,
+                 cache_prompt: bool = False) -> GenerationMeasurement:
         """Return one named single-shot measurement."""
 
     @abstractmethod
     def chat(self, tag: str, messages: list, timeout: int = 600,
              num_ctx: int | None = None, num_predict: int = 1024,
-             check_loop: bool = False, token_budget: int | None = None) -> ChatMeasurement:
+             check_loop: bool = False, token_budget: int | None = None,
+             cache_prompt: bool = False) -> ChatMeasurement:
         """Return one named chat measurement."""
 
     def supports_tool_calls(self, tag: str) -> bool:

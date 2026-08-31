@@ -41,7 +41,7 @@ TEST_STAGE_LABELS = {
     spec.key: spec.label for spec in STAGE_SPECS
 }
 TEST_SHORTCUT_GROUPS = {
-    "l": {"llm", "conv", "llamabench", "vllmbench"},
+    "l": {"llm", "llm_cached", "conv", "llamabench", "vllmbench"},
     "x": {"mcq", "math", "reasoning", "code", "tool"},
     "c": {"conc_tool", "conc_chat"},
     "e": {"emb"},
@@ -49,7 +49,7 @@ TEST_SHORTCUT_GROUPS = {
 }
 TIER_KEYS = {"xs": "xsmall", "s": "small", "m": "medium", "l": "large"}
 LLM_BACKED_TESTS = set(LLM_TESTS + CONCURRENCY_TESTS + ["vllmbench"])
-MAX_PROMPT_TOKEN_TESTS = {"llm", "conv", "llamabench", "llamabenchconc", "vllmbench"}
+MAX_PROMPT_TOKEN_TESTS = {"llm", "llm_cached", "conv", "llamabench", "llamabenchconc", "vllmbench"}
 MAX_PROMPT_TOKEN_OPTIONS: list[int] = sorted(set(config.CONTEXT_LENGTHS) | set(config.LLAMABENCH_PP))
 TG_TOKEN_TESTS = {"llamabench", "llamabenchconc"}
 TG_TOKEN_OPTIONS: list[int] = list(TG_TOKEN_CHOICES)
@@ -173,6 +173,7 @@ def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
                 "mtp",
                 "retry_crashed_models",
                 "llamacpp_no_repack",
+                "llamacpp_no_host",
                 "sustained_duration", "ambient_temp_c",
             }:
                 for key in missing:
@@ -192,7 +193,7 @@ def validate_gui_options(options: object) -> list[str]:
     errors = option_value_errors({GUI_OPTION_FLAGS[key]: value for key, value in options.items()})
     if any(not isinstance(options[key], bool) for key in (
             "cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
-            "power_telemetry", "llamacpp_no_repack")):
+            "power_telemetry", "llamacpp_no_repack", "llamacpp_no_host")):
         errors.append("Execution mode settings must be true or false.")
     if options.get("power_telemetry") and not options.get("memory_telemetry"):
         errors.append("Power telemetry requires memory telemetry.")
@@ -273,6 +274,7 @@ def frontend_state_from_run_plan(plan: RunPlan, gui_options: dict | None = None)
         "gpu_split_mode": "gpu_split_mode", "force_all": "force_all",
         "mtp_enabled": "mtp",
         "llamacpp_no_repack": "llamacpp_no_repack",
+        "llamacpp_no_host": "llamacpp_no_host",
         "retry_crashed_models": "retry_crashed_models", "offline": "offline",
         "memory_telemetry": "memory_telemetry", "power_telemetry": "power_telemetry",
         "sustained_duration_sec": "sustained_duration", "ambient_temp_c": "ambient_temp_c",
@@ -436,7 +438,8 @@ def choose_engine(available: list[str], input_fn, output_fn, clear_fn=lambda: No
             return available[selected]
         if raw.isdigit() and 1 <= int(raw) <= len(available):
             selected = int(raw) - 1
-            return available[selected]
+            feedback = None
+            continue
         feedback = "Couldn't parse that engine selection."
 
 
@@ -524,7 +527,7 @@ def choose_max_prompt_tokens(input_fn, output_fn, clear_fn=lambda: None,
             clear_fn()
         redraw = True
         output_fn(
-            "Cap the max prompt-processing size tested (applies to Single-shot LLM, "
+            "Cap the max prompt-processing size tested (applies to uncached/cached prefill, "
             "conversation, llama-bench throughput, and llama-bench concurrency):"
         )
         output_fn(f"   0  No cap (test every configured depth){' (restored)' if preferred is None else ''}")
@@ -792,6 +795,8 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
             command.append("--cpu-only")
         if gui_options["llamacpp_no_repack"]:
             command.append("--llamacpp-no-repack")
+        if gui_options["llamacpp_no_host"]:
+            command.append("--llamacpp-no-host")
         if gui_options["force_all"]:
             command.append("--force-all")
         if gui_options["retry_crashed_models"]:

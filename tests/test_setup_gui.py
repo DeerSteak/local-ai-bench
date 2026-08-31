@@ -8,6 +8,7 @@ from scripts.app.tk_utils import schedule_tk_layout_refresh
 from scripts.setup.setup_gui import (
     HF_LOGIN_URL,
     LLM_GROUPS,
+    apply_variant_parent_state,
     build_setup_plan,
     engine_checkbox_label,
     sudo_notice,
@@ -26,6 +27,7 @@ from scripts.setup.setup_gui import (
     token_controls_enabled,
     next_page_index,
     validate_gui_plan,
+    variant_parent_widget_state,
 )
 
 
@@ -47,6 +49,45 @@ def test_quantization_variants_are_visible_with_only_default_preselected():
     ]
     assert all(model["download_size"] in model_row_label(model, ["llamacpp"], 128.0)
                for model in gemma_variants)
+
+
+def test_variant_parent_distinguishes_full_partial_and_empty_selection():
+    assert variant_parent_widget_state("all") == ("selected", "!alternate")
+    assert variant_parent_widget_state("some") == ("!selected", "alternate")
+    assert variant_parent_widget_state("none") == ("!selected", "!alternate")
+
+
+def test_variant_parent_updates_bound_value_and_native_widget_state():
+    calls = []
+
+    class Variable:
+        def set(self, value):
+            calls.append(("variable", value))
+
+    class Widget:
+        def state(self, value):
+            calls.append(("widget", value))
+
+    apply_variant_parent_state(Widget(), Variable(), "none")
+    assert calls == [
+        ("variable", False),
+        ("widget", ("!selected", "!alternate")),
+    ]
+
+    calls.clear()
+    apply_variant_parent_state(Widget(), Variable(), "some")
+    assert calls == [
+        ("variable", False),
+        ("widget", ("!selected", "alternate")),
+    ]
+
+
+def test_vulkan_and_native_llamacpp_share_variant_and_size_presentation():
+    model = next(model for _, models in LLM_GROUPS for model in models)
+    assert default_model_selection(128.0, ["llamacpp-vulkan"]) == \
+        default_model_selection(128.0, ["llamacpp"])
+    assert model_row_label(model, ["llamacpp", "llamacpp-vulkan"], 128.0) == \
+        model_row_label(model, ["llamacpp"], 128.0)
 
 
 def test_gui_plan_requires_valid_existing_comfyui_path(tmp_path):
@@ -310,6 +351,11 @@ def test_setup_wizard_installs_keyboard_navigation(monkeypatch):
         observed["model_controls_before_footer"] = all(
             label not in {"Back", "Next", "Cancel"} for label in tab_orders[-1][:-3]
         )
+        observed["partial_parent_visible"] = any(
+            "alternate" in widget.state()
+            for widget in checkbuttons
+            if widget.winfo_ismapped()
+        )
 
     monkeypatch.setattr(tk.Tk, "mainloop", inspect_instead_of_mainloop)
 
@@ -324,6 +370,7 @@ def test_setup_wizard_installs_keyboard_navigation(monkeypatch):
         "inactive_controls_unmapped": True,
         "model_chain_footer": ["Back", "Next", "Cancel"],
         "model_controls_before_footer": True,
+        "partial_parent_visible": True,
     }
 
 

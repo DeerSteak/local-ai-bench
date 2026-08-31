@@ -113,6 +113,19 @@ def test_macos_install_resolves_requested_release(monkeypatch, tmp_path):
     assert requested == ["b7000"]
 
 
+def test_macos_rejects_managed_vulkan_runtime(tmp_path):
+    failures = []
+    assert not llamacpp_install.install(
+        tmp_path / "runtime", tmp_path, "Darwin",
+        nvidia=False, rocm=False, intel_xpu=False,
+        compute_capability=None, max_cuda_version=None, vulkan=True,
+        info=_log, warn=_log, fail=failures.append, ok=_log,
+    )
+    assert failures == [
+        "The managed Vulkan llama.cpp runtime is available only on Windows and Linux",
+    ]
+
+
 def test_windows_intel_dispatch_requests_the_sycl_package(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(
@@ -136,13 +149,14 @@ def _asset(name, size=1024):
     return {"name": name, "size": size, "browser_download_url": f"https://example/{name}"}
 
 
-def _install_windows(monkeypatch, tmp_path, release, *, intel_xpu=False, **callbacks):
+def _install_windows(monkeypatch, tmp_path, release, *, intel_xpu=False, vulkan=False,
+                     **callbacks):
     monkeypatch.setattr(llamacpp_install, "fetch_llamacpp_release", lambda: release)
     logs = {name: [] for name in ("info", "warn", "fail", "ok")}
     logs.update(callbacks)
     result = llamacpp_install.install_windows(
         tmp_path / "runtime", tmp_path / "downloads", "12.8",
-        intel_xpu=intel_xpu,
+        intel_xpu=intel_xpu, vulkan=vulkan,
         info=logs["info"].append, warn=logs["warn"].append,
         fail=logs["fail"].append, ok=logs["ok"].append,
     )
@@ -166,6 +180,33 @@ def test_windows_install_falls_back_to_vulkan_without_cuda_pair(monkeypatch, tmp
     assert result is True
     assert any("Vulkan" in message for message in logs["ok"])
     assert len(logs["warn"]) == 2
+
+
+def test_windows_explicit_vulkan_ignores_available_cuda_package(monkeypatch, tmp_path):
+    release = _windows_release(
+        _asset("llama-b9999-bin-win-cuda-12.8-x64.zip"),
+        _asset("cudart-llama-bin-win-cuda-12.8-x64.zip"),
+        _asset("llama-win-vulkan-x64.zip"),
+    )
+    selected = []
+
+    def download(_url, archive, **_kwargs):
+        selected.append(archive.name)
+        archive.parent.mkdir(exist_ok=True)
+        archive.touch()
+
+    def extract(_archive, runtime):
+        runtime.mkdir(exist_ok=True)
+        for name in ("llama-server", "llama-bench", "llama-batched-bench"):
+            (runtime / f"{name}.exe").touch()
+
+    monkeypatch.setattr(llamacpp_install, "download_file", download)
+    monkeypatch.setattr(llamacpp_install, "safe_extract_zip", extract)
+    result, _logs = _install_windows(
+        monkeypatch, tmp_path, release, vulkan=True,
+    )
+    assert result is True
+    assert selected == ["llama-win-vulkan-x64.zip"]
 
 
 def test_windows_install_fails_without_vulkan_fallback(monkeypatch, tmp_path):
@@ -229,6 +270,23 @@ def test_windows_intel_install_replaces_existing_vulkan_runtime(monkeypatch, tmp
     assert calls[0][2]["intel_xpu"] is True
     assert calls[0][2]["release_fetcher"]()["tag_name"] == "b9999"
     assert any("replaced" in message for message in logs["ok"])
+
+
+def test_windows_vulkan_update_preserves_explicit_backend(monkeypatch, tmp_path):
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    calls = []
+    monkeypatch.setattr(
+        llamacpp_install, "update_windows_llamacpp",
+        lambda target, max_cuda, **kwargs: calls.append(kwargs)
+        or SimpleNamespace(success=True, detail="replaced"),
+    )
+    result, _logs = _install_windows(
+        monkeypatch, tmp_path, _windows_release(_asset("llama-win-vulkan-x64.zip")),
+        vulkan=True,
+    )
+    assert result is True
+    assert calls[0]["vulkan"] is True
 
 
 def test_windows_install_reports_release_fetch_failure(monkeypatch, tmp_path):
@@ -339,6 +397,32 @@ def test_linux_cuda_unknown_architecture_warns_and_omits_arch_flag(monkeypatch, 
     configure = next(command for command in commands if command[:2] == ["cmake", "-B"])
     assert "-DGGML_CUDA=ON" in configure
     assert not any("CMAKE_CUDA_ARCHITECTURES" in argument for argument in configure)
+
+
+def test_linux_explicit_vulkan_build_ignores_native_gpu_backends(monkeypatch, tmp_path):
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    commands = []
+    monkeypatch.setattr(llamacpp_install.shutil, "which", lambda _name: "/usr/bin/tool")
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        if command[:2] == ["cmake", "--build"]:
+            build = runtime / "build"
+            build.mkdir()
+            (build / "llama-server").touch()
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(llamacpp_install.subprocess, "run", run)
+    assert llamacpp_install.install(
+        runtime, tmp_path, "Linux", nvidia=True, rocm=True, intel_xpu=True,
+        compute_capability="8.9", max_cuda_version="12.8", vulkan=True,
+        info=_log, warn=_log, fail=_log, ok=_log,
+    )
+    configure = next(command for command in commands if command[:2] == ["cmake", "-B"])
+    assert "-DGGML_VULKAN=ON" in configure
+    assert not any("GGML_CUDA" in argument or "GGML_HIP" in argument
+                   or "GGML_SYCL" in argument for argument in configure)
 
 
 def test_linux_intel_build_sources_oneapi_and_enables_sycl(monkeypatch, tmp_path):

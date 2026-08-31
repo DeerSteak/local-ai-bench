@@ -302,9 +302,11 @@ export const SIZE_TIER_LABELS = {
 };
 
 // Sections
-export const SECTIONS = ["llm", "llm_conversation", "sustained", "concurrency_tool", "concurrency_chat", "accuracy", "embeddings", "images", "llamabench", "llamabenchconc", "vllmbench"];
+export const SECTIONS = ["llm", "llm_cached", "llm_cache_comparison", "llm_conversation", "sustained", "concurrency_tool", "concurrency_chat", "accuracy", "embeddings", "images", "llamabench", "llamabenchconc", "vllmbench"];
 export const SECTION_LABELS = {
-  llm: "LLM",
+  llm: "Uncached Prefill / Generation",
+  llm_cached: "Cached Prefill / Generation",
+  llm_cache_comparison: "Cached vs Uncached",
   llm_conversation: "LLM Conversation",
   sustained: "Sustained Load",
   concurrency_tool: "Concurrency (Tool)",
@@ -390,10 +392,8 @@ export const EMBED_BAR_COLORS = {
 };
 
 // Ordered context length labels (match benchmark.py output). The LLM section
-// only ever uses {0.5K, 2K, 8K, 32K, 64K} (a subsequence of this, in the same
-// relative order); LLM Conversation samples up to 96K, including the 48K and
-// 80K checkpoints added between the wider steps (128K is kept here only so
-// older result files that still have a 128K checkpoint still render).
+// only ever uses {0.5K, 2K, 8K, 32K, 64K, 128K} (a subsequence of this, in the
+// same relative order); LLM Conversation also includes the intermediate depths.
 export const CTX_ORDER = ["0K", "0.5K", "2K", "4K", "8K", "16K", "32K", "48K", "64K", "80K", "96K", "128K"];
 export const SPEC_CARD_PREFERRED_CTX = "2K";
 

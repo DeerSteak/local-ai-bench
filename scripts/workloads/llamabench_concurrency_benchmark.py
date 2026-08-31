@@ -31,6 +31,11 @@ class LlamaBenchConcurrencyBenchmark:
             platform_name=platform.system(), which_fn=shutil.which,
         )
 
+    @classmethod
+    def find_engine_binary(cls, engine) -> str | None:
+        return engine.tool_path("llama-batched-bench") \
+            if isinstance(engine, LlamaCppEngine) else cls.find_binary()
+
     @staticmethod
     def fit_npl(pp: int, tg_values: list[int], npl_values: list[int],
                 model_max: int) -> tuple[int, list[int]]:
@@ -61,6 +66,7 @@ class LlamaBenchConcurrencyBenchmark:
             "-ub", str(ubatch_size),
             "-ngl", str(ngl),
             *LlamaCppEngine.repack_args(),
+            *LlamaCppEngine.no_host_args(cpu_only=ngl == 0),
             *LlamaCppEngine.gpu_split_args(cpu_only=ngl == 0),
             "--cache-type-k", cache_type,
             "--cache-type-v", cache_type,
@@ -186,7 +192,7 @@ class LlamaBenchConcurrencyBenchmark:
             Shared.warn(f"llama-batched-bench only supports the llamacpp engine — skipping for {engine.name}")
             return results
 
-        binary = self.find_binary()
+        binary = self.find_engine_binary(engine)
         if binary is None:
             Shared.err("llama-batched-bench not found — run setup.sh/setup.bat to install it, or build it "
                        "yourself: https://github.com/ggml-org/llama.cpp")

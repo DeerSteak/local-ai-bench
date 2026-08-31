@@ -136,7 +136,11 @@ def test_dashboard_wrappers_use_the_authenticated_workspace_server():
     batch = (ROOT / "launch_dashboard.bat").read_text()
     assert "-m scripts.app.workspace_server" in shell
     assert "-m scripts.app.workspace_server" in batch
+    assert "-m scripts.app.dashboard_reuse" in shell
+    assert "-m scripts.app.dashboard_reuse" in batch
     assert "run preview" not in shell
     assert "run preview" not in batch
     assert 'cd "$SCRIPT_DIR"' in shell
     assert 'pushd "%SCRIPT_DIR%"' in batch
+    assert shell.index("npm run build") < shell.index("-m scripts.app.dashboard_reuse")
+    assert batch.index("npm run build") < batch.index("-m scripts.app.dashboard_reuse")

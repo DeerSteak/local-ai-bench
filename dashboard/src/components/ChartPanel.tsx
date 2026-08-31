@@ -4,6 +4,7 @@ import LLMBySystemPanel from "./panels/LLMBySystemPanel";
 import ImagesBySystemPanel from "./panels/ImagesBySystemPanel";
 import EmbeddingsBySystemPanel from "./panels/EmbeddingsBySystemPanel";
 import LLMByModelPanel from "./panels/LLMByModelPanel";
+import LLMCacheComparisonPanel from "./panels/LLMCacheComparisonPanel";
 import ImagesPanel from "./panels/ImagesPanel";
 import EmbeddingsPanel from "./panels/EmbeddingsPanel";
 import AccuracyPanel from "./panels/AccuracyPanel";
@@ -100,7 +101,14 @@ export default function ChartPanel({
     );
   }
 
-  if (isBySystem && (section === "llm" || section === "llm_conversation")) {
+  if (section === "llm_cache_comparison") {
+    return <LLMCacheComparisonPanel
+      containerRef={containerRef} files={files} enabledModels={enabledModels}
+      chartWidth={chartWidth} logoSrc={logoSrc}
+    />;
+  }
+
+  if (isBySystem && (["llm", "llm_cached", "llm_conversation"].includes(section))) {
     return (
       <LLMBySystemPanel
         containerRef={containerRef} files={files} section={section} enabledModels={enabledModels}
@@ -127,7 +135,7 @@ export default function ChartPanel({
     );
   }
 
-  if (section === "llm" || section === "llm_conversation") {
+  if (["llm", "llm_cached", "llm_conversation"].includes(section)) {
     return (
       <LLMByModelPanel
         containerRef={containerRef} files={files} section={section} enabledModels={enabledModels}

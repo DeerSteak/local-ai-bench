@@ -5,6 +5,7 @@ from scripts.setup.setup_config import (
     configured_gpu_devices,
     configured_comfyui_dir,
     configured_llamacpp_tool,
+    configured_llamacpp_vulkan_tool,
     configured_vllm,
     configured_vllm_launcher_args,
     configured_vllm_path,
@@ -18,9 +19,11 @@ def test_setup_config_round_trip_contains_paths_without_secrets(tmp_path):
     path = tmp_path / "local_ai_bench_config.json"
     comfyui = tmp_path / "ComfyUI"
     server = tmp_path / "llama-server"
+    vulkan_server = tmp_path / "llama.cpp-vulkan" / "llama-server"
     write_setup_config(
         path, comfyui_dir=comfyui,
         llamacpp_tools={"llama-server": str(server), "llama-bench": None},
+        llamacpp_vulkan_tools={"llama-server": str(vulkan_server)},
         gpu_devices=[{"name": "RTX", "vram_gb": 16.0, "driver": "1"}],
     )
 
@@ -28,6 +31,7 @@ def test_setup_config_round_trip_contains_paths_without_secrets(tmp_path):
     assert configured_comfyui_dir(data) == str(comfyui.resolve())
     assert configured_llamacpp_tool(data, "llama-server") == str(server)
     assert configured_llamacpp_tool(data, "llama-bench") is None
+    assert configured_llamacpp_vulkan_tool(data, "llama-server") == str(vulkan_server)
     assert configured_gpu_devices(data) == [
         {"name": "RTX", "vram_gb": 16.0, "driver": "1"},
     ]
@@ -47,6 +51,12 @@ def test_load_accepts_schema_one_without_gpu_topology(tmp_path):
     assert configured_gpu_devices(load_setup_config(path)) == []
 
 
+def test_older_setup_config_has_no_vulkan_toolset(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"schema_version": 3, "llama_cpp": {}}))
+    assert configured_llamacpp_vulkan_tool(load_setup_config(path), "llama-server") is None
+
+
 def test_tensor_split_requires_two_matching_cuda_or_rocm_devices():
     cuda = {"gpu": {"devices": [
         {"backend": "cuda"}, {"backend": "cuda"},
@@ -60,11 +70,18 @@ def test_tensor_split_requires_two_matching_cuda_or_rocm_devices():
     assert available_gpu_split_modes(rocm, "vulkan") == ("layer",)
 
 
+def test_vulkan_supports_single_gpu_but_not_tensor_split():
+    vulkan = {"gpu": {"devices": [
+        {"backend": "vulkan"}, {"backend": "vulkan"},
+    ]}}
+    assert available_gpu_split_modes(vulkan, "vulkan") == ("single", "layer")
+
+
 def test_tensor_split_rejects_single_or_unrecorded_devices():
     single = {"gpu": {"devices": [{"backend": "rocm"}]}}
     legacy = {"gpu": {"devices": [{"name": "AMD GPU"}, {"name": "AMD GPU"}]}}
 
-    assert available_gpu_split_modes(single, "rocm") == ("layer",)
+    assert available_gpu_split_modes(single, "rocm") == ("single", "layer")
     assert available_gpu_split_modes(legacy, "rocm") == ("layer",)
     assert available_gpu_split_modes({}, "cuda") == ("layer",)
 

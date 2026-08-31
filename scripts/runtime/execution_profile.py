@@ -7,7 +7,7 @@ from scripts.runtime import config
 
 
 ENGINE_BACKED_STAGES = {
-    "llm", "conv", "llamabench", "llamabenchconc", "emb", "mcq", "math", "reasoning",
+    "llm", "llm_cached", "conv", "llamabench", "llamabenchconc", "emb", "mcq", "math", "reasoning",
     "code", "tool", "conc_tool", "conc_chat", "sustained",
 }
 

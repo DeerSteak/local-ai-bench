@@ -65,6 +65,25 @@ def test_existing_runner_stage_and_independent_export_reuse_the_journal_job(tmp_
     assert export_llm_section(path, plan.job_id)["model"]["2K"]["tps_mean"] == 50
 
 
+def test_journal_preserves_full_cached_prefill_basis_and_residual_engine_count(tmp_path):
+    path = tmp_path / "events.sqlite3"
+    plan = make_plan()
+    cached = GenerationMeasurement(
+        client_ttft_sec=0.1, generated_tokens=100, tokens_per_sec=50,
+        client_wall_sec=2.1, decode_sec=2.0, server_prompt_sec=0.125,
+        prompt_tokens=5, prefill_tokens=32768,
+    )
+    stage = LLMEventStage(path, plan, lambda _: None)
+    try:
+        stage.record_case(MODEL, 32768, "32K", [cached], "ok", 1)
+    finally:
+        stage.close()
+    result = export_llm_section(path, plan.job_id)["model"]["32K"]
+    assert result["prefill_tps_mean"] == 262144.0
+    assert result["valid_samples"][0]["prompt_tokens"] == 5
+    assert result["valid_samples"][0]["prefill_tokens"] == 32768
+
+
 def test_case_telemetry_survives_journal_reopen_and_projection(tmp_path):
     memory = {
         "windows": [{"name": "measured", "sample_count": 1}],
@@ -348,6 +367,28 @@ def test_recovered_model_state_can_be_replaced_without_duplicate_start_transitio
         assert runner.export()["model"]["timed_out"] == "8K"
     finally:
         runner.close()
+
+
+def test_failed_model_state_preserves_unexpected_error_projection(tmp_path):
+    path = tmp_path / "events.sqlite3"
+    plan = make_plan()
+    stage = LLMEventStage(path, plan, lambda _: None)
+    try:
+        stage.record_model_state(MODEL, "failed", {
+            "error": "llamacpp_generate exceeded 300s wall-clock timeout",
+            "error_type": "EngineTimeout",
+            "unexpected_error": True,
+        })
+        assert stage.export()["model"] == {
+            "error": "llamacpp_generate exceeded 300s wall-clock timeout",
+            "error_type": "EngineTimeout",
+            "unexpected_error": True,
+        }
+        projection = stage.store.rebuild(plan.job_id)
+        model_state = next(iter(projection["cases"].values()))
+        assert model_state["state"] == "failed"
+    finally:
+        stage.close()
 
 
 def test_journal_export_preserves_schema_three_golden_llm_fields(tmp_path):

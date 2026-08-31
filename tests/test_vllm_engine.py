@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 from typing import cast
 
@@ -387,6 +388,11 @@ def test_no_runtime_raises_rather_than_building_a_broken_command(engine):
         engine.server_command("org/m", 1024)
 
 
+def test_generation_server_enables_prefix_caching_but_embedding_does_not(engine):
+    assert "--enable-prefix-caching" in engine.server_command("org/m", 1024)
+    assert "--enable-prefix-caching" not in engine.server_command("org/m", 1024, embedding=True)
+
+
 # ── generate ──
 
 def test_generate_counts_tokens_from_streamed_usage(engine, monkeypatch):
@@ -420,6 +426,37 @@ def test_generate_uses_a_fresh_cache_salt_per_request(engine, monkeypatch):
     monkeypatch.setattr(VllmEngine, "_post", post)
     engine.generate(TEST_TAG, "same prompt", timeout=30)
     engine.generate(TEST_TAG, "same prompt", timeout=30)
+    assert len(set(salts)) == 2
+
+
+def test_generate_reuses_cache_salt_for_cached_requests(engine, monkeypatch):
+    salts = []
+
+    def post(self, path, payload, timeout):
+        salts.append(payload["cache_salt"])
+        return _Response([_text_chunk("x", finish="stop"),
+                          {"choices": [], "usage": {"completion_tokens": 1}}])
+
+    monkeypatch.setattr(VllmEngine, "_post", post)
+    engine.generate(TEST_TAG, "same prompt", timeout=30, cache_prompt=True)
+    engine.generate(TEST_TAG, "same prompt", timeout=30, cache_prompt=True)
+    assert salts == [TEST_TAG, TEST_TAG]
+
+
+def test_chat_requests_use_fresh_cache_salts(engine, monkeypatch):
+    salts = []
+
+    def post(self, path, payload, timeout):
+        salts.append(payload["cache_salt"])
+        return _Response([_text_chunk("x", finish="stop"),
+                          {"choices": [], "usage": {"completion_tokens": 1}}])
+
+    monkeypatch.setattr(VllmEngine, "_post", post)
+    for _ in range(2):
+        engine._chat_request(
+            TEST_TAG, [{"role": "user", "content": "same"}], None,
+            time.perf_counter() + 30, 16, False, False,
+        )
     assert len(set(salts)) == 2
 
 

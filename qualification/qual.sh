@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$0")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT"
 
 platform_slug=${QUALIFICATION_PLATFORM:-$(hostname | tr -d '\n' | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9._-' '-')}
 model_tag=${QUALIFICATION_MODEL:-qwen3.5:4b-q4_K_M}
@@ -69,12 +71,12 @@ run_selected_interval() {
     1.0) run_interval 1.0 1s ;;
     0.5) run_interval 0.5 0.5s ;;
     0.25) run_interval 0.25 0.25s ;;
-    *) echo "Usage: bash qual.sh [1.0|0.5|0.25]" >&2; return 2 ;;
+    *) echo "Usage: bash qualification/qual.sh [1.0|0.5|0.25]" >&2; return 2 ;;
   esac
 }
 
 if (( $# > 1 )); then
-  echo "Usage: bash qual.sh [1.0|0.5|0.25]" >&2
+  echo "Usage: bash qualification/qual.sh [1.0|0.5|0.25]" >&2
   exit 2
 fi
 if (( $# == 1 )); then

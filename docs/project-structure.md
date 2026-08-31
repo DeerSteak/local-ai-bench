@@ -21,15 +21,12 @@
 | `Launch Local AI Bench Dashboard.desktop` | Double-clickable Linux desktop launcher that builds, serves, and opens the dashboard |
 | `Launch Local AI Bench Dashboard.bat` | Double-clickable Windows launcher that builds, serves, and opens the dashboard |
 | `run_bench.sh` | Activates the venv; auto-selects GUI/terminal with no arguments or forwards benchmark arguments directly on Linux / macOS |
-| `run_qualification.sh` / `run_qualification.bat` | Thin platform launchers that run normal setup and the normal smallest-model benchmark |
-| `run_telemetry_trials.sh` | Resumable alternating telemetry-off/on qualification runner for memory and power on Linux / macOS |
-| `run_sustained_qualification_linux.sh` | Repeated ten-minute sustained-load evidence wrapper for Linux small systems |
-| `run_temperature_qualification_linux.sh` | Unattended Linux temperature observer-effect matrix across latency/sustained screens and all candidate intervals |
 | `run_bench.bat` | Windows equivalent of `run_bench.sh` |
-| `launch_dashboard.sh` | Builds and serves the dashboard on Linux / macOS, optionally stages selected `--result` files, and opens the browser automatically |
-| `launch_dashboard.bat` | Windows equivalent of `launch_dashboard.sh` |
+| `launch_dashboard.sh` | Reuses an existing Local AI Bench dashboard server or builds and serves one on Linux / macOS, optionally stages selected `--result` files, and opens the browser automatically |
+| `launch_dashboard.bat` | Windows equivalent of `launch_dashboard.sh`, including existing-server reuse |
 | `tests.sh` | Activates the venv and runs unit/integration tests on Linux / macOS — see [Testing](testing.md) |
 | `tests.bat` | Activates the venv and runs unit/integration tests on Windows — see [Testing](testing.md) |
+| `qualification/` | Platform qualification, telemetry-trial, power, temperature, and sustained-load runners |
 | `scripts/` | Packaged implementation grouped by application, runtime, workloads, results, setup, and release responsibilities |
 | `.githooks/pre-commit` | Version-sync hook — see [Release policy](release-policy.md#version-sync-hook); enable per clone with `git config core.hooksPath .githooks` |
 | `.github/CODEOWNERS` | Default and sensitive-boundary review ownership used by GitHub rulesets |
@@ -74,6 +71,7 @@
 | `results_*.events.sqlite3.local.json` | Owner-only run-local execution paths required to recover isolated image workloads; never portable or bundleable and deleted with the run |
 | `.coveragerc` | Coverage config for the test suite — excludes live-server/subprocess code marked `# pragma: no cover`, so `pytest --cov` reports coverage of the unit-testable code only |
 | `.llm_crash_cache.json` | Records LLM models that crashed the active engine's runner repeatedly during the single-shot test, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry. Keyed `{engine_name: {tag: detail}}`: a crash is scoped to the engine that produced it, since the same catalog tag is a different runtime and a different weight file per engine (see [Engines](engines.md)) |
+| `.llm_cached_crash_cache.json` | Same crash isolation for the cached prefill/generation stage |
 | `.conv_crash_cache.json` | Same as above, for the conversation test |
 | `.embed_crash_cache.json` | Records model/document combos that crashed the active engine's runner repeatedly, so future runs skip retrying a deterministic crash — created automatically, safe to delete to retry. Same per-engine keying as `.llm_crash_cache.json` |
 | `.mcq_crash_cache.json` | Same as above, for the MCQ accuracy test. Also records which question-bank version (a short content hash) the crash happened against, so a crash recorded on an old/smaller bank doesn't skip a model forever once the bank changes — see [bank versioning](workloads.md#bank-versioning) |
@@ -97,7 +95,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `app/benchmark_frontend.py` | Interactive installed-model/test picker; launches `app/benchmark.py` with explicit public CLI flags |
 | `app/benchmark_gui.py` | Tk application bootstrap, shared run state, controller wiring, and cross-screen orchestration |
 | `app/macos_sudo_askpass.sh` | Native macOS password prompt used only to authorize opt-in GUI power telemetry before launch |
-| `app/benchmark_gui_screens/` | Dedicated Configuration, Run Log, Result History, Engine Management, and live progress screens with screen-specific action controllers |
+| `app/benchmark_gui_screens/` | Dedicated Configuration, Run Log, Result History, Engine Management, and live progress screens with screen-specific action controllers; Result History identifies the recorded engine, execution backend, and MTP pass |
 | `app/benchmark_gui_support.py` | Pure GUI configuration, planning, and progress-state helpers |
 | `app/benchmark_gui_process.py` / `app/benchmark_gui_resources.py` | GUI subprocess coordination plus CPU, RAM, GPU, and VRAM monitoring |
 | `app/model_import_dialog.py` | Non-blocking Hugging Face custom-model inspection and import dialog |
@@ -124,6 +122,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `results/support_bundle.py` | Allowlisted, deterministic support diagnostics with private-path and credential redaction |
 | `app/benchmark_launcher.py` | Automatic GUI/terminal benchmark frontend dispatcher |
 | `app/workspace_server.py` | Authenticated loopback static dashboard and bounded workspace-export endpoint |
+| `app/dashboard_reuse.py` | Verifies an existing Local AI Bench workspace server and reopens it with the newly staged result selection |
 | `results/run_plan.py` / `results/canonical_json.py` | Immutable execution plans plus the single canonical JSON and digest contract for durable identities |
 | `workloads/methodology_profile.py` | Resolves the neutral profile and records selected workloads' effective runtime settings |
 | `results/event_store.py` | Transactional append-only SQLite job events, immutable plan loading, digest verification, and rebuildable projections |
@@ -155,6 +154,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `runtime/llamacpp_tools.py` | System-first discovery shared by setup, llama-server, llama-bench, and llama-batched-bench |
 | `runtime/config.py` | Shared constants (URLs, paths, timeouts, run counts) |
 | `runtime/sampling.py` | Versioned semantic sampler profiles and exact llama.cpp/vLLM payload mappings |
+| `runtime/engine_identity.py` | Stable engine IDs and the adapter/model-family mapping shared by native and Vulkan llama.cpp |
 | `runtime/model_identity.py` | Filesystem-safe normalization shared by engine and setup model paths |
 | `setup/model_inventory.py` | Installed-model discovery/classification plus narrowly scoped non-catalog llama.cpp folder cleanup |
 | `setup/custom_models.py` | Gitignored engine-specific custom-model provenance registry |
@@ -174,9 +174,9 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `runtime/progress_events.py` | Structured cross-process progress events consumed by the graphical launcher |
 | `runtime/generation_guard.py` / `runtime/failure_handling.py` | Generation-loop detection and consistent unexpected per-model failure records |
 | `runtime/hardware.py` | GPU/system-memory detection, shared-memory classification, and model-fit estimates |
-| `runtime/engines/base.py`, `runtime/engines/llamacpp.py`, `runtime/engines/vllm.py` | Engine interface and engine-specific lifecycle/transport clients, see [Engines](engines.md) |
+| `runtime/engines/base.py`, `runtime/engines/llamacpp.py`, `runtime/engines/llamacpp_vulkan.py`, `runtime/engines/vllm.py` | Engine interface, shared llama.cpp adapter, Vulkan runtime identity, and vLLM lifecycle/transport client, see [Engines](engines.md) |
 | `runtime/engines/chat_flow.py` | Engine-neutral bounded chat finalization and measurement aggregation |
-| `workloads/llm_prefill_benchmark.py` | Single-shot LLM test |
+| `workloads/llm_prefill_benchmark.py` | Uncached and cached prefill/generation tests |
 | `results/llm_event_stage.py` | Journal-owned generation/conversation/concurrency samples, stage/model-family isolation, and compatible JSON projections |
 | `workloads/conversation_selection.py` | Pure conversation preflight selection shared by the coordinator tests and child runner |
 | `results/native_bench_event_stage.py` | Journal-owned streamed llama-bench rows, partial markers, repetition counts, and compatible projection |
@@ -202,6 +202,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `setup/setup_console.py` | Terminal status formatting, hyperlinks, and confirmation prompts |
 | `setup/setup_discovery.py` | Read-only host identity and memory discovery for setup |
 | `setup/llamacpp_install.py` | llama.cpp tool discovery and platform-specific installation execution |
+| `setup/vulkan_install.py` | Linux Vulkan build-prerequisite discovery, package planning, and execution |
 | `setup/hf_credentials.py` | Hugging Face token discovery, prompting, caching, and optional persistence |
 | `setup/comfyui_assets.py` | Selected checkpoint, encoder, and VAE provisioning for ComfyUI |
 | `setup/comfyui_runtime.py` | ComfyUI Python requirements, managed model paths, and accelerator-specific PyTorch preparation |
@@ -233,7 +234,7 @@ results/
 
 Each auxiliary name is derived from the main results filename's stem by swapping `results_` for `images_` or `answers_<test>_` (`mcq`, `math`, `reasoning`, `code`, or `tool`). If the stem does not begin with `results_`, the auxiliary prefix is prepended instead. With the default output, this preserves the hostname and timestamp across the set. If `--out` places the main JSON elsewhere, its journal, local context, images, and answer sidecars remain beside it. See [CLI Reference](cli-reference.md).
 
-`--engine all` (see [Engines](engines.md)) appends the engine name to the results filename's stem for each pass, so a run of the example above would produce `results_..._090000_llamacpp.json` (and one more per additional engine, once a second one is registered) side by side, each tagged internally with `"engine"`.
+`--engine all` (see [Engines](engines.md)) appends the engine name to the results filename's stem for each installed-engine pass, producing files such as `results_..._090000_llamacpp.json`, `results_..._090000_llamacpp-vulkan.json`, and `results_..._090000_vllm.json` side by side, each tagged internally with `"engine"`.
 
 The `answers_*.json` sidecars hold every question's answer for that accuracy test, keyed by model, each with the model's full graded response text and a `correct` flag. They stay outside the main results JSON because raw answers are much larger than summary scores and diagnostics. The main results JSON's own `incorrect` list (per model, per test) is unaffected and still covers only wrong answers.
 
@@ -250,7 +251,7 @@ The main file is checkpointed throughout a run, so completed stages and models s
 | `profile` | Host description, OS/release, architecture, Python version, RAM, UTC timestamp, effective inference backend (`cuda`, `rocm`, `metal`, `xpu`, `vulkan`, or `cpu`), and separately detected `hardware_backend` |
 | `bank_versions` | Content hashes for the MCQ, math, reasoning, code, and tool banks |
 | `sample_ids` | Exact per-bank IDs only when `--sample` was used |
-| `llm`, `llm_conversation` | Per-model context/checkpoint measurements, optional same-timeline memory/power evidence, and any timeout, crash, slow-TPS, or skip markers |
+| `llm`, `llm_cached`, `llm_conversation` | Per-model context/checkpoint measurements, optional same-timeline memory/power evidence, and any timeout, crash, slow-TPS, or skip markers |
 | `accuracy_settings` | Effective accuracy timeout, completion-token budget, and first-pass fraction used by the run |
 | `mcq`, `math`, `reasoning`, `code`, `tool` | Per-model overall/category scores plus nudge, exhausted-budget, timeout, and likely-loop diagnostics when present; reasoning also includes `by_difficulty` |
 | `embeddings`, `images` | Per-model throughput or per-resolution generation-time measurements |

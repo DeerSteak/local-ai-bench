@@ -25,6 +25,7 @@ from scripts.workloads.conversation_selection import conv_skip_entry
 from scripts.runtime.shared import Shared
 from scripts.runtime.mtp import active_mtp_configurations
 from scripts.runtime.engines import get_engine, engine_names as registered_engine_names
+from scripts.runtime.engine_identity import engine_family
 from scripts.runtime.engines.vllm import VllmEngine
 from scripts.results.event_store import EventStore
 from scripts.workloads.llm_prefill_benchmark import LLMPrefillBenchmark
@@ -200,7 +201,7 @@ def format_resolved_plan(engine: str, tests: list[str], models: dict[str, list[d
         family = family_for.get(test, "llm")
         labels = [label for model in models.get(family, [])
                   if (label := str(model.get("label") or model.get("short") or ""))]
-        if test == "llm":
+        if test in {"llm", "llm_cached"}:
             cases = f"contexts {', '.join(map(str, config.CONTEXT_LENGTHS))}"
         elif test == "conv":
             from scripts.workloads.llm_conversation_benchmark import LLMConversationBenchmark
@@ -471,6 +472,12 @@ def preflight_result(preflight, power_availability, temperature_availability) ->
     }
 
 
+def all_preflight_models_excluded(models: list[dict], preflight) -> bool:
+    return bool(models) and not any(
+        model.get("tag") in preflight.runnable_tags for model in models
+    )
+
+
 def apply_preflight_plan(plan: RunPlan, preflight, *, engine_name: str,
                          tests: list[str], stage_order: list[str],
                          llm_models: list[dict], concurrency_models: list[dict],
@@ -533,8 +540,8 @@ def validate_engine_scopes(tests: list[str], engine_name: str, llm_patterns: lis
 def apply_variant_selections(engine_scopes: list[dict], selectors: list[str] | None,
                              engine_names: list[str], tests: list[str]) -> None:
     selections = normalize_variant_selectors(selectors, LLM_MODELS)
-    if selections and engine_names != ["llamacpp"]:
-        raise ValueError("--model-variant requires --engine llamacpp")
+    if selections and any(engine_family(name) != "llamacpp" for name in engine_names):
+        raise ValueError("--model-variant requires only llama.cpp engines")
     for scope in engine_scopes:
         scope["llm_models"] = select_model_variants(scope["llm_models"], selections)
         if selections and scope.get("inventory_loaded"):
@@ -666,18 +673,31 @@ def expand_tests(tests: list[str]) -> list[str]:
     return expanded
 
 
-def resolve_engine_names(engine: str, available: list[str]) -> list[str]:
+def resolve_engine_names(engine: str, available: list[str], *,
+                         installed: list[str] | None = None) -> list[str]:
     """Resolve --engine into an ordered engine-name list ("all", or comma-separated),
     always in registry order so a multi-engine run is deterministic."""
     if engine == "all":
-        return list(available)
+        selected = list(available if installed is None else installed)
+        if not selected:
+            raise ValueError("No installed inference engines were found — run setup first")
+        return selected
     requested = [name.strip() for name in engine.split(",") if name.strip()]
     unknown = [name for name in requested if name not in available]
     if unknown or not requested:
         raise ValueError(
             f"Unknown inference engine {', '.join(unknown) or engine!r} — "
             f"known engines: {', '.join(available)}, or 'all'")
+    unavailable = [name for name in requested if installed is not None and name not in installed]
+    if unavailable:
+        raise ValueError(
+            f"Inference engine {', '.join(unavailable)} is not installed — run setup first"
+        )
     return [name for name in available if name in requested]
+
+
+def engines_requiring_install_probe(engine: str, available: list[str]) -> list[str]:
+    return available if engine == "all" else []
 
 
 def add_model_selection_arguments(parser: argparse.ArgumentParser) -> None:
@@ -740,7 +760,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     parser.add_argument(
         "--tests", nargs="+",
         choices=TEST_CHOICES,
-        default=["llm", "conv", "emb", "mcq", "math", "reasoning", "code", "tool", "img"],
+        default=["llm", "llm_cached", "conv", "emb", "mcq", "math", "reasoning", "code", "tool", "img"],
         help="Which benchmarks to run (default: all except the concurrency "
              "tests and 'llamabench'). 'acc' is shorthand for every accuracy-style test "
              "('mcq', 'math', 'reasoning', 'code', and 'tool'). 'conc_tool' and 'conc_chat' are "
@@ -857,6 +877,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "(default: false).",
     )
     parser.add_argument(
+        "--llamacpp-no-host", action="store_true",
+        help="Bypass llama.cpp host model buffers when GPU offload is active. This can reduce "
+             "system-memory use but may affect backend compatibility or performance (default: false).",
+    )
+    parser.add_argument(
         "--maxtier", type=str, default=None,
         choices=TIER_CHOICES,
         help="Cap LLM models (single-shot and conversation tests) at this size tier "
@@ -927,12 +952,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     parser.add_argument(
         "--engine", type=str, default=_engines[0],
         help=f"Inference engine to benchmark against (default: {_engines[0]}). "
-             "'all' runs the full --tests suite once per registered engine, back "
+             "'all' runs the full --tests suite once per installed engine, back "
              "to back (sorted order), writing a separate results file for each "
              "(engine name appended to the filename) so they can be compared "
-             "directly. Only llama.cpp is registered today, so this is a no-op "
-             "until a second engine (e.g. MLX) is added — kept here so scripts/"
-             "docs referencing --engine don't need to change when one is.",
+             "directly. Registered choices are: " + ", ".join(_engines) + ".",
     )
     args = parser.parse_args()
     if args.power_telemetry and not args.memory_telemetry:
@@ -940,6 +963,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
     apply_quick_preset(args)
     config.LLAMACPP_GPU_SPLIT_MODE = args.gpu_split_mode
     config.LLAMACPP_NO_REPACK = args.llamacpp_no_repack
+    config.LLAMACPP_NO_HOST = args.llamacpp_no_host
     config.RETRY_CRASHED_MODELS = args.retry_crashed_models
     if args.offline:
         apply_offline_mode()
@@ -973,7 +997,13 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         managed_dir=config.COMFYUI_DIR,
     ) or config.COMFYUI_DIR
     try:
-        run_engine_names = resolve_engine_names(args.engine, _engines)
+        installed_engines = None
+        probe_names = engines_requiring_install_probe(args.engine, _engines)
+        if probe_names:
+            installed_engines = [name for name in probe_names if get_engine(name).is_installed()]
+        run_engine_names = resolve_engine_names(
+            args.engine, _engines, installed=installed_engines,
+        )
     except ValueError as exc:
         parser.error(str(exc))
     if args.list_models:
@@ -1148,7 +1178,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             continue
 
         engine_backed_tests = [
-            t for t in ("llm", "conv", "llamabench", "llamabenchconc", "emb", "mcq", "math", "reasoning", "code", "tool",
+            t for t in ("llm", "llm_cached", "conv", "llamabench", "llamabenchconc", "emb", "mcq", "math", "reasoning", "code", "tool",
                         "conc_tool", "conc_chat", "sustained") if t in tests
         ]
         profile = execution_profiles[engine_name]
@@ -1273,6 +1303,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "retry_crashed_models": args.retry_crashed_models,
             "gpu_split_mode": args.gpu_split_mode,
             "llamacpp_no_repack": args.llamacpp_no_repack,
+            "llamacpp_no_host": args.llamacpp_no_host,
             "offline": args.offline,
             "mtp_enabled": mtp_enabled,
             "mtp_configurations": methodology.get("mtp_configurations", {}),
@@ -1389,7 +1420,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 if not vllm_bench_path:
                     raise ValueError("cannot identify vLLM bench runtime for resume")
                 extra_resume_runtimes["vllm-bench"] = Path(vllm_bench_path).resolve()
-            if journal_stages & {"llm", "conv", "llamabench", "llamabenchconc", "vllmbench", "sustained", *ACCURACY_TESTS}:
+            if journal_stages & {"llm", "llm_cached", "conv", "llamabench", "llamabenchconc", "vllmbench", "sustained", *ACCURACY_TESTS}:
                 model_families.append("llm")
             if journal_stages & {"conc_tool", "conc_chat"}:
                 model_families.append("concurrency")
@@ -1405,7 +1436,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             resume_identity_options = {
                 "model_families": model_families,
                 "include_engine_runtime": bool(journal_stages & {
-                    "llm", "conv", "vllmbench", "sustained", "emb", "conc_tool", "conc_chat",
+                    "llm", "llm_cached", "conv", "vllmbench", "sustained", "emb", "conc_tool", "conc_chat",
                     *ACCURACY_TESTS,
                 }),
                 "extra_runtimes": extra_resume_runtimes,
@@ -1440,6 +1471,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             ),
             "sample_ids": {},  # populated only when --sample is used
             "llm":             {},
+            "llm_cached":      {},
             "llm_conversation": {},
             "embeddings":      {},
             "images":          {},
@@ -1467,7 +1499,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         def update_telemetry_summaries():
             sections = {
                 key: results.get(key) for key in (
-                    "llm", "llm_conversation", "embeddings", "images", "mcq", "math",
+                    "llm", "llm_cached", "llm_conversation", "embeddings", "images", "mcq", "math",
                     "reasoning", "code", "tool", "concurrency_tool", "concurrency_chat",
                     "llamabench", "llamabenchconc", "vllmbench",
                     "sustained",
@@ -1538,6 +1570,11 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     plan, engine, **resume_identity_options,
                 )
             _checkpoint("runtime preflight complete")
+            if all_preflight_models_excluded(preflight_models, preflight):
+                raise RuntimeError(
+                    "Runtime preflight excluded every selected text model; "
+                    "refusing to report an empty accelerator pass as complete"
+                )
         context = RunContext(
             plan, RunPaths(Path(out_path), comfyui_dir), engine, store, lifecycle,
         )
@@ -1563,6 +1600,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             power_availability=power_availability,
             temperature_availability=temperature_availability,
         )
+        run_llm_cached = stage_runner("llm_cached", make_save("llm_cached"))
         run_conversation = stage_runner("conv", make_save("llm_conversation", "conv"))
         run_sustained = stage_runner("sustained", make_save("sustained"))
 
@@ -1619,6 +1657,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
         registry = [
             StageDefinition("llm", "llm", len(llm_models), run_llm,
+                            prepare=release_port_for_runner),
+            StageDefinition("llm_cached", "llm_cached", len(llm_models), run_llm_cached,
                             prepare=release_port_for_runner),
             StageDefinition("conv", "llm_conversation", len(llm_models), run_conversation,
                             requires_engine=False, prepare=release_port_for_runner),

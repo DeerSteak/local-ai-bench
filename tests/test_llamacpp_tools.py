@@ -174,3 +174,21 @@ def test_valid_configured_tool_wins_over_vendored_copy(tmp_path, monkeypatch):
         "llama-server", vendored_dir=vendored.parent,
         platform_name="Linux", which_fn=lambda _: None,
     ) == str(configured)
+
+
+def test_vulkan_tool_uses_only_its_managed_or_configured_runtime(tmp_path, monkeypatch):
+    configured = tmp_path / "vulkan" / "llama-server"
+    configured.parent.mkdir()
+    configured.touch()
+    monkeypatch.setattr(
+        "scripts.runtime.llamacpp_tools.load_setup_config",
+        lambda _path: {
+            "schema_version": 4,
+            "llama_cpp": {"llama-server": "/native/llama-server"},
+            "llama_cpp_vulkan": {"llama-server": str(configured)},
+        },
+    )
+    assert find_llamacpp_tool(
+        "llama-server", vendored_dir=tmp_path / "missing", platform_name="Linux",
+        which_fn=lambda _name: "/path/llama-server", engine_name="llamacpp-vulkan",
+    ) == str(configured)

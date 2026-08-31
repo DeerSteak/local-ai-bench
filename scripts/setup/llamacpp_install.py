@@ -48,7 +48,8 @@ def qualification_backend_error(binary: str | None, required_backend: str | None
 
 
 def install_windows(runtime_dir: Path, download_dir: Path, max_cuda_version: str | None,
-                    *, intel_xpu: bool = False, info, warn, fail, ok,
+                    *, intel_xpu: bool = False, vulkan: bool = False,
+                    info, warn, fail, ok,
                     release_fetcher=None) -> bool:
     info("Fetching latest llama.cpp release info ...")
     try:
@@ -58,7 +59,7 @@ def install_windows(runtime_dir: Path, download_dir: Path, max_cuda_version: str
         fail(f"Could not fetch llama.cpp release info: {exc}")
         return False
     selected = select_windows_llamacpp_release(
-        release, max_cuda_version, intel_xpu=intel_xpu,
+        release, max_cuda_version, intel_xpu=intel_xpu, vulkan=vulkan,
     )
     if selected is None:
         backend = "SYCL" if intel_xpu else "Vulkan"
@@ -67,7 +68,7 @@ def install_windows(runtime_dir: Path, download_dir: Path, max_cuda_version: str
     label, assets = selected.label, selected.assets
     if runtime_dir.is_dir():
         result = update_windows_llamacpp(
-            runtime_dir, max_cuda_version, intel_xpu=intel_xpu,
+            runtime_dir, max_cuda_version, intel_xpu=intel_xpu, vulkan=vulkan,
             release_fetcher=lambda: release,
         )
         if result.success:
@@ -111,9 +112,12 @@ def install_windows(runtime_dir: Path, download_dir: Path, max_cuda_version: str
 def install(runtime_dir: Path, download_dir: Path, platform_name: str, *,
             nvidia: bool, rocm: bool, intel_xpu: bool, compute_capability: str | None,
             max_cuda_version: str | None, info, warn, fail, ok,
-            version: str | None = None) -> bool:
+            version: str | None = None, vulkan: bool = False) -> bool:
     release_fetcher = (lambda: fetch_llamacpp_release_tag(version)) if version else None
     if platform_name == "Darwin":
+        if vulkan:
+            fail("The managed Vulkan llama.cpp runtime is available only on Windows and Linux")
+            return False
         label = version or "latest"
         info(f"Downloading the {label} official llama.cpp macOS release ...")
         if release_fetcher:
@@ -128,7 +132,7 @@ def install(runtime_dir: Path, download_dir: Path, platform_name: str, *,
     if platform_name == "Windows":
         return install_windows(
             runtime_dir, download_dir, max_cuda_version,
-            intel_xpu=intel_xpu,
+            intel_xpu=intel_xpu, vulkan=vulkan,
             info=info, warn=warn, fail=fail, ok=ok, release_fetcher=release_fetcher,
         )
     if platform_name != "Linux":
@@ -139,7 +143,11 @@ def install(runtime_dir: Path, download_dir: Path, platform_name: str, *,
     flags = []
     build_env = None
     backend = "cpu"
-    if nvidia:
+    if vulkan:
+        backend = "vulkan"
+        info("Building with Vulkan support ...")
+        flags.append("-DGGML_VULKAN=ON")
+    elif nvidia:
         backend = "cuda"
         nvcc = find_nvcc()
         if nvcc:

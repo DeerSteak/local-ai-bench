@@ -1,6 +1,7 @@
 """Authoritative metadata for benchmark stages and their result sections."""
 
 from dataclasses import dataclass
+from scripts.runtime.engine_identity import engine_family
 
 
 @dataclass(frozen=True)
@@ -20,8 +21,10 @@ class StageSpec:
 
 
 STAGE_SPECS = (
-    StageSpec("llm", "Single-shot LLM", "llm", "llm", "llm", "llm", default_enabled=True,
+    StageSpec("llm", "Uncached Prefill / Generation", "llm", "llm", "llm", "llm", default_enabled=True,
               journal_owned=True, selected_retry=True),
+    StageSpec("llm_cached", "Cached Prefill / Generation", "llm_cached", "llm", "llm", "llm",
+              default_enabled=True, journal_owned=True, selected_retry=True),
     StageSpec("conv", "Conversation", "llm_conversation", "llm", "llm", "llm",
               default_enabled=True, journal_owned=True, selected_retry=True),
     StageSpec("llamabench", "llama-bench throughput", "llamabench", "llm", "llm", "llm", menu_label="llama-bench (throughput + concurrency)", native_engine="llamacpp", journal_owned=True),
@@ -68,5 +71,5 @@ def engine_incompatible_tests(tests: list[str], engine_name: str) -> list[str]:
     return [
         key for key in tests
         if (spec := STAGE_BY_KEY.get(key)) is not None
-        and spec.native_engine is not None and spec.native_engine != engine_name
+        and spec.native_engine is not None and spec.native_engine != engine_family(engine_name)
     ]

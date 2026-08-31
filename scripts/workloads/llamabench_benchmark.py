@@ -44,6 +44,11 @@ class LlamaBenchBenchmark:
             platform_name=platform.system(), which_fn=shutil.which,
         )
 
+    @classmethod
+    def find_engine_binary(cls, engine) -> str | None:
+        return engine.tool_path("llama-bench") \
+            if isinstance(engine, LlamaCppEngine) else cls.find_binary()
+
     @staticmethod
     def _base_command(binary: str, model_path: Path, batch_size: int, ubatch_size: int,
                       reps: int, ngl: int) -> list[str]:
@@ -57,6 +62,7 @@ class LlamaBenchBenchmark:
             "-b", str(batch_size),
             "-ub", str(ubatch_size),
             "-ngl", str(ngl),
+            *LlamaCppEngine.no_host_args(cpu_only=ngl == 0, value_required=True),
             *LlamaCppEngine.gpu_split_args(cpu_only=ngl == 0),
             "--cache-type-k", cache_type,
             "--cache-type-v", cache_type,
@@ -224,7 +230,7 @@ class LlamaBenchBenchmark:
                 journal.finish()
             return results
 
-        binary = self.find_binary()
+        binary = self.find_engine_binary(engine)
         if binary is None:
             Shared.err("llama-bench not found — run setup.sh/setup.bat to install it, or build it "
                        "yourself: https://github.com/ggml-org/llama.cpp")
@@ -258,7 +264,10 @@ class LlamaBenchBenchmark:
                     continue
 
                 prefill_entries, decode_entries = [], []
-                requested_cases = len(config.LLAMABENCH_PP) * (1 + len(config.LLAMABENCH_TG))
+                model_pp = Shared.supported_prompt_sizes(
+                    config.LLAMABENCH_PP, engine.max_context_length(tag),
+                )
+                requested_cases = len(model_pp) * (1 + len(config.LLAMABENCH_TG))
                 model_result: LlamaBenchModelResult = {
                     "prefill_entries": prefill_entries, "decode_entries": decode_entries,
                     "requested_cases": requested_cases, "completed_cases": 0,
@@ -270,10 +279,10 @@ class LlamaBenchBenchmark:
                 stopped = False
 
                 sweeps = (journal.pending_sweeps(
-                    model, config.LLAMABENCH_PP, config.LLAMABENCH_TG,
+                    model, model_pp, config.LLAMABENCH_TG,
                 ) if journal else [
-                    ("prefill", config.LLAMABENCH_PP, []),
-                    ("decode", config.LLAMABENCH_PP, config.LLAMABENCH_TG),
+                    ("prefill", model_pp, []),
+                    ("decode", model_pp, config.LLAMABENCH_TG),
                 ])
                 for sweep, pending_pp, pending_tg in sweeps:
                     wait_if_paused()
@@ -343,7 +352,7 @@ class LlamaBenchBenchmark:
                 entry = unexpected_model_failure(label, exc)
                 results.setdefault(short, {}).update(entry)
                 if journal:
-                    journal.record_model_state(model, "crashed", entry)
+                    journal.record_model_state(model, "failed", entry)
             finally:
                 if save_fn:
                     save_fn(journal.export() if journal else results)

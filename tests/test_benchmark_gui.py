@@ -24,12 +24,13 @@ from scripts.app.benchmark_gui import (
     effective_gui_options, estimate_remaining_seconds, format_run_outcome,
     gui_option_control_value,
     gpu_split_mode_availability_error, gpu_split_mode_labels, gpu_split_mode_value,
-    history_row_height,
+    format_gpu_inventory, history_row_height,
     launch_controlled_process, open_path_command, parse_progress_line,
     normalize_gui_option_values, prepare_benchmark_launch, restored_tg_tokens,
     pending_runtime_profiles,
     process_completion_state, resolve_engine_selection,
     resolve_engine_names,
+    configured_vram_total,
     selected_catalog_models,
     parse_gpu_process_memory, parse_gpu_usage, plan_preview_sections,
     query_gpu_process_memory, query_gpu_usage,
@@ -124,6 +125,16 @@ def test_split_modes_use_runtime_backend_intersection_and_cpu_constraint():
         setup, ["llamacpp"], pending_runtime_profiles(["llamacpp"]),
         cpu_only=False,
     ) == ("layer",)
+
+
+def test_vulkan_runtime_exposes_single_gpu_without_tensor_mode():
+    setup = {"gpu": {"devices": [
+        {"backend": "vulkan"}, {"backend": "vulkan"},
+    ]}}
+    profiles = {"llamacpp": {"runtime_backend": "vulkan"}}
+    assert split_modes_for_runtime_profiles(
+        setup, ["llamacpp"], profiles, cpu_only=False,
+    ) == ("single", "layer")
 
 
 def test_split_mode_capability_is_unknown_until_selected_runtime_backends_resolve():
@@ -854,10 +865,24 @@ def test_discovery_report_summarizes_readiness_without_mutation():
         comfyui_dir=None, inventory=inventory, free_storage_gb=120.5,
     )
     assert report["system"] == "Darwin arm64 · 64.0 GB RAM · metal"
+    assert report["gpus"] == "Not recorded"
     assert report["models"] == "1 LLM, 1 custom LLM, 1 embedding, 0 image"
     assert report["runtime"] == "llama-server: found, llama-bench: missing"
     assert report["storage"].endswith("120.5 GB free")
     assert report["issues"] == []
+
+
+def test_discovery_report_enumerates_gpu_type_vram_and_backend():
+    devices = [
+        {"name": "AMD Radeon PRO W7800", "kind": "discrete", "vram_gb": 31.984,
+         "backend": "vulkan"},
+        {"name": "AMD Radeon Graphics", "vram_gb": None, "backend": "vulkan"},
+    ]
+
+    assert format_gpu_inventory(devices) == (
+        "1. AMD Radeon PRO W7800 · Discrete · 32.0 GB VRAM · VULKAN\n"
+        "2. AMD Radeon Graphics · Integrated · VRAM unknown · VULKAN"
+    )
 
 
 def test_discovery_report_identifies_blockers_and_image_runtime_gap():
@@ -1139,6 +1164,10 @@ def test_vram_line_only_applies_to_discrete_memory_devices(monkeypatch):
         {"name": "AMD Radeon Graphics", "vendor": "amd", "vram_gb": 2},
         {"name": "NVIDIA GB10", "vendor": "nvidia", "vram_gb": None},
     ])
+    assert configured_vram_total([
+        {"name": "AMD Radeon Pro W7800", "vendor": "amd", "vram_gb": 32},
+        {"name": "AMD Radeon Graphics", "vendor": "amd", "vram_gb": 4},
+    ]) == 32
 
     monkeypatch.setattr(
         "scripts.runtime.telemetry.query_sampler_vram_usage", lambda: (10.25, 24.0),
@@ -1149,8 +1178,8 @@ def test_vram_line_only_applies_to_discrete_memory_devices(monkeypatch):
         "System RAM": "Unavailable", "GPU": "Unavailable",
     }
     assert resource_usage_rows(
-        None, None, 0, None, None, include_vram=True,
-    )["VRAM"] == "Unavailable"
+        None, None, 0, None, None, include_vram=True, configured_vram_gb=32,
+    )["VRAM"] == "Usage unavailable / 32.0 GB total"
 
 
 def test_workload_preflight_reports_specific_runtime_resolutions():
@@ -1212,6 +1241,7 @@ def test_commercial_presets_cover_named_use_cases_and_filter_unavailable_tests()
     assert set(BENCHMARK_PRESETS) == {
         "Consumer guidance", "Vendor validation", "Neutral comparison", "Platform optimized",
         "Offline / private", "Quick run", "Full run",
+        "Agentic Coding",
         "Role: Orchestrator", "Role: Agent / tool caller", "Role: Coding assistant",
         "Role: Chat assistant", "Role: RAG / retrieval",
     }
@@ -1222,30 +1252,61 @@ def test_commercial_presets_cover_named_use_cases_and_filter_unavailable_tests()
     assert full["force_all"]
 
 
+def test_agentic_coding_preset_resolves_its_complete_measurement_contract():
+    available = {name for name, *_ in TEST_DEFINITIONS}
+    assert resolve_preset("Agentic Coding", available) == {
+        "tests": ["llm", "llm_cached", "tool", "code"],
+        "runs": config.N_RUNS,
+        "max_prompt_tokens": None,
+        "force_all": True,
+        "option_overrides": {
+            "mtp": "both", "memory_telemetry": True, "power_telemetry": True,
+        },
+    }
+
+    defaults = {
+        "tests": {test: False for test in available},
+        "models": {"model": True},
+        "max_prompt_tokens": "8192",
+        "tg_tokens": {128},
+        "options": dict(GUI_OPTION_DEFAULTS, mtp="off", force_all=False,
+                        memory_telemetry=False, power_telemetry=False),
+    }
+    values = preset_control_values("Agentic Coding", available, defaults)
+    assert {test for test, enabled in values["tests"].items() if enabled} == {
+        "llm", "llm_cached", "tool", "code",
+    }
+    assert values["max_prompt_tokens"] == "No cap"
+    assert values["options"]["mtp"] == "both"
+    assert values["options"]["force_all"] is True
+    assert values["options"]["memory_telemetry"] is True
+    assert values["options"]["power_telemetry"] is True
+
+
 def test_role_presets_select_role_relevant_tests_and_depth():
     every_test = {name for name, *_ in TEST_DEFINITIONS}
     orchestrator = resolve_preset("Role: Orchestrator", every_test)
     assert orchestrator == {
-        "tests": ["llm", "conv", "reasoning", "tool", "conc_chat"], "runs": config.N_RUNS,
+        "tests": ["llm", "llm_cached", "conv", "reasoning", "tool", "conc_chat"], "runs": config.N_RUNS,
         "max_prompt_tokens": None, "force_all": False,
     }
     agent = resolve_preset("Role: Agent / tool caller", every_test)
-    assert agent["tests"] == ["llm", "conv", "tool", "code", "conc_tool"]
+    assert agent["tests"] == ["llm", "llm_cached", "conv", "tool", "code", "conc_tool"]
     assert agent["max_prompt_tokens"] == 32768
     coding = resolve_preset("Role: Coding assistant", every_test)
-    assert coding["tests"] == ["llm", "conv", "code", "reasoning"]
+    assert coding["tests"] == ["llm", "llm_cached", "conv", "code", "reasoning"]
     assert coding["max_prompt_tokens"] == 32768
     chat = resolve_preset("Role: Chat assistant", every_test)
-    assert chat["tests"] == ["llm", "conv", "mcq", "reasoning", "conc_chat"]
+    assert chat["tests"] == ["llm", "llm_cached", "conv", "mcq", "reasoning", "conc_chat"]
     assert chat["max_prompt_tokens"] == 8192
     rag = resolve_preset("Role: RAG / retrieval", every_test)
-    assert rag["tests"] == ["llm", "conv", "emb", "mcq"]
+    assert rag["tests"] == ["llm", "llm_cached", "conv", "emb", "mcq"]
     assert rag["max_prompt_tokens"] == 32768
     assert resolve_preset("Role: RAG / retrieval", {"llm", "emb"})["tests"] == ["llm", "emb"]
     assert restored_preset_name({"selected_preset": "Role: Orchestrator"}) == "Role: Orchestrator"
 
 
-def test_named_preset_replaces_the_complete_control_configuration():
+def test_named_preset_changes_run_controls_without_replacing_models():
     defaults = {
         "tests": {"llm": True, "emb": True, "img": True},
         "models": {"small": True}, "engine": "llamacpp",
@@ -1255,6 +1316,7 @@ def test_named_preset_replaces_the_complete_control_configuration():
     values = preset_control_values("Quick run", {"llm", "emb", "img"}, defaults)
     # A preset must not touch the engine selection — see apply_control_values.
     assert "engine" not in values
+    assert "models" not in values
     assert values["tests"] == {"llm": True, "emb": True, "img": False}
     assert values["max_prompt_tokens"] == "8192"
     assert values["options"]["runs"] == 1

@@ -22,7 +22,7 @@ from scripts.results.embedding_event_stage import EmbeddingEventStage, embedding
 from scripts.results.image_event_stage import ImageEventStage
 from scripts.results.local_execution_context import load_local_execution_context
 from scripts.workloads.llm_conversation_benchmark import LLMConversationBenchmark
-from scripts.workloads.llm_prefill_benchmark import LLMPrefillBenchmark
+from scripts.workloads.llm_prefill_benchmark import LLMCachedPrefillBenchmark, LLMPrefillBenchmark
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
 from scripts.workloads.llamabench_concurrency_benchmark import LlamaBenchConcurrencyBenchmark
 from scripts.workloads.sustained_benchmark import SustainedBenchmark
@@ -152,12 +152,21 @@ def load_runner_plan(path, job_id):
         store.close()
 
 
-def execute_llm_job(path, job_id, *, engine_factory=get_engine,
-                    benchmark_factory: Callable[[], Any] = LLMPrefillBenchmark) -> None:
+def llm_benchmark_class(stage_name: str):
+    if stage_name == "llm":
+        return LLMPrefillBenchmark
+    if stage_name == "llm_cached":
+        return LLMCachedPrefillBenchmark
+    raise ValueError(f"unsupported LLM stage: {stage_name}")
+
+
+def execute_llm_job(path, job_id, *, stage_name="llm", engine_factory=get_engine,
+                    benchmark_factory: Callable[[], Any] | None = None) -> None:
     plan = load_runner_plan(path, job_id)
     plan.validate_for_execution()
-    if "llm" not in plan.tests:
+    if stage_name not in plan.tests:
         raise ValueError("runner job does not include the LLM stage")
+    benchmark_factory = benchmark_factory or llm_benchmark_class(stage_name)
     settings = plan.effective_config
     apply_runner_settings(settings)
     config.N_RUNS = settings["runs"]
@@ -177,7 +186,7 @@ def execute_llm_job(path, job_id, *, engine_factory=get_engine,
             sequence = store.last_sequence(job_id)
         finally:
             store.close()
-        emit("event", sequence=sequence, event={"stage": "llm", "committed": True})
+        emit("event", sequence=sequence, event={"stage": stage_name, "committed": True})
 
     journal = None
     telemetry = None
@@ -185,7 +194,9 @@ def execute_llm_job(path, job_id, *, engine_factory=get_engine,
         telemetry = create_case_telemetry(settings)
         if not engine.start(gpu_visible=not plan.cpu_only):
             raise RuntimeError("runner could not prepare the inference engine")
-        journal = LLMEventStage(path, plan, notify, initialize=False, telemetry=telemetry)
+        journal = LLMEventStage(
+            path, plan, notify, stage_name=stage_name, initialize=False, telemetry=telemetry,
+        )
         benchmark_factory().run(
             engine=engine, models=models, context_lengths=settings["context_lengths"],
             warmup_runs=plan.warmup_runs, force_all=plan.force_all, journal=journal,
@@ -682,6 +693,8 @@ def main(argv=None) -> int:
     try:
         if args.stage == "llm":
             execute_llm_job(args.event_store, args.job_id)
+        elif args.stage == "llm_cached":
+            execute_llm_job(args.event_store, args.job_id, stage_name="llm_cached")
         elif args.stage == "conv":
             execute_conversation_job(args.event_store, args.job_id)
         elif args.stage == "llamabench":

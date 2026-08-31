@@ -248,6 +248,8 @@ def llamacpp_cmake_flags(backend: str, *, nvcc: str | None = None,
         return [
             "-DGGML_SYCL=ON", "-DCMAKE_C_COMPILER=icx", "-DCMAKE_CXX_COMPILER=icpx",
         ]
+    if backend == "vulkan":
+        return ["-DGGML_VULKAN=ON"]
     return []
 
 
@@ -390,28 +392,33 @@ def fetch_llamacpp_release_tag(tag: str, *, opener=urllib.request.urlopen) -> di
 
 
 def select_windows_llamacpp_release(release: dict, max_cuda_version: str | None, *,
-                                    intel_xpu: bool = False) -> WindowsLlamacppRelease | None:
+                                    intel_xpu: bool = False,
+                                    vulkan: bool = False) -> WindowsLlamacppRelease | None:
     assets = release.get("assets", [])
+    if intel_xpu and vulkan:
+        raise ValueError("SYCL and Vulkan llama.cpp selection are mutually exclusive")
     if intel_xpu:
         sycl = next((asset for asset in assets
                      if "win-sycl-x64" in str(asset.get("name", "")).lower()
                      and str(asset.get("name", "")).endswith(".zip")), None)
         return WindowsLlamacppRelease("SYCL", (sycl,)) if sycl is not None else None
-    cuda_pair = hardware.select_cuda_release_assets(assets, max_cuda_version)
-    if cuda_pair is not None:
-        return WindowsLlamacppRelease(
-            f"CUDA {cuda_pair[2]}", (cuda_pair[0], cuda_pair[1]),
-        )
-    vulkan = next((asset for asset in assets
-                   if "win-vulkan-x64" in str(asset.get("name", "")).lower()
-                   and str(asset.get("name", "")).endswith(".zip")), None)
-    return WindowsLlamacppRelease("Vulkan", (vulkan,)) if vulkan is not None else None
+    if not vulkan:
+        cuda_pair = hardware.select_cuda_release_assets(assets, max_cuda_version)
+        if cuda_pair is not None:
+            return WindowsLlamacppRelease(
+                f"CUDA {cuda_pair[2]}", (cuda_pair[0], cuda_pair[1]),
+            )
+    vulkan_asset = next((asset for asset in assets
+                         if "win-vulkan-x64" in str(asset.get("name", "")).lower()
+                         and str(asset.get("name", "")).endswith(".zip")), None)
+    return WindowsLlamacppRelease("Vulkan", (vulkan_asset,)) \
+        if vulkan_asset is not None else None
 
 
 def select_windows_llamacpp_assets(release: dict, max_cuda_version: str | None, *,
-                                   intel_xpu: bool = False) -> list[dict]:
+                                   intel_xpu: bool = False, vulkan: bool = False) -> list[dict]:
     selected = select_windows_llamacpp_release(
-        release, max_cuda_version, intel_xpu=intel_xpu,
+        release, max_cuda_version, intel_xpu=intel_xpu, vulkan=vulkan,
     )
     return list(selected.assets) if selected is not None else []
 
@@ -510,7 +517,7 @@ def update_macos_llamacpp(target: Path, machine: str, *,
 
 
 def update_windows_llamacpp(target: Path, max_cuda_version: str | None, *,
-                            intel_xpu: bool = False,
+                            intel_xpu: bool = False, vulkan: bool = False,
                             release_fetcher=fetch_llamacpp_release,
                             downloader=download_file, extractor=safe_extract_zip,
                             run=subprocess.run, replace=os.replace, remove=shutil.rmtree,
@@ -528,7 +535,7 @@ def update_windows_llamacpp(target: Path, max_cuda_version: str | None, *,
     try:
         release = release_fetcher()
         assets = select_windows_llamacpp_assets(
-            release, max_cuda_version, intel_xpu=intel_xpu,
+            release, max_cuda_version, intel_xpu=intel_xpu, vulkan=vulkan,
         )
         if not assets:
             return RuntimeUpdateResult(False, "The latest release has no compatible Windows asset.")

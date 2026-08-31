@@ -109,6 +109,7 @@ def test_source_build_version_uses_utc_commit_date_and_short_hash(tmp_path):
 
     assert source_commit_version(identity, tmp_path, run=run) == "2026.08.11-a1b2c3d"
     assert calls[0][0][-1] == "a1b2c3d4e5f6"
+    assert calls[1][0][-1] == "a1b2c3d4e5f6"
     assert calls[1][1]["env"]["TZ"] == "UTC"
 
 
@@ -126,6 +127,22 @@ def test_source_build_version_uses_exact_release_tag(tmp_path):
     )
 
     assert result == "10362"
+
+
+def test_source_build_version_does_not_inherit_head_tag_without_binary_commit(tmp_path):
+    (tmp_path / ".git").mkdir()
+    identity = RuntimeIdentity(
+        "llamacpp", "app_managed", "/runtime", "0.3.0", "version: 0.3.0",
+    )
+
+    result = source_commit_version(
+        identity, tmp_path,
+        run=lambda *_args, **_kwargs: SimpleNamespace(
+            stdout="b10615\n", stderr="", returncode=0,
+        ),
+    )
+
+    assert result == "0.3.0"
 
 
 def test_source_build_version_falls_back_when_git_metadata_is_unavailable(tmp_path):
@@ -150,6 +167,22 @@ def test_engine_runtime_version_resolves_managed_llamacpp_source_commit(monkeypa
         return SimpleNamespace(stdout="version: 1 (a1b2c3d4)", stderr="", returncode=0)
 
     assert engine_runtime_version("llamacpp", engine, run=run) == "2026.08.11-a1b2c3d"
+
+
+def test_engine_runtime_version_uses_the_vulkan_managed_source_root(monkeypatch, tmp_path):
+    (tmp_path / ".git").mkdir()
+    executable = tmp_path / "build" / "bin" / "llama-server"
+    monkeypatch.setattr("scripts.setup.runtime_identity.config.LLAMACPP_VULKAN_DIR", tmp_path)
+    engine = type("Engine", (), {"runtime_location": lambda self: executable})()
+
+    def run(command, **_kwargs):
+        if command[0] == "git":
+            return SimpleNamespace(stdout="2026.08.12\n", stderr="", returncode=0)
+        return SimpleNamespace(stdout="version: 2 (b2c3d4e5)", stderr="", returncode=0)
+
+    assert engine_runtime_version(
+        "llamacpp-vulkan", engine, run=run,
+    ) == "2026.08.12-b2c3d4e"
 
 
 def test_source_build_version_rejects_malformed_git_date(tmp_path):

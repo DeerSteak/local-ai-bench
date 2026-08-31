@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 MODEL=""
 AMBIENT_TEMP=""
 PAIRS=20
@@ -14,7 +15,7 @@ DRY_RUN=false
 INTERVALS=(0.25 0.5 1.0)
 
 usage() {
-    echo "Usage: bash run_temperature_qualification_linux.sh --model TAG --ambient-temp-c C"
+    echo "Usage: bash qualification/run_temperature_qualification_linux.sh --model TAG --ambient-temp-c C"
     echo "       [--pairs N] [--sustained-duration SEC] [--out-root DIR] [--dry-run]"
 }
 
@@ -48,7 +49,7 @@ if [ "$(uname -s)" != "Linux" ] && [ "$DRY_RUN" = false ]; then
     exit 1
 fi
 if [ -z "$OUT_ROOT" ]; then
-    OUT_ROOT="$SCRIPT_DIR/results/qualification/temperature-linux-$(date '+%Y%m%d-%H%M%S')"
+    OUT_ROOT="$ROOT/results/qualification/temperature-linux-$(date '+%Y%m%d-%H%M%S')"
 fi
 
 qualification_failed=false

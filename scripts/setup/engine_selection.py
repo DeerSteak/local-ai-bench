@@ -1,13 +1,14 @@
 """Pure engine-picker rules shared by both setup interfaces — see docs/setup.md."""
 
 from scripts.setup.setup_console import section, warn
-
-LLAMACPP = "llamacpp"
-VLLM = "vllm"
+from scripts.runtime.engine_identity import LLAMACPP, LLAMACPP_VULKAN, VLLM
 
 
 def build_engine_entries(*, vllm_support=None, vllm_found: bool = False,
                           llamacpp_found: bool = False,
+                          llamacpp_vulkan_supported: bool = False,
+                          llamacpp_vulkan_found: bool = False,
+                          llamacpp_vulkan_note: str | None = None,
                           vllm_note: str | None = None) -> list[dict]:
     """Initial picker state. An already-installed engine starts checked, so setup keeps
     maintaining it; only an engine that would need installing starts unchecked."""
@@ -36,7 +37,48 @@ def build_engine_entries(*, vllm_support=None, vllm_found: bool = False,
             "experimental": not vllm_found and bool(
                 vllm_support and vllm_support.status == "experimental"),
         },
+        {
+            "name": LLAMACPP_VULKAN,
+            "label": "llama.cpp Vulkan",
+            "checked": bool(llamacpp_vulkan_found),
+            "enabled": llamacpp_vulkan_supported or llamacpp_vulkan_found,
+            "installed": llamacpp_vulkan_found,
+            "note": (
+                "already installed" if llamacpp_vulkan_found
+                else llamacpp_vulkan_note or "unavailable on this platform"
+            ),
+        },
     ]
+
+
+def model_engine_names(engines: list[str]) -> list[str]:
+    """Deduplicate runtime choices that consume the same model family."""
+    names = []
+    for engine in engines:
+        from scripts.runtime.engine_identity import engine_family
+        model_engine = engine_family(engine)
+        if model_engine not in names:
+            names.append(model_engine)
+    return names
+
+
+def llamacpp_vulkan_setup_state(platform_name: str, machine: str, *,
+                                 runtime_present: bool, backend: str | None,
+                                 toolset_ready: bool) -> dict:
+    windows_x64 = platform_name == "Windows" and machine.lower() in {"amd64", "x86_64"}
+    supported = platform_name == "Linux" or windows_x64
+    found = runtime_present and backend == "vulkan" and toolset_ready
+    note = (
+        "will be built from source" if platform_name == "Linux"
+        else "will use the official Windows Vulkan package" if windows_x64
+        else "requires Linux or 64-bit Windows"
+    )
+    problem = None
+    if runtime_present and backend != "vulkan":
+        problem = "wrong_backend"
+    elif runtime_present and not toolset_ready:
+        problem = "incomplete_toolset"
+    return {"supported": supported, "found": found, "note": note, "problem": problem}
 
 
 def find_entry(entries: list[dict], name: str) -> dict | None:

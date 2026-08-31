@@ -1,10 +1,12 @@
-"""llm_prefill_benchmark.py — single-shot LLM prefill/decode benchmark."""
+"""Uncached and cached LLM prefill/generation benchmarks."""
 
+from dataclasses import replace
 from pathlib import Path
 
 from scripts.runtime import config
 from scripts.runtime.engines.base import (
-    TIMING_DECIMALS, aggregate_generation_measurements, measurement_validation_errors,
+    TIMING_DECIMALS, GenerationMeasurement, aggregate_generation_measurements,
+    measurement_validation_errors, measurement_prefill_tokens, prefill_tokens_per_sec,
 )
 from scripts.runtime.shared import Shared
 from scripts.runtime.failure_handling import unexpected_model_failure
@@ -14,12 +16,50 @@ from scripts.runtime.progress_events import emit_model_finished, emit_progress
 
 class LLMPrefillBenchmark:
     LLM_CRASH_CACHE = Path(".llm_crash_cache.json")  # see docs/project-structure.md
+    stage_name = "llm"
+    section_label = "Uncached Prefill / Generation"
+    cache_prompt = False
+
+    @staticmethod
+    def format_terminal_metrics(ttft: float, prefill_tps: float | None,
+                                generation_tps: float) -> str:
+        prefill = f"{prefill_tps:.1f} tok/s" if prefill_tps is not None else "N/A"
+        return (f"TTFT={ttft:.2f}s  Prefill={prefill}  "
+                f"TPS={generation_tps:.1f}")
 
     @staticmethod
     def prefill_server_ctx(ctx_len: int, model_max: int) -> int:
         """num_ctx to load the server at for a padded-to-ctx_len prompt — headroom
         for the n_predict generation on top, clamped to the model's real max."""
         return Shared.ctx_with_headroom(ctx_len, config.GENERATE_MAX_TOKENS, model_max)
+
+    @staticmethod
+    def prompt_plan(ctx_len: int, runs: int, cached: bool, prompt_factory):
+        if cached:
+            prompt = prompt_factory(ctx_len)
+            return prompt, [prompt] * runs
+        return None, [prompt_factory(ctx_len) for _ in range(runs)]
+
+    @staticmethod
+    def with_cached_prefill_basis(
+            measurement: GenerationMeasurement,
+            primed_prompt_tokens: int | None) -> GenerationMeasurement:
+        basis = primed_prompt_tokens \
+            if isinstance(primed_prompt_tokens, int) \
+            and not isinstance(primed_prompt_tokens, bool) and primed_prompt_tokens > 0 else None
+        return replace(measurement, prefill_tokens=basis)
+
+    @staticmethod
+    def failure_markers(status: str, context_label: str, crash_cache: dict,
+                        tag: str) -> dict | None:
+        if status == "timed_out":
+            return {"timed_out": context_label}
+        if status == "crashed":
+            return {
+                "crashed": context_label,
+                "crashed_at": crash_cache.get(tag, {}).get("crashed_at", "an earlier run"),
+            }
+        return None
 
     def run(self, engine, models, context_lengths, warmup_runs, force_all=False,
             save_fn=None, journal=None):  # pragma: no cover — orchestrates real engine runs
@@ -29,19 +69,19 @@ class LLMPrefillBenchmark:
             Shared.err("Inference engine not reachable — skipping LLM benchmarks")
             return results
 
-        crash_cache = load_crash_cache(LLMPrefillBenchmark.LLM_CRASH_CACHE)
+        crash_cache = load_crash_cache(self.LLM_CRASH_CACHE)
 
         for model in models:
             tag   = model["tag"]
             label = model["label"]
             short = model["short"]
 
-            Shared.section(f"LLM ({engine.name}): {label}")
+            Shared.section(f"{self.section_label} ({engine.name}): {label}")
 
             if not engine.reachable_or_abort():
                 break
 
-            emit_progress("model", "llm", "running", label, model_id=tag)
+            emit_progress("model", self.stage_name, "running", label, model_id=tag)
             try:
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
@@ -49,7 +89,7 @@ class LLMPrefillBenchmark:
                     continue
 
                 skip_entry = check_crash_cache(
-                    tag, label, crash_cache, LLMPrefillBenchmark.LLM_CRASH_CACHE,
+                    tag, label, crash_cache, self.LLM_CRASH_CACHE,
                     engine_name=engine.name,
                 )
                 if skip_entry is not None:
@@ -61,7 +101,7 @@ class LLMPrefillBenchmark:
                 model_max = engine.max_context_length(tag)
                 results[short] = {}
 
-                model_ctx_lengths = [c for c in context_lengths if c <= model_max]
+                model_ctx_lengths = Shared.supported_prompt_sizes(context_lengths, model_max)
                 Shared.log(f"{label}: model supports {model_max} ctx")
 
                 model_timed_out = False
@@ -78,7 +118,7 @@ class LLMPrefillBenchmark:
                     if journal:
                         journal.begin_model_load()
                     if not engine.warmup(tag, label, server_ctx, warmup_runs,
-                                         crash_cache, LLMPrefillBenchmark.LLM_CRASH_CACHE):
+                                         crash_cache, self.LLM_CRASH_CACHE):
                         results[short]["crashed"] = label_ctx
                         results[short]["crashed_at"] = crash_cache.get(tag, {}).get(
                             "crashed_at", "during warmup",
@@ -95,27 +135,63 @@ class LLMPrefillBenchmark:
                         journal.begin_measured()
                     Shared.log(f"Context {label_ctx} — {config.N_RUNS} runs ...")
 
+                    prime_prompt, measured_prompts = self.prompt_plan(
+                        ctx_len, config.N_RUNS, self.cache_prompt,
+                        Shared.build_prompt_for_context,
+                    )
+                    primed_prompt_tokens = None
+                    if prime_prompt is not None:
+                        Shared.log(f"Priming cached context {label_ctx} ...")
+                        prime_samples, prime_status, _, _ = Shared.run_measured_calls(
+                            1, lambda _run_i: engine.generate(
+                                tag, prime_prompt, timeout=config.RUN_TIMEOUT,
+                                num_ctx=server_ctx, cache_prompt=True,
+                            ), tag, crash_cache, self.LLM_CRASH_CACHE,
+                            f"priming cached context {label_ctx}", engine,
+                        )
+                        if markers := self.failure_markers(
+                                prime_status, label_ctx, crash_cache, tag):
+                            results[short].update(markers)
+                            model_timed_out = prime_status == "timed_out"
+                            if journal:
+                                journal.record_case(
+                                    model, ctx_len, label_ctx, [], prime_status, config.N_RUNS,
+                                    markers, attempt_number=attempt_number,
+                                )
+                            break
+                        if not prime_samples:
+                            raise RuntimeError("cached-context priming returned no measurement")
+                        primed_prompt_tokens = prime_samples[0].prompt_tokens
+
                     def _prefill_once(run_i):
-                        prompt = Shared.build_prompt_for_context(ctx_len)
                         measurement = Shared.retry_implausible_tps(
                             lambda: engine.generate(
-                                tag, prompt, timeout=config.RUN_TIMEOUT, num_ctx=server_ctx,
+                                tag, measured_prompts[run_i], timeout=config.RUN_TIMEOUT,
+                                num_ctx=server_ctx,
+                                cache_prompt=self.cache_prompt,
                             ),
                             f"{tag} {label_ctx} run {run_i + 1}",
-                            "llm",
+                            self.stage_name,
                         )
+                        if self.cache_prompt:
+                            measurement = self.with_cached_prefill_basis(
+                                measurement, primed_prompt_tokens,
+                            )
                         ttft = measurement.client_ttft_sec
                         tps = measurement.tokens_per_sec
+                        prefill_tps = prefill_tokens_per_sec(
+                            measurement_prefill_tokens(measurement),
+                            measurement.server_prompt_sec,
+                        )
                         Shared.output(
                             f"    run {run_i+1}/{config.N_RUNS}: "
-                            f"TTFT={ttft:.2f}s  "
-                            f"TPS={tps:.1f}"
+                            f"{self.format_terminal_metrics(ttft, prefill_tps, tps)}"
                         )
                         return measurement
 
                     samples, status, _, _metadata = Shared.run_measured_calls(
                         config.N_RUNS, _prefill_once, tag, crash_cache,
-                        LLMPrefillBenchmark.LLM_CRASH_CACHE, f"running {label}", engine)
+                        self.LLM_CRASH_CACHE, f"running {label}", engine)
                     aggregate = aggregate_generation_measurements(samples, config.N_RUNS)
                     valid_samples = [sample for sample in samples
                                      if not measurement_validation_errors(sample)]
@@ -132,32 +208,34 @@ class LLMPrefillBenchmark:
                             "tps_runs":       [round(t, 2) for t in tps_list],
                             **aggregate,
                         }
+                        context_result = results[short][label_ctx]
                         Shared.ok(
-                            f"Context {label_ctx} done: "
-                            f"TTFT={results[short][label_ctx]['ttft_mean_sec']:.2f}s  "
-                            f"TPS={results[short][label_ctx]['tps_mean']:.1f}"
+                            f"Context {label_ctx} done: " + self.format_terminal_metrics(
+                                context_result["ttft_mean_sec"],
+                                context_result.get("prefill_tps_mean"),
+                                context_result["tps_mean"],
+                            )
                         )
 
+                    markers = self.failure_markers(status, label_ctx, crash_cache, tag)
                     if status == "timed_out":
                         Shared.err(f"Skipping remaining runs and context lengths for {label}")
                         model_timed_out = True
-                        results[short]["timed_out"] = label_ctx
+                        results[short].update(markers or {})
                         if journal:
                             journal.record_case(
                                 model, ctx_len, label_ctx, samples, status, config.N_RUNS,
-                                {"timed_out": label_ctx},
+                                markers,
                                 attempt_number=attempt_number,
                             )
                         break
 
                     if status == "crashed":
-                        crashed_at = crash_cache.get(tag, {}).get("crashed_at", "an earlier run")
-                        results[short]["crashed"] = label_ctx
-                        results[short]["crashed_at"] = crashed_at
+                        results[short].update(markers or {})
                         if journal:
                             journal.record_case(
                                 model, ctx_len, label_ctx, samples, status, config.N_RUNS,
-                                {"crashed": label_ctx, "crashed_at": crashed_at},
+                                markers,
                                 attempt_number=attempt_number,
                             )
                         break
@@ -187,13 +265,20 @@ class LLMPrefillBenchmark:
                 entry = unexpected_model_failure(label, exc)
                 results.setdefault(short, {}).update(entry)
                 if journal:
-                    journal.record_model_state(model, "crashed", entry)
+                    journal.record_model_state(model, "failed", entry)
             finally:
                 if save_fn:
                     save_fn(journal.export() if journal else results)
-                emit_model_finished("llm", label, results.get(short), model_id=tag)
+                emit_model_finished(self.stage_name, label, results.get(short), model_id=tag)
 
         if journal:
             journal.finish()
             return journal.export()
         return results
+
+
+class LLMCachedPrefillBenchmark(LLMPrefillBenchmark):
+    LLM_CRASH_CACHE = Path(".llm_cached_crash_cache.json")
+    stage_name = "llm_cached"
+    section_label = "Cached Prefill / Generation"
+    cache_prompt = True

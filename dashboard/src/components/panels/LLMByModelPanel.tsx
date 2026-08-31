@@ -21,6 +21,7 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
   const allModels = getAllLLMModels(files).filter(m => enabledModels.has(m));
   const lineConfigs = buildFileLineConfigs(files);
   const isConv = section === "llm_conversation";
+  const isCached = section === "llm_cached";
 
   const modelGroups = allModels.map(model => {
     const tpsData = buildLLMDataForModel(files, model, "tps", section);
@@ -53,7 +54,7 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
     const allTtftVals = ttftData.flatMap(row => lineConfigs.map(lc => row[lc.dataKey])).filter(v => v != null);
     const { ttftUnit, ttftYLabel } = deriveTtftUnit(allTtftVals);
     const hasTps = isBar ? tpsBarConfigs.length > 0 : tpsLineConfigs.length > 0;
-    const hasTtft = isBar ? ttftBarConfigs.length > 0 : ttftLineConfigs.length > 0;
+    const hasTtft = !isCached && (isBar ? ttftBarConfigs.length > 0 : ttftLineConfigs.length > 0);
     const hasPrefill = isBar ? prefillBarConfigs.length > 0 : prefillLineConfigs.length > 0;
     const skipEntries = files
       .map(f => ({ hostname: f.hostname, info: getSkipInfo(f, model, section) }))

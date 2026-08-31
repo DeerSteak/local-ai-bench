@@ -9,6 +9,7 @@ import pytest
 
 from scripts.runtime import config
 from scripts.runtime.engines.llamacpp import LlamaCppEngine
+from scripts.runtime.engines.llamacpp_vulkan import LlamaCppVulkanEngine
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
 from scripts.runtime.shared import Shared
 
@@ -69,6 +70,12 @@ def test_find_binary_returns_none_when_missing(monkeypatch, tmp_path):
     assert LlamaBenchBenchmark.find_binary() is None
 
 
+def test_find_engine_binary_uses_the_selected_llamacpp_runtime(monkeypatch):
+    engine = LlamaCppVulkanEngine()
+    monkeypatch.setattr(engine, "tool_path", lambda name: f"/vulkan/{name}")
+    assert LlamaBenchBenchmark.find_engine_binary(engine) == "/vulkan/llama-bench"
+
+
 def test_build_prefill_command_shape():
     cmd = LlamaBenchBenchmark.build_prefill_command(
         "llama-bench", Path("/models/x.gguf"), [512, 2048], 2048, 512, 3, 999,
@@ -91,6 +98,19 @@ def test_build_prefill_command_never_passes_unsupported_repack_option(monkeypatc
         "llama-bench", Path("/models/x.gguf"), [512], 2048, 512, 3, 999,
     )
     assert "--no-repack" not in cmd
+
+
+def test_build_prefill_command_can_disable_host_buffer_except_on_cpu(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_NO_HOST", True)
+    gpu_cmd = LlamaBenchBenchmark.build_prefill_command(
+        "llama-bench", Path("/models/x.gguf"), [512], 2048, 512, 3, 999,
+    )
+    cpu_cmd = LlamaBenchBenchmark.build_prefill_command(
+        "llama-bench", Path("/models/x.gguf"), [512], 2048, 512, 3, 0,
+    )
+    index = gpu_cmd.index("--no-host")
+    assert gpu_cmd[index:index + 2] == ["--no-host", "1"]
+    assert "--no-host" not in cpu_cmd
 
 
 def test_build_decode_command_shape():
@@ -363,7 +383,7 @@ def fake_engine(monkeypatch):
         LlamaCppEngine, "_resolve_model_files",
         classmethod(lambda cls, tag: [Path(f"/models/{tag}.gguf")]),
     )
-    monkeypatch.setattr(LlamaBenchBenchmark, "find_binary", staticmethod(lambda: "llama-bench"))
+    monkeypatch.setattr(engine, "tool_path", lambda name: f"/fake/{name}")
     return engine
 
 
@@ -382,8 +402,9 @@ def test_run_skips_non_llamacpp_engine():
 
 
 def test_run_returns_empty_when_binary_missing(monkeypatch):
-    monkeypatch.setattr(LlamaBenchBenchmark, "find_binary", staticmethod(lambda: None))
-    result = LlamaBenchBenchmark().run(LlamaCppEngine(), _MODELS, reps=3)
+    engine = LlamaCppEngine()
+    monkeypatch.setattr(engine, "tool_path", lambda _name: None)
+    result = LlamaBenchBenchmark().run(engine, _MODELS, reps=3)
     assert result == {}
 
 

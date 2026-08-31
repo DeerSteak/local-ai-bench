@@ -3,10 +3,34 @@ import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
+QUALIFICATION = ROOT / "qualification"
+
+
+def test_root_keeps_only_primary_run_launchers():
+    root_runners = {
+        path.name for path in ROOT.iterdir()
+        if path.is_file() and path.name.startswith("run_")
+        and path.suffix in {".sh", ".bat", ".ps1"}
+    }
+    assert root_runners == {"run_bench.sh", "run_bench.bat"}
+
+
+def test_qualification_launchers_live_together():
+    assert {path.name for path in QUALIFICATION.iterdir() if path.is_file()} == {
+        "qual.sh",
+        "qual_windows.bat",
+        "qual_windows.ps1",
+        "run_power_qualification_m5_pro.sh",
+        "run_qualification.bat",
+        "run_qualification.sh",
+        "run_sustained_qualification_linux.sh",
+        "run_telemetry_trials.sh",
+        "run_temperature_qualification_linux.sh",
+    }
 
 
 def test_unix_launcher_runs_normal_setup_then_normal_benchmark_wrapper():
-    text = (ROOT / "run_qualification.sh").read_text()
+    text = (QUALIFICATION / "run_qualification.sh").read_text()
     assert 'bash "$ROOT/setup.sh"' in text
     assert '--qualification "$ENGINE" --qualification-target "$TARGET"' in text
     assert "scripts.release.qualification_run" in text
@@ -25,7 +49,7 @@ def test_unix_launcher_runs_normal_setup_then_normal_benchmark_wrapper():
 
 
 def test_windows_launcher_runs_normal_setup_then_normal_benchmark_wrapper():
-    text = (ROOT / "run_qualification.bat").read_text()
+    text = (QUALIFICATION / "run_qualification.bat").read_text()
     assert "qualification_setup.ps1" in text
     assert "scripts.release.qualification_run" in text
     assert "qualification-env" not in text
@@ -74,14 +98,14 @@ def test_qualification_results_are_not_tracked():
 
 def test_posix_qualification_launcher_has_valid_shell_syntax():
     result = subprocess.run(
-        ["/bin/bash", "-n", ROOT / "run_qualification.sh"], capture_output=True, text=True,
+        ["/bin/bash", "-n", QUALIFICATION / "run_qualification.sh"], capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
 
 
 def test_target_listing_needs_no_python_environment():
     result = subprocess.run(
-        [ROOT / "run_qualification.sh", "--list-targets"],
+        [QUALIFICATION / "run_qualification.sh", "--list-targets"],
         cwd=ROOT, capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
@@ -108,7 +132,7 @@ def test_target_listing_needs_no_python_environment():
 
 def test_unknown_target_is_rejected_before_setup():
     result = subprocess.run(
-        [ROOT / "run_qualification.sh", "invented-target"],
+        [QUALIFICATION / "run_qualification.sh", "invented-target"],
         cwd=ROOT, capture_output=True, text=True,
     )
     assert result.returncode == 2

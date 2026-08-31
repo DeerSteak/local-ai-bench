@@ -2,8 +2,14 @@ from pathlib import Path
 
 from scripts.setup.setup_check import (
     accessible_file, llamacpp_backend_rebuild_warning, llamacpp_install_action,
-    running_comfyui_checkpoints_visible,
+    running_comfyui_checkpoints_visible, vulkan_install_backend_flags,
 )
+
+
+def test_vulkan_install_never_combines_sycl_and_vulkan_selection():
+    assert vulkan_install_backend_flags(False, False) == {
+        "nvidia": False, "rocm": False, "intel_xpu": False, "vulkan": True,
+    }
 
 
 def test_accessible_file_accepts_a_regular_file(tmp_path):

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from scripts.runtime import config
+from scripts.runtime.hardware import classify_gpu
 from scripts.app.benchmark_frontend import (
     GUI_OPTION_DEFAULTS, LLM_BACKED_TESTS, TEST_DEFINITIONS, MenuEntry,
 )
@@ -51,10 +52,28 @@ def effective_gui_options(state: dict | None) -> dict:
     return effective
 
 
+def format_gpu_inventory(devices: list[dict]) -> str:
+    if not devices:
+        return "Not recorded"
+    rows = []
+    for index, device in enumerate(devices, 1):
+        name = str(device.get("name") or f"GPU {index}")
+        kind = str(device.get("kind") or classify_gpu(name)).capitalize()
+        backend = str(device.get("backend") or "unknown").upper()
+        vram = device.get("vram_gb")
+        memory = (
+            f"{float(vram):.1f} GB VRAM"
+            if isinstance(vram, (int, float)) and not isinstance(vram, bool) else "VRAM unknown"
+        )
+        rows.append(f"{index}. {name} · {kind} · {memory} · {backend}")
+    return "\n".join(rows)
+
+
 def build_discovery_report(*, platform_name: str, architecture: str, ram_gb: float,
                            backend: str, tools: dict[str, str | None],
                            comfyui_dir: Path | None,
-                           inventory: dict[str, list[dict]], free_storage_gb: float | None = None) -> dict:
+                           inventory: dict[str, list[dict]], gpu_devices: list[dict] | None = None,
+                           free_storage_gb: float | None = None) -> dict:
     counts = {key: len(inventory.get(key, [])) for key in ("llm", "custom", "embedding", "image")}
     issues = []
     if not tools.get("llama-server"):
@@ -70,6 +89,7 @@ def build_discovery_report(*, platform_name: str, architecture: str, ram_gb: flo
                    f"{ram_gb:.1f} GB system RAM detected.")
     return {
         "system": f"{platform_name} {architecture} · {ram_gb:.1f} GB RAM · {backend}",
+        "gpus": format_gpu_inventory(gpu_devices or []),
         "models": (f"{counts['llm']} LLM, {counts['custom']} custom LLM, "
                    f"{counts['embedding']} embedding, {counts['image']} image"),
         "runtime": ", ".join(
@@ -202,18 +222,23 @@ def default_control_values(test_entries, model_entries, engine: str, comfyui_dir
 
 
 BENCHMARK_PRESETS = {
-    "Consumer guidance": {"tests": ["llm", "conv"], "max_prompt_tokens": 32768},
-    "Vendor validation": {"tests": ["llm", "conv", "llamabench", "emb", "mcq", "math", "reasoning", "code", "tool", "img"]},
-    "Neutral comparison": {"tests": ["llm", "conv", "emb", "img"]},
-    "Platform optimized": {"tests": ["llm", "conv", "llamabench"]},
-    "Offline / private": {"tests": ["llm", "conv", "emb"]},
+    "Consumer guidance": {"tests": ["llm", "llm_cached", "conv"], "max_prompt_tokens": 32768},
+    "Vendor validation": {"tests": ["llm", "llm_cached", "conv", "llamabench", "emb", "mcq", "math", "reasoning", "code", "tool", "img"]},
+    "Neutral comparison": {"tests": ["llm", "llm_cached", "conv", "emb", "img"]},
+    "Platform optimized": {"tests": ["llm", "llm_cached", "conv", "llamabench"]},
+    "Offline / private": {"tests": ["llm", "llm_cached", "conv", "emb"]},
     "Quick run": {"tests": ["llm", "emb"], "runs": 1, "max_prompt_tokens": 8192},
     "Full run": {"tests": [name for name, *_ in TEST_DEFINITIONS], "force_all": True},
-    "Role: Orchestrator": {"tests": ["llm", "conv", "reasoning", "tool", "conc_chat"]},
-    "Role: Agent / tool caller": {"tests": ["llm", "conv", "tool", "code", "conc_tool"], "max_prompt_tokens": 32768},
-    "Role: Coding assistant": {"tests": ["llm", "conv", "code", "reasoning"], "max_prompt_tokens": 32768},
-    "Role: Chat assistant": {"tests": ["llm", "conv", "mcq", "reasoning", "conc_chat"], "max_prompt_tokens": 8192},
-    "Role: RAG / retrieval": {"tests": ["llm", "conv", "emb", "mcq"], "max_prompt_tokens": 32768},
+    "Agentic Coding": {
+        "tests": ["llm", "llm_cached", "tool", "code"],
+        "force_all": True,
+        "options": {"mtp": "both", "memory_telemetry": True, "power_telemetry": True},
+    },
+    "Role: Orchestrator": {"tests": ["llm", "llm_cached", "conv", "reasoning", "tool", "conc_chat"]},
+    "Role: Agent / tool caller": {"tests": ["llm", "llm_cached", "conv", "tool", "code", "conc_tool"], "max_prompt_tokens": 32768},
+    "Role: Coding assistant": {"tests": ["llm", "llm_cached", "conv", "code", "reasoning"], "max_prompt_tokens": 32768},
+    "Role: Chat assistant": {"tests": ["llm", "llm_cached", "conv", "mcq", "reasoning", "conc_chat"], "max_prompt_tokens": 8192},
+    "Role: RAG / retrieval": {"tests": ["llm", "llm_cached", "conv", "emb", "mcq"], "max_prompt_tokens": 32768},
 }
 CUSTOM_PRESET = "Custom"
 DEFAULT_BENCHMARK_PRESET = "Consumer guidance"
@@ -231,12 +256,15 @@ def preset_after_control_change(current: str, applying_preset: bool) -> str:
 
 def resolve_preset(name: str, available_tests: set[str]) -> dict:
     preset = BENCHMARK_PRESETS[name]
-    return {
+    resolved = {
         "tests": [test for test in preset["tests"] if test in available_tests],
         "runs": preset.get("runs", config.N_RUNS),
         "max_prompt_tokens": preset.get("max_prompt_tokens"),
         "force_all": preset.get("force_all", False),
     }
+    if preset.get("options"):
+        resolved["option_overrides"] = dict(preset["options"])
+    return resolved
 
 
 def progress_event_engine(event: dict, progress_engines: list[str]) -> str | None:
@@ -254,7 +282,6 @@ def preset_control_values(name: str, available_tests: set[str], defaults: dict) 
     preset = resolve_preset(name, available_tests)
     values = {
         "tests": {test: test in preset["tests"] for test in defaults["tests"]},
-        "models": dict(defaults["models"]),
         "max_prompt_tokens": (str(preset["max_prompt_tokens"])
                               if preset["max_prompt_tokens"] else "No cap"),
         "tg_tokens": set(defaults["tg_tokens"]),
@@ -262,6 +289,7 @@ def preset_control_values(name: str, available_tests: set[str], defaults: dict) 
     }
     values["options"]["runs"] = preset["runs"]
     values["options"]["force_all"] = preset["force_all"]
+    values["options"].update(preset.get("option_overrides", {}))
     return values
 
 
