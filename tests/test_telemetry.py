@@ -1,3 +1,4 @@
+import gc
 import time
 import threading
 
@@ -12,6 +13,12 @@ from scripts.runtime.telemetry import (
     query_sampler_vram_usage,
     summarize_case, summarize_samples, summarize_windows,
 )
+
+
+@pytest.fixture(scope="module", autouse=True)
+def collect_ui_finalizers_before_sampler_threads():
+    # Tk objects left by earlier UI tests must finalize on the main thread, not a sampler worker.
+    gc.collect()
 
 
 def sample(timestamp, window="measured", host=None, rss=None, used=None, total=None):
