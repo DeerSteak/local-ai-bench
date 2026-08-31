@@ -13,6 +13,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from functools import lru_cache
 from pathlib import Path, PurePosixPath
 from typing import cast
 
@@ -55,6 +56,16 @@ def model_placement_error(backend: str | None, placement: dict) -> str | None:
     return None
 
 
+def model_placement_evidence_missing(backend: str | None, placement: dict) -> bool:
+    return backend in ACCELERATOR_BACKENDS and "gpu_layers" not in placement
+
+
+@lru_cache(maxsize=1)
+def configured_split_devices(config_path: str) -> tuple[dict, ...]:
+    setup = load_setup_config(Path(config_path))
+    return tuple(configured_gpu_devices(setup))
+
+
 class LlamaCppEngine(InferenceEngine):
     name = "llamacpp"
 
@@ -64,6 +75,7 @@ class LlamaCppEngine(InferenceEngine):
     # Model *load* time (disk read + VRAM placement), not inference time. Matches VllmEngine's
     # LOAD_TIMEOUT — large catalog entries (e.g. 120B split GGUFs) can still be loading at 300s.
     LOAD_TIMEOUT = 900
+    PLACEMENT_EVIDENCE_GRACE_SEC = 10
     SPAWN_LOG_LINES = 200
     _GPU_LAYERS_RE = re.compile(r"offloaded\s+(\d+)/(\d+)\s+layers to GPU", re.I)
     _MODEL_BUFFER_RE = re.compile(
@@ -72,12 +84,13 @@ class LlamaCppEngine(InferenceEngine):
     )
 
     @staticmethod
-    def gpu_split_args(*, include_cache: bool = False, cpu_only: bool = False) -> list[str]:
+    def gpu_split_args(*, include_cache: bool = False, cpu_only: bool = False,
+                       devices: list[dict] | None = None) -> list[str]:
         configured_mode = config.LLAMACPP_GPU_SPLIT_MODE
         mode = "none" if cpu_only or configured_mode == "single" else configured_mode
         args = ["--split-mode", mode]
-        setup = load_setup_config(config.SETUP_CONFIG_PATH)
-        devices = configured_gpu_devices(setup)
+        devices = (list(configured_split_devices(str(config.SETUP_CONFIG_PATH)))
+                   if devices is None else devices)
         if configured_mode == "single" and not cpu_only:
             if selection := gpu_device_selection(devices):
                 args += ["--device", selection.split(",", 1)[0]]
@@ -624,6 +637,7 @@ class LlamaCppEngine(InferenceEngine):
             Shared._managed_procs.append(proc)
 
             t0 = time.perf_counter()
+            healthy_since = None
             while time.perf_counter() - t0 < self.LOAD_TIMEOUT:
                 if deadline is not None and time.perf_counter() >= deadline:
                     self._stop_process()
@@ -634,6 +648,7 @@ class LlamaCppEngine(InferenceEngine):
                     raise RuntimeError(f"llama-server exited unexpectedly (code {proc.returncode}) "
                                        f"loading {tag} — last output:\n{self.tail_log()}")
                 if self.available():
+                    healthy_since = healthy_since or time.perf_counter()
                     serving = self.serving_model_file(self._fetch_props())
                     if serving is not None and serving != paths[0].name:
                         self._stop_process()
@@ -642,9 +657,13 @@ class LlamaCppEngine(InferenceEngine):
                             f"— another llama-server owns it; stop it before loading {tag}"
                         )
                     placement = self.parse_model_placement(self._full_log())
-                    if placement_error := model_placement_error(
-                        self._expected_backend, placement,
-                    ):
+                    required_backend = self.REQUIRED_BACKEND or self._expected_backend
+                    placement_error = model_placement_error(required_backend, placement)
+                    if model_placement_evidence_missing(required_backend, placement) and (
+                            time.perf_counter() - healthy_since < self.PLACEMENT_EVIDENCE_GRACE_SEC):
+                        time.sleep(1)
+                        continue
+                    if placement_error:
                         log_tail = self.tail_log()
                         self._stop_process()
                         raise RuntimeError(
@@ -904,7 +923,8 @@ class LlamaCppEngine(InferenceEngine):
 
     def chat(self, tag: str, messages: list, timeout: int = 600,
              num_ctx: int | None = None, num_predict: int = 1024,
-             check_loop: bool = False, token_budget: int | None = None) -> ChatMeasurement:
+             check_loop: bool = False, token_budget: int | None = None,
+             cache_prompt: bool = False) -> ChatMeasurement:
         """Chat once, or use a bounded final-answer pass after a length stop."""
         first, second, budget_nudged, model_load_sec = self._chat_with_optional_finalize(
             tag, messages, None, timeout, num_ctx, num_predict, check_loop, token_budget,

@@ -172,8 +172,8 @@ def test_parse_rocm_smi_gpus_preserves_each_device_capacity():
 
 def test_gpu_tensor_split_reduces_nominal_device_capacities():
     devices = [
-        {"backend": "vulkan", "vram_gb": 31.984375},
-        {"backend": "vulkan", "vram_gb": 15.921875},
+        {"backend": "cuda", "vram_gb": 31.984375},
+        {"backend": "cuda", "vram_gb": 15.921875},
     ]
 
     assert hardware.gpu_tensor_split(devices) == "2,1"
@@ -201,23 +201,23 @@ def test_gpu_device_selection_pins_vulkan_inventory_order_only():
     assert hardware.gpu_device_selection([{"backend": "vulkan"}]) is None
 
 
-def test_vulkan_split_places_the_largest_device_first():
+def test_vulkan_split_omits_unverified_device_indices_and_ratios():
     devices = [
         {"backend": "vulkan", "vram_gb": 16},
         {"backend": "vulkan", "vram_gb": 32},
     ]
-    assert hardware.gpu_device_selection(devices) == "Vulkan1,Vulkan0"
-    assert hardware.gpu_tensor_split(devices) == "2,1"
+    assert hardware.gpu_device_selection(devices) is None
+    assert hardware.gpu_tensor_split(devices) is None
 
 
-def test_vulkan_split_places_discrete_before_larger_integrated_gpu():
+def test_vulkan_split_does_not_assume_discovery_matches_runtime_order():
     devices = [
         {"backend": "vulkan", "name": "AMD Radeon Graphics", "vram_gb": 64},
         {"backend": "vulkan", "name": "AMD Radeon RX 7600", "vram_gb": 8},
         {"backend": "vulkan", "name": "AMD Radeon PRO W7800", "vram_gb": 32},
     ]
-    assert hardware.gpu_device_selection(devices) == "Vulkan2,Vulkan1,Vulkan0"
-    assert hardware.gpu_tensor_split(devices) == "4,1,8"
+    assert hardware.gpu_device_selection(devices) is None
+    assert hardware.gpu_tensor_split(devices) is None
 
 
 # ── select_cuda_release_assets ──
