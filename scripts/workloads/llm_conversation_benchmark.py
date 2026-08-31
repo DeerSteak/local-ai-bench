@@ -26,7 +26,7 @@ class LLMConversationBenchmark:
     CONV_NUM_SECTIONS = 6
     CONV_RUNS = 1   # too expensive to repeat --runs times like the other benchmarks
 
-    CONV_TARGET_CTX = config.PREFILL_128K_TOKENS + 4096
+    CONV_TARGET_CTX = config.PREFILL_128K_TOKENS + 32768
 
     CONV_CHECKPOINTS = [
         0, 2048, 4096, 8192, 16384, 32768, 49152, 65536, 81920, 98304,
@@ -189,7 +189,7 @@ class LLMConversationBenchmark:
                         measurement = Shared.retry_implausible_tps(
                             lambda: engine.chat(
                                 tag, messages, timeout=config.RUN_TIMEOUT, num_ctx=num_ctx,
-                                num_predict=num_predict,
+                                num_predict=num_predict, cache_prompt=True,
                             ),
                             f"{tag} conversation turn",
                             "conv",

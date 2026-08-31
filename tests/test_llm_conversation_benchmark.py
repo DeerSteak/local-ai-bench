@@ -29,6 +29,7 @@ def test_followup_prompt_wraps_around_after_last_section():
 def test_checkpoints_ascending_and_within_target_ctx():
     assert Conv.CONV_CHECKPOINTS == sorted(Conv.CONV_CHECKPOINTS)
     assert Conv.CONV_CHECKPOINTS[-1] < Conv.CONV_TARGET_CTX
+    assert Conv.CONV_TARGET_CTX - Conv.CONV_CHECKPOINTS[-1] >= 32768
 
 
 def test_implausible_measurement_never_triggers_slow_exit():
