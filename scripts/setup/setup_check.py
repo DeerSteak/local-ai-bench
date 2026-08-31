@@ -62,10 +62,6 @@ from scripts.setup.comfyui_assets import (
     missing_download_size_gb, provision as provision_comfyui_assets,
 )
 from scripts.setup.comfyui_runtime import prepare as prepare_comfyui_runtime
-
-
-def vulkan_install_backend_flags(nvidia: bool, rocm: bool) -> dict:
-    return {"nvidia": nvidia, "rocm": rocm, "intel_xpu": False, "vulkan": True}
 from scripts.setup.comfyui_install import ensure as ensure_comfyui
 from scripts.workloads.models import (
     EMBED_MODELS, IMAGE_MODELS, LLM_MODELS_LARGE, LLM_MODELS_MEDIUM,
@@ -110,6 +106,10 @@ from scripts.setup.vulkan_install import (
 )
 from scripts.app.interface_mode import select_interface_mode
 from scripts.release.qualification_targets import qualification_host_error, qualification_target
+
+
+def vulkan_install_backend_flags(nvidia: bool, rocm: bool) -> dict:
+    return {"nvidia": nvidia, "rocm": rocm, "intel_xpu": False, "vulkan": True}
 
 
 def llamacpp_backend_rebuild_warning(installed_backend: str | None, required_backend: str | None,
