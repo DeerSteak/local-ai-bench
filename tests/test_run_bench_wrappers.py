@@ -142,3 +142,5 @@ def test_dashboard_wrappers_use_the_authenticated_workspace_server():
     assert "run preview" not in batch
     assert 'cd "$SCRIPT_DIR"' in shell
     assert 'pushd "%SCRIPT_DIR%"' in batch
+    assert shell.index("npm run build") < shell.index("-m scripts.app.dashboard_reuse")
+    assert batch.index("npm run build") < batch.index("-m scripts.app.dashboard_reuse")
