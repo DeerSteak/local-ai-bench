@@ -518,6 +518,12 @@ def test_apply_chat_template_rejects_an_empty_server_response(monkeypatch):
         LlamaCppEngine()._apply_chat_template("hello", 5)
 
 
+def test_llamacpp_reserves_context_for_embedded_chat_templates():
+    assert LlamaCppEngine().generation_prompt_headroom() == (
+        config.LLAMACPP_TEMPLATE_HEADROOM
+    )
+
+
 def test_generate_sends_the_chat_templated_prompt_to_completion(monkeypatch):
     _patch_ensure_model(monkeypatch)
     monkeypatch.setattr(

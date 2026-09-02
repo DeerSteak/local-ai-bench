@@ -75,7 +75,8 @@ CONCURRENCY_CHAT_LEVELS  = [1, 2, 4, 8, 16, 24, 32]
 CONCURRENCY_CHAT_CONTEXT = 16384   # tokens per concurrent request/slot (padded prompt size)
 CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT = 8
 
-GENERATE_MAX_TOKENS = 512   # n_predict for engine.generate(); concurrency slot ctx must add this on top of the padded prompt
+GENERATE_MAX_TOKENS = 512   # output budget; generated-prompt contexts also reserve engine wrapping
+LLAMACPP_TEMPLATE_HEADROOM = 2048  # embedded templates may add default system/control tokens
 IMAGE_RESOLUTIONS = [(1024, 1024), (1536, 1536)]
 # Steps are per-model in IMAGE_MODELS
 IMAGE_SEED  = 42

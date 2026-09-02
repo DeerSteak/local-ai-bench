@@ -218,6 +218,10 @@ class InferenceEngine(ABC):
         from scripts.runtime.sampling import sampling_profile_payload
         return sampling_profile_payload(self.family, getattr(self, "_sampling_profile", None))
 
+    def generation_prompt_headroom(self) -> int:
+        """Extra server context required around a raw generation prompt."""
+        return 0
+
     # ── server / process lifecycle ──
 
     def is_installed(self) -> bool:

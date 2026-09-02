@@ -1,5 +1,6 @@
 import pytest
 
+from scripts.runtime import config
 from scripts.runtime.engines.base import GenerationMeasurement, measurement_prefill_tokens
 from scripts.runtime.workload_runner import llm_benchmark_class
 from scripts.workloads.llm_prefill_benchmark import LLMCachedPrefillBenchmark, LLMPrefillBenchmark
@@ -15,6 +16,13 @@ def test_uncached_prompt_plan_builds_unique_measured_prompts_without_priming():
     prime, measured = LLMPrefillBenchmark.prompt_plan(2048, 3, False, build)
     assert prime is None
     assert measured == ["prompt-1", "prompt-2", "prompt-3"]
+
+
+@pytest.mark.parametrize("prompt_tokens", [512, 2048, 8192, 32768, 65536])
+def test_prefill_server_context_reserves_template_and_generation_tokens(prompt_tokens):
+    assert LLMPrefillBenchmark.prefill_server_ctx(
+        prompt_tokens, 1_000_000, 2048,
+    ) == prompt_tokens + config.GENERATE_MAX_TOKENS + 2048
 
 
 def test_cached_prompt_plan_primes_and_reuses_one_exact_prompt():

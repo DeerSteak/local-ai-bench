@@ -547,6 +547,9 @@ class LlamaCppEngine(InferenceEngine):
             raise RuntimeError("llama-server /apply-template returned no formatted prompt")
         return formatted
 
+    def generation_prompt_headroom(self) -> int:
+        return config.LLAMACPP_TEMPLATE_HEADROOM
+
     @staticmethod
     def _sanitize_tps(tps: float, tokens: int, ttft: float, total: float) -> float:
         """See docs/engines.md's "_sanitize_tps"."""

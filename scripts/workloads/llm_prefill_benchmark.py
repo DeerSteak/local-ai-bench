@@ -28,10 +28,13 @@ class LLMPrefillBenchmark:
                 f"TPS={generation_tps:.1f}")
 
     @staticmethod
-    def prefill_server_ctx(ctx_len: int, model_max: int) -> int:
+    def prefill_server_ctx(ctx_len: int, model_max: int,
+                           template_headroom: int = 0) -> int:
         """num_ctx to load the server at for a padded-to-ctx_len prompt — headroom
         for the n_predict generation on top, clamped to the model's real max."""
-        return Shared.ctx_with_headroom(ctx_len, config.GENERATE_MAX_TOKENS, model_max)
+        return Shared.ctx_with_headroom(
+            ctx_len, config.GENERATE_MAX_TOKENS + template_headroom, model_max,
+        )
 
     @staticmethod
     def prompt_plan(ctx_len: int, runs: int, cached: bool, prompt_factory):
@@ -111,7 +114,9 @@ class LLMPrefillBenchmark:
                     if attempt_number is None:
                         Shared.log(f"Context {label_ctx} already complete — preserving it")
                         continue
-                    server_ctx = LLMPrefillBenchmark.prefill_server_ctx(ctx_len, model_max)
+                    server_ctx = LLMPrefillBenchmark.prefill_server_ctx(
+                        ctx_len, model_max, engine.generation_prompt_headroom(),
+                    )
                     if server_ctx <= ctx_len:
                         Shared.warn(f"{label}: no headroom left for generation at {label_ctx} "
                                     f"(model max {model_max}) — TPS at this depth may read as ~0")
