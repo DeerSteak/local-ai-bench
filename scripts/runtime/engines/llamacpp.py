@@ -531,6 +531,22 @@ class LlamaCppEngine(InferenceEngine):
     def _iter_sse(resp):
         return openai_api.iter_sse(resp)
 
+    def _apply_chat_template(self, prompt: str, timeout: float) -> str:
+        req = urllib.request.Request(
+            f"{config.LLAMACPP_URL}/apply-template",
+            data=json.dumps({
+                "messages": [{"role": "user", "content": prompt}],
+            }).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with self._urlopen(req, timeout) as resp:
+            payload = json.load(resp)
+        formatted = payload.get("prompt") if isinstance(payload, dict) else None
+        if not isinstance(formatted, str) or not formatted:
+            raise RuntimeError("llama-server /apply-template returned no formatted prompt")
+        return formatted
+
     @staticmethod
     def _sanitize_tps(tps: float, tokens: int, ttft: float, total: float) -> float:
         """See docs/engines.md's "_sanitize_tps"."""
@@ -682,15 +698,20 @@ class LlamaCppEngine(InferenceEngine):
     def generate(self, tag: str, prompt: str, timeout: int = 600,
                  num_ctx: int | None = None, n_parallel: int = 1,
                  cache_prompt: bool = False) -> GenerationMeasurement:
-        """Generate via /completion; n_parallel must match prepare_concurrency."""
+        """Apply the model chat template, then generate via /completion."""
         operation_start = time.perf_counter()
         deadline = operation_start + timeout
         self._ensure_model(tag, num_ctx, n_parallel=n_parallel, deadline=deadline)
         model_load_sec = time.perf_counter() - operation_start
 
+        remaining = deadline - time.perf_counter()
+        if remaining <= 0:
+            raise EngineTimeout(f"llamacpp_generate exceeded {timeout}s wall-clock timeout")
+        formatted_prompt = self._apply_chat_template(prompt, remaining)
+
         payload = json.dumps({
             **self.sampling_payload(),
-            "prompt": prompt,
+            "prompt": formatted_prompt,
             "n_predict": config.GENERATE_MAX_TOKENS,
             "stream": True,
             "return_tokens": True,

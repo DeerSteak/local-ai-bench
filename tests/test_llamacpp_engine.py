@@ -449,6 +449,10 @@ def test_sanitize_tps_returns_zero_when_decode_elapsed_not_positive():
 
 def _patch_ensure_model(monkeypatch):
     monkeypatch.setattr(LlamaCppEngine, "_ensure_model", lambda self, *a, **kw: None)
+    monkeypatch.setattr(
+        LlamaCppEngine, "_apply_chat_template",
+        lambda self, prompt, timeout: prompt,
+    )
 
 
 def _clock(*values):
@@ -467,6 +471,68 @@ def _clock(*values):
 
 
 # ── generate ──
+
+def test_apply_chat_template_formats_a_single_user_turn(monkeypatch):
+    captured = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"prompt":"<s>[INST]hello[/INST]"}'
+
+    def urlopen(req, timeout):
+        captured.append((req.full_url, json.loads(req.data), timeout))
+        return Response()
+
+    monkeypatch.setattr(LlamaCppEngine, "_urlopen", staticmethod(urlopen))
+    assert LlamaCppEngine()._apply_chat_template("hello", 12.5) == (
+        "<s>[INST]hello[/INST]"
+    )
+    assert captured == [(
+        f"{config.LLAMACPP_URL}/apply-template",
+        {"messages": [{"role": "user", "content": "hello"}]},
+        12.5,
+    )]
+
+
+def test_apply_chat_template_rejects_an_empty_server_response(monkeypatch):
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"prompt":""}'
+
+    monkeypatch.setattr(
+        LlamaCppEngine, "_urlopen", staticmethod(lambda req, timeout: Response()),
+    )
+    with pytest.raises(RuntimeError, match="returned no formatted prompt"):
+        LlamaCppEngine()._apply_chat_template("hello", 5)
+
+
+def test_generate_sends_the_chat_templated_prompt_to_completion(monkeypatch):
+    _patch_ensure_model(monkeypatch)
+    monkeypatch.setattr(
+        LlamaCppEngine, "_apply_chat_template",
+        lambda self, prompt, timeout: f"templated:{prompt}",
+    )
+    captured = []
+
+    def urlopen(req, timeout):
+        captured.append(json.loads(req.data))
+        return _FakeResponse([{"content": "ok", "tokens": [1], "stop": True}])
+
+    monkeypatch.setattr(LlamaCppEngine, "_urlopen", staticmethod(urlopen))
+    LlamaCppEngine().generate("tag", "raw")
+    assert captured[0]["prompt"] == "templated:raw"
 
 def test_generate_requests_n_predict_from_config_constant(monkeypatch):
     # concurrency_benchmark.py's slot_ctx_for headroom relies on this constant.
@@ -616,7 +682,8 @@ def test_generate_preserves_request_to_first_output_ttft(monkeypatch):
 def test_generate_enforces_total_deadline_and_keeps_partial_text(monkeypatch):
     _patch_ensure_model(monkeypatch)
     monkeypatch.setattr(
-        llamacpp_module.time, "perf_counter", _clock(0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 6.0),
+        llamacpp_module.time, "perf_counter",
+        _clock(0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 6.0),
     )
     _patch_urlopen(monkeypatch, [
         {"content": "partial", "tokens": [1]},
