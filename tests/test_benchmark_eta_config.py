@@ -57,4 +57,4 @@ def test_only_native_llamabench_plan_and_eta_use_sparse_depths():
         assert shaping["runs"] == config.N_RUNS
     assert runtime_shaping_config(args, engine_name="vllm")["llamabench_pp"] == original
     assert config.LLAMABENCH_PP == original
-    assert config.LLAMABENCH_CONC_PP == 4096
+    assert config.LLAMABENCH_CONC_PP == 8192

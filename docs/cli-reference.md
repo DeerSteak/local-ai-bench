@@ -41,6 +41,8 @@ run_bench.bat [options]   # Windows
 
 See [Flag details](#flag-details) below for what each flag actually does.
 
+`llamabenchconc` defaults to an 8192-token prompt per sequence and uses the selected `--tg-tokens` values at every fitted concurrency level. Model-context limits may reduce the prompt or the available concurrency levels.
+
 The launchers do not infer or display qualification status. Consult the [qualified-platform matrix](../README.md#qualified-platforms) before choosing an engine; run artifacts still retain execution identity and qualification provenance for later validation. The graphical launcher probes the installed runtime backend in the background to populate only the GPU split modes that runtime supports.
 
 ## Launch modes

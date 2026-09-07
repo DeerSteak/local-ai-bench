@@ -94,6 +94,18 @@ def test_fit_npl_keeps_everything_when_context_is_ample():
     assert npl == [1, 2, 4, 8, 16]
 
 
+@pytest.mark.parametrize("tg", [[128], [512], [128, 512]])
+@pytest.mark.parametrize("model_max, expected_levels", [
+    (131072, [1, 2, 4, 8]),
+    (262144, [1, 2, 4, 8, 16]),
+])
+def test_default_prompt_reserves_generation_space_at_high_concurrency(tg, model_max, expected_levels):
+    pp, npl = LBC.fit_npl(config.LLAMABENCH_CONC_PP, tg, config.LLAMABENCH_CONC_NPL, model_max)
+    assert pp == 8192
+    assert npl == expected_levels
+    assert max(npl) * (pp + max(tg)) <= model_max
+
+
 def test_fit_npl_drops_levels_that_would_not_fit():
     # 8192+512 = 8704 per sequence; 32768 // 8704 = 3, so only 1 and 2 fit.
     pp, npl = LBC.fit_npl(8192, [128, 512], [1, 2, 4, 8, 16], 32768)
@@ -507,10 +519,10 @@ def test_run_sizes_ctx_and_npl_from_the_model_context(fake_engine, monkeypatch):
 
     monkeypatch.setattr(LBC, "run_one", classmethod(fake_run_one))
     result = LBC().run(fake_engine, _MODELS)
-    assert captured["npl"] == [1, 2, 4]
-    assert captured["pp"] == 4096
-    assert captured["ctx_size"] == 4 * (4096 + 512)
-    assert result["m1"]["ctx_size"] == 4 * (4096 + 512)
+    assert captured["npl"] == [1, 2]
+    assert captured["pp"] == 8192
+    assert captured["ctx_size"] == 2 * (8192 + 512)
+    assert result["m1"]["ctx_size"] == 2 * (8192 + 512)
 
 
 def test_run_clamps_prompt_depth_on_small_context_models(fake_engine, monkeypatch):
