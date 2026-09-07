@@ -212,6 +212,8 @@ def test_setup_wizard_process_returns_plan_and_removes_handoff_files(monkeypatch
     monkeypatch.setattr("scripts.setup.setup_gui.os.close", lambda _handle: None)
 
     def fake_run(command):
+        request_path = Path(command[command.index("--request") + 1])
+        assert json.loads(request_path.read_text())["preferences"] == {"models": {"model": False}}
         response_path = Path(command[command.index("--response") + 1])
         response_path.write_text(json.dumps({"plan": {"llm_tags": ["model"]}}))
         return type("Result", (), {"returncode": 0})()
@@ -220,6 +222,7 @@ def test_setup_wizard_process_returns_plan_and_removes_handoff_files(monkeypatch
     plan = run_setup_wizard_process(
         memory_ceiling_gb=32.0, detected_comfyui=None,
         cleanup_names=["old-model"], existing_hf_token=True,
+        preferences={"models": {"model": False}},
     )
     assert plan == {"llm_tags": ["model"]}
     assert all(not path.exists() for path in created)
@@ -556,3 +559,52 @@ def test_sudo_notice_only_appears_when_a_privileged_install_will_run():
     assert sudo_notice(["vllm"], None) == "", "headers already present"
     assert sudo_notice(None, "python3.12-dev") == ""
     assert sudo_notice([], None) == ""
+
+
+def test_wizard_restores_saved_choices_through_review_without_installing(monkeypatch):
+    tk = pytest.importorskip("tkinter")
+    ttk = pytest.importorskip("tkinter.ttk")
+    from scripts.setup import setup_gui
+    from scripts.setup.engine_selection import build_engine_entries
+    from scripts.setup.setup_preferences import model_keys
+
+    keys = model_keys()
+    target = keys["llm_tags"][0]
+    prefs = {
+        "models": {key: key == target for names in keys.values() for key in names},
+        "engines": {"llamacpp": False, "llamacpp-vulkan": True},
+        "save_token_preference": False, "comfyui_mode": "download",
+    }
+
+    def descendants(widget):
+        return [child for direct in widget.winfo_children()
+                for child in [direct, *descendants(direct)]]
+
+    def complete_review(root):
+        root.update_idletasks()
+        controls = descendants(root)
+        native = next(widget for widget in controls if isinstance(widget, ttk.Checkbutton)
+                      and str(widget.cget("text")).startswith("llama.cpp —"))
+        native.invoke()
+        next_button = next(widget for widget in controls if isinstance(widget, ttk.Button)
+                           and widget.cget("text") == "Next")
+        for _ in range(8):
+            installing = next_button.cget("text") == "Install"
+            next_button.invoke()
+            root.update_idletasks()
+            if installing:
+                return
+        pytest.fail("wizard did not reach its final review")
+
+    monkeypatch.setattr(tk.Tk, "mainloop", complete_review)
+    plan = setup_gui.run_setup_wizard(
+        memory_ceiling_gb=0.1, detected_comfyui=None, cleanup_names=["old-model"],
+        vllm_cleanup=[{"directory_name": "cached", "repo": "test/repo", "size": 0}],
+        engine_entries=build_engine_entries(llamacpp_vulkan_supported=True), preferences=prefs,
+    )
+    assert plan is not None
+    assert plan["llm_tags"] == [target]
+    assert plan["embedding_tags"] == plan["image_shorts"] == []
+    assert plan["engines"] == ["llamacpp", "llamacpp-vulkan"]
+    assert plan["save_token_preference"] is False
+    assert plan["cleanup_names"] == plan["vllm_cleanup_names"] == []

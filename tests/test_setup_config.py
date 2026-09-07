@@ -40,7 +40,8 @@ def test_setup_config_round_trip_contains_paths_without_secrets(tmp_path):
 
 def test_load_rejects_malformed_unknown_and_non_object_config(tmp_path):
     path = tmp_path / "config.json"
-    for content in ("{", "[]", json.dumps({"schema_version": 999})):
+    for content in ("{", "[]", json.dumps({"schema_version": 999}),
+                    json.dumps({"schema_version": []}), json.dumps({"schema_version": True})):
         path.write_text(content)
         assert load_setup_config(path) == {}
 

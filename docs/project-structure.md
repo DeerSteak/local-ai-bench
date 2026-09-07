@@ -211,6 +211,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `setup/setup_progress.py` | Isolated Tk setup-progress window and its temporary status-file protocol |
 | `app/tk_utils.py` | Shared cross-platform Tk mouse-wheel normalization |
 | `setup/setup_config.py` | Atomic loading and persistence for the non-secret setup handoff |
+| `setup/setup_preferences.py` | Confirmed model and engine selections, option restoration, and qualification isolation |
 | `workloads/data/` | Question banks used by accuracy tests (see above) |
 
 ## `results/` in detail

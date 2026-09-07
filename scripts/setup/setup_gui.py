@@ -8,6 +8,9 @@ import subprocess
 import sys
 import tempfile
 
+from scripts.setup.setup_preferences import (
+    restore_engine_selection, restore_model_selection, restored_comfyui_options,
+)
 from scripts.runtime import hardware
 from scripts.workloads.models import (
     EMBED_MODELS,
@@ -194,6 +197,7 @@ def build_setup_plan(*, model_selection: dict[str, bool], cleanup_names: list[st
                                if selected],
         "hf_token": hf_token,
         "save_hf_token": should_save_gui_token(hf_token, save_token),
+        "save_token_preference": save_token,
         "use_existing_hf_token": existing_hf_token and not hf_token,
         "comfyui_mode": comfyui_mode,
         "comfyui_path": comfyui_path.strip(),
@@ -229,7 +233,8 @@ def run_setup_wizard_process(*, memory_ceiling_gb: float | None,
                              vllm_cleanup: list[dict] | None = None,
                              existing_hf_token: bool = False,
                              engine_entries: list[dict] | None = None,
-                             sudo_package: str | None = None) -> dict | None:
+                             sudo_package: str | None = None,
+                             preferences: dict | None = None) -> dict | None:
     request_handle, request_name = tempfile.mkstemp(prefix="local-ai-bench-setup-request-", suffix=".json")
     response_handle, response_name = tempfile.mkstemp(prefix="local-ai-bench-setup-response-", suffix=".json")
     os.close(request_handle)
@@ -244,6 +249,7 @@ def run_setup_wizard_process(*, memory_ceiling_gb: float | None,
             "existing_hf_token": existing_hf_token,
             "engine_entries": engine_entries or [],
             "sudo_package": sudo_package,
+            "preferences": preferences or {},
         }))
         result = subprocess.run([
             sys.executable, "-m", "scripts.setup.setup_gui",
@@ -264,7 +270,8 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
                      vllm_cleanup: list[dict] | None = None,
                      existing_hf_token: bool = False,
                      engine_entries: list[dict] | None = None,
-                     sudo_package: str | None = None) -> dict | None:  # pragma: no cover — interactive desktop UI
+                     sudo_package: str | None = None,
+                     preferences: dict | None = None) -> dict | None:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
     import webbrowser
     from tkinter import filedialog, messagebox, ttk
@@ -286,9 +293,13 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     root.after(150, bring_to_front)
 
     engine_entries = engine_entries or []
+    preferences = preferences or {}
+    restore_engine_selection(engine_entries, preferences)
     initial_engines = [entry["name"] for entry in engine_entries
                        if entry["checked"] and entry["enabled"]] or [LLAMACPP]
-    defaults = default_model_selection(memory_ceiling_gb, initial_engines)
+    defaults = restore_model_selection(
+        default_model_selection(memory_ceiling_gb, initial_engines), preferences,
+    )
     model_vars = {key: tk.BooleanVar(value=value) for key, value in defaults.items()}
     labelled_models: dict[str, tuple] = {}
     variant_groups: dict[str, list[dict]] = {}
@@ -300,7 +311,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     variant_child_rows: dict[str, tuple] = {}
     applied_engines = list(initial_engines)
     token_var = tk.StringVar()
-    save_token_var = tk.BooleanVar(value=True)
+    save_token_var = tk.BooleanVar(value=preferences.get("save_token_preference", True))
     override_token_var = tk.BooleanVar(value=False)
     cleanup_var = tk.BooleanVar(value=False)
     vllm_cleanup = list(vllm_cleanup or [])
@@ -308,8 +319,9 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     # each entry is opted into individually rather than as a group.
     vllm_cleanup_vars = {entry["directory_name"]: tk.BooleanVar(value=False)
                          for entry in vllm_cleanup}
-    comfy_mode_var = tk.StringVar(value="detected" if detected_comfyui else "download")
-    comfy_path_var = tk.StringVar(value=str(detected_comfyui or ""))
+    comfy_mode, comfy_path = restored_comfyui_options(preferences, detected_comfyui)
+    comfy_mode_var = tk.StringVar(value=comfy_mode)
+    comfy_path_var = tk.StringVar(value=comfy_path)
     result: dict | None = None
     pages: list[ttk.Frame] = []
     page_index = 0
@@ -338,7 +350,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     ttk.Label(
         welcome,
         text=("This wizard detects existing tools, lets you choose every model and credential option, "
-              "and shows a final review before downloading anything."),
+              "restores your last confirmed choices, and shows a final review before downloading anything."),
         wraplength=740, justify="left",
     ).grid(sticky="w", pady=(14, 8))
     memory_text = (f"Detected model-memory ceiling: approximately {memory_ceiling_gb:.1f} GB."
@@ -675,7 +687,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
         return chosen or [LLAMACPP]
 
     def refresh_model_rows() -> None:
-        """Re-label and re-default the model list for the checked engines."""
+        """Refresh backend fit labels without discarding model choices."""
         nonlocal applied_engines
         engines = selected_engines()
         if engines == applied_engines:
@@ -683,9 +695,6 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
         applied_engines = engines
         for key, (checkbutton, model) in labelled_models.items():
             checkbutton.configure(text=model_row_label(model, engines, memory_ceiling_gb))
-        for key, value in default_model_selection(memory_ceiling_gb, engines).items():
-            if key in model_vars:
-                model_vars[key].set(value)
         apply_variant_engine_mode(engines)
 
     def show_page(index: int) -> None:
@@ -789,6 +798,7 @@ def main() -> None:  # pragma: no cover
         existing_hf_token=request["existing_hf_token"],
         engine_entries=request.get("engine_entries") or [],
         sudo_package=request.get("sudo_package"),
+        preferences=request.get("preferences", {}),
     )
     args.response.write_text(json.dumps({"plan": plan}))
 

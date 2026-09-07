@@ -5,6 +5,7 @@ from pathlib import Path
 
 from scripts.runtime import config, hardware
 from scripts.setup.engine_selection import LLAMACPP, VLLM
+from scripts.setup.setup_preferences import restore_model_selection
 from scripts.setup.model_inventory import (
     engine_fit_report, engine_fit_warnings, find_non_catalog_model_dirs,
     find_non_catalog_vllm_repos, fits_any_engine, format_engine_sizes,
@@ -63,7 +64,7 @@ def qualification_model_selection(engine: str) -> tuple[list[dict], list[dict], 
 
 
 def select_models(memory_ceiling_gb=None, engines=(LLAMACPP,), *,
-                  vllm_cache_home: Path, cancel):
+                  vllm_cache_home: Path, cancel, preferences: dict | None = None):
     """Flat numbered model picker — see docs/setup.md's "What the setup scripts do".
     Returns (selected_llm, selected_images, selected_embed, cleanup_names)."""
     TIER_KEYS = {"xs": "xsmall", "s": "small", "m": "medium", "l": "large"}
@@ -121,6 +122,13 @@ def select_models(memory_ceiling_gb=None, engines=(LLAMACPP,), *,
                             "fits": fits,
                             "report": hardware_fit_report(m) if kind in ("llm", "embed") else {}})
 
+    defaults = {entry["item"].get("tag", entry["item"].get("short")): entry["checked"]
+                for entry in entries if entry["kind"] in ("llm", "image", "embed")}
+    restored = restore_model_selection(defaults, preferences or {})
+    for entry in entries:
+        if entry["kind"] in ("llm", "image", "embed"):
+            entry["checked"] = restored[entry["item"].get("tag", entry["item"].get("short"))]
+
     def size_label(e, m, kind):
         if kind in ("cleanup", "vllm_cleanup"):
             return "  (unchecked by default)"
@@ -139,7 +147,8 @@ def select_models(memory_ceiling_gb=None, engines=(LLAMACPP,), *,
         return label
 
     def render():
-        header_note = ("all selected by default" if memory_ceiling_gb is None
+        header_note = ("previous selections restored" if preferences and preferences.get("models") else
+                       "all selected by default" if memory_ceiling_gb is None
                         else "selected by default, except models that likely won't fit in memory")
         print(f"  {BOLD}Choose which models to install ({header_note}){RESET}")
         n = 1

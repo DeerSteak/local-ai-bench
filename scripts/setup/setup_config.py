@@ -15,9 +15,10 @@ def load_setup_config(path: Path) -> dict:
     """Load a valid setup configuration, or return an empty configuration."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, ValueError):
         return {}
-    return data if isinstance(data, dict) and data.get("schema_version") in SUPPORTED_SCHEMA_VERSIONS else {}
+    return data if (isinstance(data, dict) and type(data.get("schema_version")) is int
+                    and data["schema_version"] in SUPPORTED_SCHEMA_VERSIONS) else {}
 
 
 def write_setup_config(path: Path, *, comfyui_dir: Path | None,
@@ -34,6 +35,14 @@ def write_setup_config(path: Path, *, comfyui_dir: Path | None,
         "gpu": {"devices": gpu_devices or []},
         "vllm": vllm or {},
     }
+    preferences = load_setup_config(path).get("setup_preferences")
+    if isinstance(preferences, dict):
+        data["setup_preferences"] = preferences
+    write_setup_data(path, data)
+
+
+def write_setup_data(path: Path, data: dict) -> None:
+    """Publish setup state atomically so interrupted writes retain the previous choices."""
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:

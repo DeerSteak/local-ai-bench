@@ -8,9 +8,10 @@ from scripts.setup.setup_selection import save_hf_token
 
 
 class HfTokenProvider:
-    def __init__(self, root: Path, gated_models_selected: bool):
+    def __init__(self, root: Path, gated_models_selected: bool, *, save_token_default: bool = True):
         self.root = root
         self.gated_models_selected = gated_models_selected
+        self.save_token_preference = save_token_default
         self._loaded = False
         self._token = ""
 
@@ -50,7 +51,11 @@ class HfTokenProvider:
             ).strip()
         except EOFError:
             token = ""
-        if token and confirm("Save token to hf.txt for future runs?", default=True):
+        if token:
+            self.save_token_preference = confirm(
+                "Save token to hf.txt for future runs?", default=self.save_token_preference,
+            )
+        if token and self.save_token_preference:
             try:
                 save_hf_token(self.root / "hf.txt", token)
                 ok("Token saved to hf.txt")

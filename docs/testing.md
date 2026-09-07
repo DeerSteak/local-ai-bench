@@ -205,3 +205,5 @@ Pull requests targeting `develop`, `release/**`, or `main` run the full Python s
 ---
 
 [← How It Works](how-it-works.md) · [Back to README](../README.md) · [CLI Reference →](cli-reference.md)
+
+Setup preference tests in [test_setup_preferences.py](../tests/test_setup_preferences.py) cover atomic persistence before installation, preservation by the final runtime handoff, malformed state, explicit deselections, changed catalogs, unavailable engines, ComfyUI path validation, and qualification isolation. Terminal and Tk wizard tests verify restored selections through confirmation, with cleanup left unchecked and credentials excluded from general preferences; no real installer or model download is run.

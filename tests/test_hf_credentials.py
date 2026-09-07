@@ -32,3 +32,15 @@ def test_set_allows_gui_to_supply_empty_token(tmp_path):
     provider.set(None)
 
     assert provider.load() == ""
+
+
+def test_save_token_prompt_restores_preference_and_records_new_choice(monkeypatch, tmp_path):
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.setattr("builtins.input", lambda _prompt: "test-token")
+    defaults = []
+    monkeypatch.setattr(hf_credentials, "confirm", lambda _prompt, default: defaults.append(default) or True)
+    provider = HfTokenProvider(tmp_path, False, save_token_default=False)
+    assert provider.load() == "test-token"
+    assert defaults == [False]
+    assert provider.save_token_preference is True
+    assert (tmp_path / "hf.txt").read_text().strip() == "test-token"

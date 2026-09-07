@@ -73,3 +73,12 @@ def test_setup_coordinator_import_is_safe():
     module = importlib.import_module("scripts.setup.setup_check")
 
     assert callable(module.main)
+
+
+def test_confirmed_preferences_are_saved_before_unattended_installation():
+    source = SETUP_CHECK.read_text(encoding="utf-8")
+    save = source.index("    write_setup_preferences(")
+    assert source.index("_selection_plan =") < save < source.index("    INSTALL_STARTED = True")
+    assert "qualification=bool(args.qualification)" in source[save:save + 160]
+    restore = source.index("    restore_engine_selection(engine_entries, _preferences)")
+    assert restore < source.index("            apply_engine_preset(engine_entries, args.qualification)")

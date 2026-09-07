@@ -71,6 +71,9 @@ from scripts.workloads.model_variants import expanded_variant_catalog
 from scripts.setup.setup_selection import (
     additional_disk_space_needed, qualification_model_selection, select_models,
 )
+from scripts.setup.setup_preferences import (
+    setup_preferences, restore_engine_selection, restored_comfyui_options, write_setup_preferences,
+)
 from scripts.setup.setup_config import (
     configured_comfyui_dir, load_setup_config, vllm_setup_config, write_setup_config,
 )
@@ -181,6 +184,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
             f"--qualification {_qualification_target['runtime']}"
         )
     _saved_setup = load_setup_config(config.SETUP_CONFIG_PATH)
+    _preferences = setup_preferences(_saved_setup, qualification=bool(args.qualification))
     if args.comfyui and not normalize_comfyui_dir(Path(args.comfyui)):
         _arg_parser.error("--comfyui must contain main.py or a ComfyUI/main.py portable layout")
     _detected_comfyui = find_comfyui_installation(
@@ -188,6 +192,9 @@ def main() -> None:  # pragma: no cover - real interactive installer
         saved_path=configured_comfyui_dir(_saved_setup),
         managed_dir=config.COMFYUI_DIR,
     )
+    _comfy_mode, _comfy_path = restored_comfyui_options(_preferences, _detected_comfyui, args.comfyui)
+    _detected_comfyui = Path(_comfy_path) if _comfy_path else None
+    _preferences.update(comfyui_mode=_comfy_mode, comfyui_path=_comfy_path)
     COMFYUI_DIR: Path = _detected_comfyui or config.COMFYUI_DIR
 
     INSTALL_STARTED = False  # flipped True once the unattended install phase begins
@@ -768,6 +775,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
         llamacpp_vulkan_note=_vulkan_note,
         vllm_note=vllm_note,
     )
+    restore_engine_selection(engine_entries, _preferences)
     if args.qualification:
         try:
             apply_engine_preset(engine_entries, args.qualification)
@@ -846,6 +854,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
             )),
             engine_entries=engine_entries,
             sudo_package=header_package,
+            preferences=_preferences,
         )
         if _gui_plan is None:
             print("\n  Setup cancelled — nothing was installed.\n")
@@ -902,7 +911,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
     elif _gui_plan is None:
         selected_llm, selected_images, selected_embed, cleanup_names, vllm_cleanup_names = select_models(
             memory_ceiling_gb, engines=selected_model_engines,
-            vllm_cache_home=VLLM_CACHE_HOME, cancel=cancel_setup,
+            vllm_cache_home=VLLM_CACHE_HOME, cancel=cancel_setup, preferences=_preferences,
         )
     else:
         _llm_tags = set(_gui_plan["llm_tags"])
@@ -932,6 +941,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
 
     token_provider = HfTokenProvider(
         SCRIPT_DIR, bool(GATED_IMAGE_SHORTS & selected_image_shorts),
+        save_token_default=_preferences.get("save_token_preference", True),
     )
 
 
@@ -991,6 +1001,19 @@ def main() -> None:  # pragma: no cover - real interactive installer
             info(f"Downloading a managed copy to {config.COMFYUI_DIR}")
         else:
             info(f"Downloading a managed copy to {config.COMFYUI_DIR}")
+
+    _selection_plan = _gui_plan if _gui_plan is not None else {
+        "llm_tags": [model["tag"] for model in selected_llm],
+        "embedding_tags": [model["tag"] for model in selected_embed],
+        "image_shorts": [model["short"] for model in selected_images],
+        "engines": selected_engines,
+        "comfyui_mode": "existing" if _detected_comfyui else "download",
+        "comfyui_path": str(_detected_comfyui or ""),
+        "save_token_preference": token_provider.save_token_preference,
+    }
+    write_setup_preferences(
+        config.SETUP_CONFIG_PATH, _selection_plan, qualification=bool(args.qualification),
+    )
 
     # ── 8. Installing — everything below runs unattended, no more prompts ─────────
 
