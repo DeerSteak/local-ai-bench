@@ -338,7 +338,9 @@ def test_conversation_runner_uses_llm_preflight_and_commits_projection(
     assert '"stage":"conv","status":"skipped","engine":"fake","model":"slow:model"' in progress
 
 
-def test_native_runner_reconstructs_plan_and_streams_rows_to_journal(tmp_path):
+@pytest.mark.parametrize("depths", [[512], [8192, 16384, 32768, 65536, 131072],
+                                   [512, 2048, 8192, 49152, 131072]])
+def test_native_runner_reconstructs_plan_and_streams_rows_to_journal(tmp_path, depths):
     path = tmp_path / "events.sqlite3"
     plan = RunPlan.create(
         application_version="4.1", engine_name="fake", tests=["llamabench"],
@@ -348,8 +350,8 @@ def test_native_runner_reconstructs_plan_and_streams_rows_to_journal(tmp_path):
         }, effective_config={
             "runs": 2, "warmup_runs": 0, "run_timeout_seconds": 7,
             "accuracy_timeout_seconds": 60, "accuracy_token_budget": 256,
-            "cpu_only": False, "force_all": False, "max_prompt_tokens": None,
-            "context_lengths": [512], "llamabench_pp": [512],
+            "cpu_only": False, "force_all": False, "max_prompt_tokens": 131072,
+            "context_lengths": [512], "llamabench_pp": depths,
             "llamabench_tg": [128], "sample_size": None,
             "concurrency_tool_levels": [1, 2], "concurrency_chat_levels": [1, 2],
             "concurrency_tool_context": 512, "concurrency_chat_context": 1024,
@@ -363,11 +365,11 @@ def test_native_runner_reconstructs_plan_and_streams_rows_to_journal(tmp_path):
     class Benchmark:
         def run(self, **kwargs):
             assert kwargs["reps"] == 2
-            assert config.LLAMABENCH_PP == [512]
+            assert config.LLAMABENCH_PP == depths
             model = kwargs["models"][0]
             kwargs["journal"].record_model_plan(model, 1, 2)
             kwargs["journal"].record_entry(model, {
-                "n_prompt": 512, "n_gen": 0, "n_depth": 0, "avg_ts": 100.0,
+                "n_prompt": depths[0], "n_gen": 0, "n_depth": 0, "avg_ts": 100.0,
                 "samples_ts": [99.0, 101.0], "ts_runs": [99.0, 101.0],
                 "requested_reps": 2, "completed_reps": 2,
             })
@@ -483,3 +485,53 @@ def test_concurrency_runner_uses_plan_shape_and_commits_final_batch(tmp_path):
         config.RUN_TIMEOUT = old_timeout
     result = export_llm_section(path, plan.job_id, "conc_chat", "concurrency")
     assert result["fake"]["4"]["aggregate_tps"] == 50
+
+
+@pytest.mark.parametrize("tg_values", [[128], [512], [128, 512], [256, 1024]])
+def test_native_concurrency_worker_restores_selected_tg_sizes(tmp_path, monkeypatch, tg_values):
+    from scripts.results.native_concurrency_event_stage import NativeConcurrencyEventStage
+    from scripts.workloads.llamabench_concurrency_benchmark import LlamaBenchConcurrencyBenchmark
+
+    path = tmp_path / "events.sqlite3"
+    plan = RunPlan.create(
+        application_version="6.0", engine_name="fake", tests=["llamabenchconc"],
+        stage_order=["llamabenchconc"], models={
+            "llm": [{"tag": "fake:model", "short": "fake"}],
+            "concurrency": [], "embeddings": [], "images": [],
+        }, effective_config={
+            "runs": 1, "warmup_runs": 0, "run_timeout_seconds": 7,
+            "accuracy_timeout_seconds": 60, "accuracy_token_budget": 256,
+            "cpu_only": False, "force_all": False, "max_prompt_tokens": None,
+            "context_lengths": [512], "llamabench_pp": [512],
+            "llamabench_tg": tg_values, "sample_size": None,
+            "concurrency_tool_levels": [1, 2], "concurrency_chat_levels": [1, 2],
+            "concurrency_tool_context": 4096, "concurrency_chat_context": 4096,
+            "concurrency_chat_soft_exit_floor": 2,
+            "mtp_enabled": False, "mtp_configurations": {},
+        },
+    )
+    owner = NativeConcurrencyEventStage(path, plan, lambda _: None)
+    owner.close()
+    monkeypatch.setattr(config, "LLAMABENCH_CONC_TG", [128, 512])
+    monkeypatch.setattr(config, "RUN_TIMEOUT", config.RUN_TIMEOUT)
+    monkeypatch.setattr(config, "LLAMACPP_GPU_SPLIT_MODE", "layer")
+    observed = []
+
+    class Benchmark:
+        def run(self, **kwargs):
+            observed.extend(config.LLAMABENCH_CONC_TG)
+            sweeps = kwargs["journal"].pending_sweeps(
+                kwargs["models"][0], 4096, config.LLAMABENCH_CONC_TG, [1, 2, 4, 8, 16],
+            )
+            assert sweeps == [(tg_values, [1, 2, 4, 8, 16])]
+            command = LlamaBenchConcurrencyBenchmark.build_command(
+                "/managed/llama-batched-bench", tmp_path / "model.gguf", 100000,
+                4096, config.LLAMABENCH_CONC_TG, [1, 2, 4, 8, 16], 2048, 512, 0,
+            )
+            assert command[command.index("-ntg") + 1] == ",".join(map(str, tg_values))
+            kwargs["journal"].finish()
+
+    workload_runner.execute_llamabench_concurrency_job(
+        path, plan.job_id, engine_factory=lambda _: object(), benchmark_factory=Benchmark,
+    )
+    assert observed == tg_values

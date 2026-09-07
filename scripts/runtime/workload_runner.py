@@ -365,6 +365,7 @@ def execute_llamabench_concurrency_job(
         raise ValueError("runner job does not include native llama-bench concurrency")
     settings = plan.effective_config
     apply_runner_settings(settings)
+    config.LLAMABENCH_CONC_TG = list(settings["llamabench_tg"])
     catalog = {model["tag"]: model for model in expanded_variant_catalog(LLM_MODELS)}
     models = [
         {**identity, "label": (catalog.get(identity["tag"]) or identity).get(

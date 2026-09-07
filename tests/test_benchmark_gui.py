@@ -1396,3 +1396,23 @@ def test_progress_event_engine_rejects_an_engine_that_is_not_in_this_run():
     event = {"kind": "stage", "stage": "llm", "engine": "mlx"}
     assert progress_event_engine(event, ["llamacpp", "vllm"]) is None
     assert progress_event_engine({"engine": "", "kind": "stage"}, ["llamacpp"]) == "llamacpp"
+
+
+def test_concurrency_launch_uses_only_the_checked_tg_option(tmp_path):
+    entries = [MenuEntry("model", "Model", "llm", "LLM", True)]
+    preparation = prepare_benchmark_launch(
+        engine="llamacpp", tests=["llamabenchconc"], entries=entries,
+        model_owners={"model": {"llamacpp"}}, max_prompt_tokens=131072, tg_tokens=[128],
+        gui_options=dict(GUI_OPTION_DEFAULTS), selected_preset="Custom",
+        detected_tools={"llama-batched-bench": "/managed/llama-batched-bench"},
+        found_comfyui=None, detected_comfyui=tmp_path,
+    )
+    assert isinstance(preparation, BenchmarkLaunchReady)
+    assert preparation.state["tg_tokens"] == [128]
+    index = preparation.command.index("--tg-tokens")
+    values = []
+    for argument in preparation.command[index + 1:]:
+        if argument.startswith("--"):
+            break
+        values.append(argument)
+    assert values == ["128"]

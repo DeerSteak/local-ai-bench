@@ -151,7 +151,17 @@ def format_duration_estimate(seconds: float | None) -> str:
     return f"about {minutes // 60}h {minutes % 60}m" if minutes >= 60 else f"about {minutes}m"
 
 
-def runtime_shaping_config(args) -> dict:
+def select_llamabench_prompt_sizes(sizes: list[int], max_tokens: int | None) -> list[int]:
+    """Keep coarse long-context checkpoints and the deepest configured depth under the cap."""
+    capped = [size for size in sizes if max_tokens is None or size <= max_tokens]
+    if max_tokens is None or max_tokens < 32768 or not capped or max(capped) < 32768:
+        return capped
+    deepest = max(capped)
+    return [size for size in capped
+            if size == deepest or (size >= 8192 and size & (size - 1) == 0)]
+
+
+def runtime_shaping_config(args, *, engine_name: str | None = None) -> dict:
     return {
         "runs": config.N_RUNS, "warmup_runs": args.warmup,
         "run_timeout_seconds": config.RUN_TIMEOUT,
@@ -160,7 +170,10 @@ def runtime_shaping_config(args) -> dict:
         "cpu_only": args.cpu_only, "force_all": args.force_all,
         "max_prompt_tokens": args.max_prompt_tokens,
         "context_lengths": config.CONTEXT_LENGTHS,
-        "llamabench_pp": config.LLAMABENCH_PP,
+        "llamabench_pp": (
+            select_llamabench_prompt_sizes(config.LLAMABENCH_PP, args.max_prompt_tokens)
+            if engine_name in {"llamacpp", "llamacpp-vulkan"} else list(config.LLAMABENCH_PP)
+        ),
         "llamabench_tg": config.LLAMABENCH_TG,
         "sample_size": args.sample,
         "concurrency_tool_levels": config.CONCURRENCY_TOOL_LEVELS,
@@ -175,9 +188,9 @@ def runtime_shaping_config(args) -> dict:
     }
 
 
-def eta_match_config(args, *, mtp_enabled: bool = False) -> dict:
+def eta_match_config(args, *, mtp_enabled: bool = False, engine_name: str | None = None) -> dict:
     """Runtime-shaping settings required for a historical ETA match."""
-    values = runtime_shaping_config(args)
+    values = runtime_shaping_config(args, engine_name=engine_name)
     values["mtp_enabled"] = mtp_enabled
     matched = {key: values[key] for key in ETA_MATCH_KEYS}
     if "sustained" in getattr(args, "tests", []):
@@ -209,7 +222,8 @@ def format_resolved_plan(engine: str, tests: list[str], models: dict[str, list[d
             checkpoints = [value for value in LLMConversationBenchmark.CONV_CHECKPOINTS if value <= cap]
             cases = f"checkpoints {', '.join(map(str, checkpoints))}"
         elif test == "llamabench":
-            cases = f"pp {config.LLAMABENCH_PP}; tg {config.LLAMABENCH_TG}"
+            depths = select_llamabench_prompt_sizes(config.LLAMABENCH_PP, max_prompt_tokens)
+            cases = f"pp {depths}; tg {config.LLAMABENCH_TG}"
         elif test == "llamabenchconc":
             cases = f"pp {config.LLAMABENCH_CONC_PP}; tg {config.LLAMABENCH_CONC_TG}; concurrency {config.LLAMABENCH_CONC_NPL}"
         elif test == "vllmbench":
@@ -821,7 +835,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              f"LLAMABENCH_PP {config.LLAMABENCH_PP}), and 'llamabenchconc' (clamps its fixed "
              f"prompt depth, default {config.LLAMABENCH_CONC_PP}); also caps 'conv' checkpoints "
              "and growth target to at most N tokens — only "
-             "affects whichever of those tests are actually selected via --tests "
+             "affects whichever of those tests are actually selected via --tests. "
+             "For llama-bench, caps of 32768 or higher keep power-of-two depths from 8192 "
+             "plus the deepest configured depth under the cap "
              "(default: no cap, run every configured depth).",
     )
     parser.add_argument(
@@ -1099,7 +1115,8 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             )
             estimate = estimate_matching_plan_seconds(
                 config.RESULTS_DIR, engine_scope["name"], tests, plan_models,
-                eta_match_config(args, mtp_enabled=engine_scope["mtp_enabled"]), hardware_profile,
+                eta_match_config(args, mtp_enabled=engine_scope["mtp_enabled"],
+                                 engine_name=engine_scope["name"]), hardware_profile,
             )
             display_models = {
                 "llm": engine_scope["llm_models"],
@@ -1299,7 +1316,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                     f"Temperature preflight: unavailable — {temperature_availability.reason}"
                 )
         effective_config = {
-            **runtime_shaping_config(args),
+            **runtime_shaping_config(args, engine_name=engine_name),
             "retry_crashed_models": args.retry_crashed_models,
             "gpu_split_mode": args.gpu_split_mode,
             "llamacpp_no_repack": args.llamacpp_no_repack,
@@ -1343,7 +1360,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "llm": config.CONTEXT_LENGTHS,
             "conv": [value for value in LLMConversationBenchmark.CONV_CHECKPOINTS
                      if value <= context_cap],
-            "llamabench": config.LLAMABENCH_PP,
+            "llamabench": effective_config["llamabench_pp"],
             "llamabenchconc": [config.LLAMABENCH_CONC_PP],
             "vllmbench": config.LLAMABENCH_PP,
             "mcq": [config.ACCURACY_CONTEXT], "math": [config.ACCURACY_CONTEXT],
