@@ -509,3 +509,37 @@ def test_linux_intel_build_fails_without_oneapi(monkeypatch, tmp_path):
     assert failures == [
         "Intel oneAPI environment is unavailable; SYCL llama.cpp cannot be built",
     ]
+
+
+def test_installed_toolset_error_rejects_missing_managed_tools():
+    assert "incomplete" in (llamacpp_install.installed_toolset_error(None, "cuda") or "")
+
+
+@pytest.mark.parametrize("error", [None, "setup requires cuda, but installed llama.cpp exposes cpu"])
+def test_installed_toolset_error_retains_backend_validation(monkeypatch, error):
+    calls = []
+    monkeypatch.setattr(
+        llamacpp_install, "llamacpp_backend_error",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or error,
+    )
+    assert llamacpp_install.installed_toolset_error("/managed/server", "cuda", env={"CUDA": "1"}) == error
+    assert calls == [(("/managed/server", "cuda"), {"env": {"CUDA": "1"}, "context": "setup"})]
+
+
+@pytest.mark.parametrize("platform_name", ["Linux", "Darwin", "Windows"])
+def test_install_refuses_to_modify_a_symlinked_runtime(tmp_path, symlink_or_skip, platform_name):
+    external = tmp_path / "external"
+    external.mkdir()
+    marker = external / "keep"
+    marker.write_text("existing runtime")
+    runtime = tmp_path / "llama.cpp"
+    symlink_or_skip(runtime, external, directory=True)
+    failures = []
+    assert not llamacpp_install.install(
+        runtime, tmp_path, platform_name, nvidia=False, rocm=False, intel_xpu=False,
+        compute_capability=None, max_cuda_version=None,
+        info=_log, warn=_log, fail=failures.append, ok=_log,
+    )
+    assert "Remove the symlink" in failures[0]
+    assert marker.read_text() == "existing runtime"
+    assert runtime.is_symlink()

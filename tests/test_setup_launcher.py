@@ -1,4 +1,8 @@
 from pathlib import Path
+import shutil
+import subprocess
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -58,3 +62,29 @@ def test_windows_launcher_forces_gui_and_treats_cancel_as_clean_exit():
     assert "call setup.bat --interface gui" in launcher
     assert "if %SETUP_STATUS% equ 10 exit /b 0" in launcher
     assert "if %errorlevel% equ 10 exit /b 10" in wrapper
+
+
+@pytest.mark.parametrize("tools_present", [False, True])
+def test_linux_build_prerequisites_ignore_system_llamacpp(tools_present):
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("bash is unavailable")
+    wrapper = (ROOT / "setup.sh").read_text()
+    block = wrapper.split("    # llama.cpp builds from source on Linux;", 1)[1]
+    block = block.split("\nfi\n\nGUI_SESSION", 1)[0]
+    block = block.split("\n", 2)[2]
+    mocks = """
+command() {
+    case "$2" in
+        git|cmake) return BUILD_STATUS ;;
+        llama-cli|llama-server|apt-get) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+sudo() { echo "$*"; }
+info() { :; }
+warn() { :; }
+""".replace("BUILD_STATUS", "0" if tools_present else "1")
+    result = subprocess.run([bash, "-c", mocks + block], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == ("" if tools_present else "apt-get install -y git cmake build-essential")

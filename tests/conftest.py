@@ -14,10 +14,3 @@ def symlink_or_skip():
             pytest.skip("symlinks are unavailable on this platform")
         return link
     return _make
-
-
-@pytest.fixture(autouse=True)
-def isolate_saved_llamacpp_tool_config(monkeypatch):
-    monkeypatch.setattr(
-        "scripts.runtime.llamacpp_tools.load_setup_config", lambda _path: {},
-    )

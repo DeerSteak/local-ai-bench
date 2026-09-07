@@ -101,6 +101,8 @@ def test_binary_path_via_llamacpp_dir(monkeypatch, tmp_path):
     nested.mkdir(parents=True)
     exe = nested / "llama-server"
     exe.write_text("")
+    (nested / "llama-bench").touch()
+    (nested / "llama-batched-bench").touch()
     monkeypatch.setattr(llamacpp_module.shutil, "which", lambda name: None)
     assert LlamaCppEngine._binary_path() == str(exe)
 
@@ -116,21 +118,23 @@ def test_binary_path_skips_a_same_named_source_directory(monkeypatch, tmp_path):
     nested.mkdir(parents=True)
     exe = nested / "llama-server"
     exe.write_text("")
+    (nested / "llama-bench").touch()
+    (nested / "llama-batched-bench").touch()
     monkeypatch.setattr(llamacpp_module.shutil, "which", lambda name: None)
     assert LlamaCppEngine._binary_path() == str(exe)
 
 
-def test_binary_path_falls_back_to_path(monkeypatch, tmp_path):
+def test_binary_path_rejects_system_path(monkeypatch, tmp_path):
     monkeypatch.setattr(llamacpp_module.platform, "system", lambda: "Linux")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
     monkeypatch.setattr(
         llamacpp_module.shutil, "which",
         lambda name: "/usr/local/bin/llama-server" if name == "llama-server" else None,
     )
-    assert LlamaCppEngine._binary_path() == "/usr/local/bin/llama-server"
+    assert LlamaCppEngine._binary_path() is None
 
 
-def test_binary_path_checks_macos_homebrew_prefixes(monkeypatch, tmp_path):
+def test_binary_path_rejects_macos_homebrew_prefixes(monkeypatch, tmp_path):
     monkeypatch.setattr(llamacpp_module.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
     monkeypatch.setattr(llamacpp_module.shutil, "which", lambda name: None)
@@ -141,7 +145,7 @@ def test_binary_path_checks_macos_homebrew_prefixes(monkeypatch, tmp_path):
         return str(self) == "/opt/homebrew/bin/llama-server" or real_is_file(self)
 
     monkeypatch.setattr(llamacpp_module.Path, "is_file", fake_is_file)
-    assert LlamaCppEngine._binary_path() == "/opt/homebrew/bin/llama-server"
+    assert LlamaCppEngine._binary_path() is None
 
 
 def test_binary_path_returns_none_when_missing(monkeypatch, tmp_path):

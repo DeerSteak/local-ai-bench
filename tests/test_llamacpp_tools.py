@@ -1,6 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from scripts.runtime.llamacpp_tools import (
     CUDA_BIN_DIRS, cuda_architecture, find_llamacpp_tool, find_nvcc,
     llamacpp_backend_error, llamacpp_backend_mismatch, probe_llamacpp_backend,
@@ -75,14 +77,14 @@ def test_nvcc_is_absent_when_neither_path_nor_toolkit_has_it():
     assert find_nvcc(which_fn=lambda _name: None, exists_fn=lambda _path: False) is None
 
 
-def test_system_path_wins_over_an_incomplete_project_toolset(tmp_path):
+def test_incomplete_project_toolset_does_not_fall_back_to_path(tmp_path):
     vendored = tmp_path / "vendor"
     vendored.mkdir()
     (vendored / "llama-server").write_text("vendored")
     assert find_llamacpp_tool(
         "llama-server", vendored_dir=vendored, platform_name="Linux",
         which_fn=lambda _: "/usr/local/bin/llama-server",
-    ) == "/usr/local/bin/llama-server"
+    ) is None
 
 
 def test_complete_project_toolset_wins_as_one_coherent_runtime(tmp_path):
@@ -110,17 +112,17 @@ def test_managed_tools_from_different_directories_are_not_mixed(tmp_path):
     assert find_llamacpp_tool(
         "llama-bench", vendored_dir=managed, platform_name="Linux",
         which_fn=lambda requested: f"/usr/bin/{requested}",
-    ) == "/usr/bin/llama-bench"
+    ) is None
 
 
-def test_project_binary_is_a_fallback_when_system_tool_is_missing(tmp_path):
+def test_incomplete_project_binary_is_not_accepted(tmp_path):
     binary = tmp_path / "vendor" / "build" / "bin" / "llama-bench"
     binary.parent.mkdir(parents=True)
     binary.write_text("vendored")
     assert find_llamacpp_tool(
         "llama-bench", vendored_dir=tmp_path / "vendor", platform_name="Linux",
         which_fn=lambda _: None,
-    ) == str(binary)
+    ) is None
 
 
 def test_macos_managed_binary_wins_over_homebrew_or_path(tmp_path):
@@ -153,42 +155,54 @@ def test_missing_system_and_vendored_tool_returns_none(tmp_path):
 def test_windows_vendored_fallback_uses_exe_suffix(tmp_path):
     binary = tmp_path / "llama-server.exe"
     binary.write_text("vendored")
+    (tmp_path / "llama-bench.exe").touch()
+    (tmp_path / "llama-batched-bench.exe").touch()
     assert find_llamacpp_tool(
         "llama-server", vendored_dir=tmp_path, platform_name="Windows",
         which_fn=lambda _: None,
     ) == str(binary)
 
 
-def test_valid_configured_tool_wins_over_vendored_copy(tmp_path, monkeypatch):
-    configured = tmp_path / "configured" / "llama-server"
-    configured.parent.mkdir()
-    configured.touch()
-    vendored = tmp_path / "vendored" / "llama-server"
-    vendored.parent.mkdir()
-    vendored.touch()
-    monkeypatch.setattr(
-        "scripts.runtime.llamacpp_tools.load_setup_config",
-        lambda path: {"schema_version": 1, "llama_cpp": {"llama-server": str(configured)}},
-    )
-    assert find_llamacpp_tool(
-        "llama-server", vendored_dir=vendored.parent,
-        platform_name="Linux", which_fn=lambda _: None,
-    ) == str(configured)
+@pytest.mark.parametrize("platform_name", ["Linux", "Darwin", "Windows"])
+@pytest.mark.parametrize("engine_name", ["llamacpp", "llamacpp-vulkan"])
+def test_external_tools_and_saved_paths_are_ignored(tmp_path, monkeypatch, platform_name, engine_name):
+    from scripts.runtime import config
+    import json
+
+    suffix = ".exe" if platform_name == "Windows" else ""
+    external = tmp_path / "external"
+    external.mkdir()
+    tools = {}
+    for name in ("llama-server", "llama-bench", "llama-batched-bench"):
+        binary = external / f"{name}{suffix}"
+        binary.touch()
+        tools[name] = str(binary)
+    saved = tmp_path / "config.json"
+    saved.write_text(json.dumps({"schema_version": 4, "llama_cpp": tools, "llama_cpp_vulkan": tools}))
+    monkeypatch.setattr(config, "SETUP_CONFIG_PATH", saved)
+    for name in tools:
+        assert find_llamacpp_tool(
+            name, vendored_dir=tmp_path / "missing", platform_name=platform_name,
+            which_fn=lambda requested: tools[requested], engine_name=engine_name,
+        ) is None
 
 
-def test_vulkan_tool_uses_only_its_managed_or_configured_runtime(tmp_path, monkeypatch):
-    configured = tmp_path / "vulkan" / "llama-server"
-    configured.parent.mkdir()
-    configured.touch()
-    monkeypatch.setattr(
-        "scripts.runtime.llamacpp_tools.load_setup_config",
-        lambda _path: {
-            "schema_version": 4,
-            "llama_cpp": {"llama-server": "/native/llama-server"},
-            "llama_cpp_vulkan": {"llama-server": str(configured)},
-        },
-    )
-    assert find_llamacpp_tool(
-        "llama-server", vendored_dir=tmp_path / "missing", platform_name="Linux",
-        which_fn=lambda _name: "/path/llama-server", engine_name="llamacpp-vulkan",
-    ) == str(configured)
+def test_symlinked_external_tool_is_not_project_managed(tmp_path, symlink_or_skip):
+    external = tmp_path / "external-server"
+    external.touch()
+    managed = tmp_path / "managed"
+    managed.mkdir()
+    symlink_or_skip(managed / "llama-server", external)
+    (managed / "llama-bench").touch()
+    (managed / "llama-batched-bench").touch()
+    assert find_llamacpp_tool("llama-server", vendored_dir=managed, platform_name="Linux") is None
+
+
+def test_external_runtime_directory_symlink_is_not_managed(tmp_path, symlink_or_skip):
+    external = tmp_path / "external"
+    external.mkdir()
+    for name in ("llama-server", "llama-bench", "llama-batched-bench"):
+        (external / name).touch()
+    managed = tmp_path / "managed"
+    symlink_or_skip(managed, external, directory=True)
+    assert find_llamacpp_tool("llama-server", vendored_dir=managed, platform_name="Linux") is None

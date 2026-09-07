@@ -188,11 +188,11 @@ def workload_preflight_errors(tests: list[str], tools: dict[str, str | None],
     errors = []
     server_tests = set(tests) - {"llamabench", "llamabenchconc", "img"}
     if server_tests and not tools.get("llama-server"):
-        errors.append("llama-server is required for the selected tests. Run Setup or install it on PATH.")
+        errors.append("llama-server is required for the selected tests. Run Setup to install the project-managed runtime.")
     if "llamabench" in tests and not tools.get("llama-bench"):
-        errors.append("llama-bench is required for llama-bench throughput. Run Setup or install it on PATH.")
+        errors.append("llama-bench is required for llama-bench throughput. Run Setup to install the project-managed runtime.")
     if "llamabenchconc" in tests and not tools.get("llama-batched-bench"):
-        errors.append("llama-batched-bench is required for llama-bench concurrency. Run Setup or install it on PATH.")
+        errors.append("llama-batched-bench is required for llama-bench concurrency. Run Setup to install the project-managed runtime.")
     if "img" in tests and not comfyui_available:
         errors.append("ComfyUI is required for image generation. Run Setup or choose a valid ComfyUI path.")
     return errors

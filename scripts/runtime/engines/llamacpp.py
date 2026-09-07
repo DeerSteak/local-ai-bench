@@ -645,7 +645,7 @@ class LlamaCppEngine(InferenceEngine):
                 )
             except FileNotFoundError:
                 log_fh.close()
-                raise RuntimeError(f"'{self.BINARY}' not found in PATH") from None
+                raise RuntimeError(f"Managed executable '{binary}' is unavailable — rerun Setup") from None
             log_fh.close()
             self._proc = proc
             Shared._managed_procs.append(proc)

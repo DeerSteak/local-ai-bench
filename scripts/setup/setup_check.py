@@ -575,13 +575,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
     )
     llamacpp_found = LLAMACPP_BIN is not None and not _llamacpp_backend_mismatch
     _managed_llamacpp_ready = llamacpp_install.managed_toolset_ready(LLAMACPP_DIR, os_name)
-    managed_mac_runtime = os_name == "Darwin" and LLAMACPP_DIR.is_dir() and any(
-        path.is_file() for path in LLAMACPP_DIR.rglob("llama-server")
-    )
-    needs_llamacpp_install = (
-        not llamacpp_found or (os_name == "Darwin" and not managed_mac_runtime)
-        or (args.qualification == LLAMACPP and not _managed_llamacpp_ready)
-    )
+    needs_llamacpp_install = not llamacpp_found or not _managed_llamacpp_ready
     if llamacpp_found:
         ok(f"llama-server found: {LLAMACPP_BIN}")
     elif _llamacpp_backend_mismatch:
@@ -1090,21 +1084,21 @@ def main() -> None:  # pragma: no cover - real interactive installer
     if LLAMACPP in pending_engines:
         llamacpp_installed = install_llamacpp()
         if llamacpp_installed:
-            ok("llama.cpp installed successfully")
-            llamacpp_found = True
             llamacpp_tools = llamacpp_install.find_tools(LLAMACPP_DIR, os_name)
             LLAMACPP_BIN = llamacpp_tools["llama-server"]
+            llamacpp_found = LLAMACPP_BIN is not None
             _post_install_probe_env = (
                 oneapi_environment() if _required_llamacpp_backend == "xpu" else None
             )
-            _post_install_backend_error = llamacpp_backend_error(
+            _post_install_backend_error = llamacpp_install.installed_toolset_error(
                 LLAMACPP_BIN, _required_llamacpp_backend, env=_post_install_probe_env,
-                context="setup",
             )
             if _post_install_backend_error:
                 fail(_post_install_backend_error)
                 issues.append(_post_install_backend_error)
                 llamacpp_found = False
+            else:
+                ok("llama.cpp installed successfully")
             LLAMACPP_BENCH_BIN = llamacpp_tools["llama-bench"]
             if LLAMACPP_BENCH_BIN:
                 ok(f"llama-bench found: {LLAMACPP_BENCH_BIN}")

@@ -36,6 +36,13 @@ def managed_toolset_ready(runtime_dir: Path, platform_name: str) -> bool:
     return bool(managed_llamacpp_tools(runtime_dir, platform_name))
 
 
+def installed_toolset_error(binary: str | None, required_backend: str | None, *,
+                            env=None) -> str | None:
+    if binary is None:
+        return "Managed llama.cpp toolset is incomplete — rerun Setup to repair it"
+    return llamacpp_backend_error(binary, required_backend, env=env, context="setup")
+
+
 qualification_backend_mismatch = llamacpp_backend_mismatch
 
 
@@ -113,6 +120,10 @@ def install(runtime_dir: Path, download_dir: Path, platform_name: str, *,
             nvidia: bool, rocm: bool, intel_xpu: bool, compute_capability: str | None,
             max_cuda_version: str | None, info, warn, fail, ok,
             version: str | None = None, vulkan: bool = False) -> bool:
+    if runtime_dir.is_symlink():
+        fail(f"Managed runtime directory is an external symlink: {runtime_dir}. "
+             "Remove the symlink and rerun Setup to install a project-owned copy.")
+        return False
     release_fetcher = (lambda: fetch_llamacpp_release_tag(version)) if version else None
     if platform_name == "Darwin":
         if vulkan:

@@ -21,6 +21,8 @@ def test_find_binary_via_llamacpp_dir(monkeypatch, tmp_path):
     nested.mkdir(parents=True)
     exe = nested / "llama-bench"
     exe.write_text("")
+    (nested / "llama-server").touch()
+    (nested / "llama-batched-bench").touch()
     monkeypatch.setattr("scripts.workloads.llamabench_benchmark.shutil.which", lambda name: None)
     assert LlamaBenchBenchmark.find_binary() == str(exe)
 
@@ -35,21 +37,23 @@ def test_find_binary_skips_a_same_named_source_directory(monkeypatch, tmp_path):
     nested.mkdir(parents=True)
     exe = nested / "llama-bench"
     exe.write_text("")
+    (nested / "llama-server").touch()
+    (nested / "llama-batched-bench").touch()
     monkeypatch.setattr("scripts.workloads.llamabench_benchmark.shutil.which", lambda name: None)
     assert LlamaBenchBenchmark.find_binary() == str(exe)
 
 
-def test_find_binary_falls_back_to_path(monkeypatch, tmp_path):
+def test_find_binary_rejects_system_path(monkeypatch, tmp_path):
     monkeypatch.setattr("scripts.workloads.llamabench_benchmark.platform.system", lambda: "Linux")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
     monkeypatch.setattr(
         "scripts.workloads.llamabench_benchmark.shutil.which",
         lambda name: "/usr/local/bin/llama-bench" if name == "llama-bench" else None,
     )
-    assert LlamaBenchBenchmark.find_binary() == "/usr/local/bin/llama-bench"
+    assert LlamaBenchBenchmark.find_binary() is None
 
 
-def test_find_binary_checks_macos_homebrew_prefixes(monkeypatch, tmp_path):
+def test_find_binary_rejects_macos_homebrew_prefixes(monkeypatch, tmp_path):
     monkeypatch.setattr("scripts.workloads.llamabench_benchmark.platform.system", lambda: "Darwin")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
     monkeypatch.setattr("scripts.workloads.llamabench_benchmark.shutil.which", lambda name: None)
@@ -60,7 +64,7 @@ def test_find_binary_checks_macos_homebrew_prefixes(monkeypatch, tmp_path):
         return str(self) == "/opt/homebrew/bin/llama-bench" or real_is_file(self)
 
     monkeypatch.setattr(Path, "is_file", fake_is_file)
-    assert LlamaBenchBenchmark.find_binary() == "/opt/homebrew/bin/llama-bench"
+    assert LlamaBenchBenchmark.find_binary() is None
 
 
 def test_find_binary_returns_none_when_missing(monkeypatch, tmp_path):
