@@ -332,7 +332,7 @@ class ImageBenchmark:
         seen = False  # True once we see this prompt_id appear in history
 
         while True:
-            time.sleep(1)
+            time.sleep(0.1)
             try:
                 status = requests.get(
                     f"{config.COMFYUI_URL}/history/{prompt_id}", timeout=10

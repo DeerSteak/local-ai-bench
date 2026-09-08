@@ -179,7 +179,7 @@ Measured generation results record requested, completed, and valid sample counts
 
 ## Image Generation
 
-When ComfyUI runs outside the benchmark process tree and accelerator memory is unavailable, process-based memory headroom is reported as unknown; observed client RSS and host memory remain available.
+Image duration is client-observed elapsed time after submission, with completion checked every 100 ms. This includes HTTP and polling delay, so differences smaller than a polling interval are not precise execution-time differences. When ComfyUI runs outside the benchmark process tree and accelerator memory is unavailable, process-based memory headroom is reported as unknown; observed client RSS and host memory remain available.
 
 Five models are tested at 1024×1024 and 1536×1536 — except Stable Diffusion 1.5, which uses 512×512 and 768×768 instead (see below). Any model whose primary weights are absent from its managed `models/comfyui/` subdirectory is skipped automatically; setup downloads every selected pipeline asset and configures the resolved ComfyUI installation to search that managed path.
 

@@ -562,6 +562,32 @@ def test_external_image_process_cannot_claim_process_based_headroom(managed, bas
     assert memory["headroom"]["state"] == "comfortable"
 
 
+def test_image_completion_polling_resolves_subsecond_jobs(monkeypatch):
+    from types import SimpleNamespace
+    from scripts.workloads import image_benchmark as module
+
+    clock = [0.0]
+    sleeps = []
+    def sleep(seconds):
+        sleeps.append(seconds)
+        clock[0] += seconds
+    def get(url, **kwargs):
+        if url.endswith('/queue'):
+            data = {"queue_running": [], "queue_pending": []}
+        else:
+            data = {"job": {"status": {"completed": True}, "outputs": {}}} if clock[0] >= .25 else {}
+        return SimpleNamespace(json=lambda: data)
+    monkeypatch.setattr(module.time, "sleep", sleep)
+    monkeypatch.setattr(module.time, "perf_counter", lambda: clock[0])
+    monkeypatch.setattr(module.requests, "get", get)
+    monkeypatch.setattr(module.requests, "post", lambda *a, **k: SimpleNamespace(
+        ok=True, json=lambda: {"prompt_id": "job"}))
+    elapsed, images = ImageBenchmark.comfyui_submit({}, timeout=1)
+    assert elapsed == pytest.approx(.3)
+    assert sleeps == [.1, .1, .1]
+    assert images == []
+
+
 def test_image_memory_without_headroom_remains_compatible():
     from scripts.workloads.image_benchmark import image_memory_evidence
     assert image_memory_evidence({}, False) == {}
