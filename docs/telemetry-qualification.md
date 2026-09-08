@@ -7,8 +7,8 @@ Use one installed xsmall LLM model and the single-shot `2K` case for every trial
 Within pair 1 run telemetry off and then on; within pair 2 run on and then off; continue alternating pair order. Keep the machine otherwise idle and wait a fixed 30 seconds between invocations, including between pairs. Use explicit output paths and the same command except for `--memory-telemetry`. For example, substitute the exact installed model tag and pair number:
 
 ```bash
-LOCAL_AI_BENCH_MEMORY_INTERVAL_SEC=1.0 bash run_bench.sh --ui none --tests llm --llm-models MODEL_TAG --max-prompt-tokens 2048 --warmup 2 --runs 3 --out qualification/off-01.json
-LOCAL_AI_BENCH_MEMORY_INTERVAL_SEC=1.0 bash run_bench.sh --ui none --tests llm --llm-models MODEL_TAG --max-prompt-tokens 2048 --warmup 2 --runs 3 --memory-telemetry --out qualification/on-01.json
+LOCAL_AI_BENCH_MEMORY_INTERVAL_SEC=1.0 bash run_bench.sh --ui none --tests llm --llm-models MODEL_TAG --max-prompt-tokens 2048 --warmup 2 --runs 3 --out results/qualification/manual/off-01.json
+LOCAL_AI_BENCH_MEMORY_INTERVAL_SEC=1.0 bash run_bench.sh --ui none --tests llm --llm-models MODEL_TAG --max-prompt-tokens 2048 --warmup 2 --runs 3 --memory-telemetry --out results/qualification/manual/on-01.json
 ```
 
 The manifest records the physical execution order even though `off` and `on` always point to their corresponding modes:
@@ -38,10 +38,10 @@ Archive the manifest, report, all referenced result files, exact OS/driver/runti
 The default output is under the gitignored `results/qualification/` tree, and a real run refuses to start from a dirty worktree so every result records a reproducible source identity. Completed outputs are skipped on restart; an incomplete output stops the script so it cannot silently become a nominally independent trial. Preview every command without launching a benchmark first:
 
 ```bash
-bash run_telemetry_trials.sh --model MODEL_TAG --engine llamacpp --dry-run
-bash run_telemetry_trials.sh --model MODEL_TAG --engine llamacpp \
+bash qualification/run_telemetry_trials.sh --model MODEL_TAG --engine llamacpp --dry-run
+bash qualification/run_telemetry_trials.sh --model MODEL_TAG --engine llamacpp \
   --out-dir results/qualification/memory-this-machine
-bash run_telemetry_trials.sh --model MODEL_TAG --engine llamacpp \
+bash qualification/run_telemetry_trials.sh --model MODEL_TAG --engine llamacpp \
   --telemetry power --dry-run
 ```
 
@@ -54,8 +54,8 @@ Apple Silicon discovery can use the built-in `apple-hid` source without an exter
 The unattended Linux wrapper runs the complete matrix: 20 alternating latency pairs and 20 alternating sustained pairs at each of 0.25, 0.5, and 1.0 seconds, for 240 benchmark invocations total. It uses 30-second waits for latency trials, 120-second waits for sustained trials, and five-minute gaps between sustained interval suites. Outputs are resumable. A rejected observer report is retained and the remaining interval suites continue; an actual benchmark failure stops the wrapper. Preview the whole matrix without launching a benchmark:
 
 ```bash
-bash run_temperature_qualification_linux.sh --model MODEL_TAG --ambient-temp-c 20.0 --dry-run
-bash run_temperature_qualification_linux.sh --model MODEL_TAG --ambient-temp-c 20.0
+bash qualification/run_temperature_qualification_linux.sh --model MODEL_TAG --ambient-temp-c 20.0 --dry-run
+bash qualification/run_temperature_qualification_linux.sh --model MODEL_TAG --ambient-temp-c 20.0
 ```
 
 Expect an overnight run: the sustained measurements alone require four hours of active soak time, with controlled waits adding roughly four more hours before model-loading and latency-screen time. The ambient value is the room measurement at matrix start, not a claim that ambient remained constant; record start/end ambient separately with the archived evidence.
@@ -65,6 +65,6 @@ On macOS, a real power run requests administrator permission once before startin
 The M5 Pro release screen has a dedicated overnight wrapper that runs all three intervals for 20 pairs each—120 benchmark invocations total—and uses `caffeinate` to prevent system sleep. It fixes the model and methodology to the qualified configuration and groups the three manifests, reports, and raw-result directories beneath one timestamped root:
 
 ```bash
-bash run_power_qualification_m5_pro.sh --dry-run
-bash run_power_qualification_m5_pro.sh
+bash qualification/run_power_qualification_m5_pro.sh --dry-run
+bash qualification/run_power_qualification_m5_pro.sh
 ```

@@ -160,7 +160,8 @@ class HistoryActions:
         for index, entry in enumerate(visible):
             item_id = tree.insert("", "end", values=(
                 entry["started_at"], entry["system"], entry["status"], entry["engine"],
-                entry["methodology_profile"], entry["models_with_results"],
+                entry["runtime_backend"], entry["mtp"], entry["methodology_profile"],
+                entry["models_with_results"],
             ), tags=("history_even" if index % 2 == 0 else "history_odd",))
             self.item_paths[item_id] = entry["path"]
         if tree.get_children():
@@ -231,7 +232,7 @@ class HistoryActions:
         except ValueError as exc:
             self.messagebox.showerror("Recovery selection", str(exc), parent=self.root)
             return
-        self.screen.message.set(f"Verifying recovery identity for {result_path.name}…")
+        self.screen.message.set(f"Checking recovery plan and runtimes for {result_path.name}…")
 
         def worker():
             try:

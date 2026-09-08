@@ -16,10 +16,22 @@ def show_vram_usage(devices: list[dict]) -> bool:
     )
 
 
+def configured_vram_total(devices: list[dict]) -> float | None:
+    capacities = [
+        float(device["vram_gb"]) for device in devices
+        if isinstance(device.get("vram_gb"), (int, float))
+        and not isinstance(device.get("vram_gb"), bool)
+        and (device.get("vendor") == "nvidia"
+             or hardware.classify_gpu(str(device.get("name", ""))) == "discrete")
+    ]
+    return sum(capacities) if capacities else None
+
+
 def resource_usage_rows(process_usage, system_usage, baseline_system_used: float,
                         gpu_usage: float | None, gpu_memory: float | None,
                         vram_usage: tuple[float, float] | None = None,
-                        include_vram: bool = False) -> dict[str, str]:
+                        include_vram: bool = False,
+                        configured_vram_gb: float | None = None) -> dict[str, str]:
     rows = {
         "CPU": "Unavailable" if process_usage is None else f"{process_usage[0]:.0f}%",
         "Process RAM": "Unavailable" if process_usage is None else f"{process_usage[1]:.1f} GB",
@@ -35,6 +47,8 @@ def resource_usage_rows(process_usage, system_usage, baseline_system_used: float
         rows["GPU"] += f" · {gpu_memory:.1f} GB process memory"
     if include_vram:
         rows["VRAM"] = (
+            f"Usage unavailable / {configured_vram_gb:.1f} GB total"
+            if vram_usage is None and configured_vram_gb is not None else
             "Unavailable" if vram_usage is None
             else f"{vram_usage[0]:.1f} / {vram_usage[1]:.1f} GB used"
         )

@@ -21,6 +21,7 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
 }) {
   const allModels = getLLMModelsWithSectionResults(files, section).filter(m => enabledModels.has(m));
   const isConv = section === "llm_conversation";
+  const isCached = section === "llm_cached";
   const titleSuffix = isConv ? " (Conversation)" : "";
   const chartNamePrefix = isConv ? "conv_" : "";
 
@@ -83,7 +84,7 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
         );
 
       const hasTps = isBar ? tpsBarConfigs.length > 0 : tpsLineConfigs.length > 0;
-      const hasTtft = isBar ? ttftBarConfigs.length > 0 : ttftLineConfigs.length > 0;
+      const hasTtft = !isCached && (isBar ? ttftBarConfigs.length > 0 : ttftLineConfigs.length > 0);
       const hasPrefill = isBar ? prefillBarConfigs.length > 0 : prefillLineConfigs.length > 0;
       const hasMemory = isBar ? memoryBarConfigs.length > 0 : memoryLineConfigs.length > 0;
       const hasEfficiency = isBar

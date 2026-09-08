@@ -9,6 +9,7 @@ import pytest
 
 from scripts.runtime import config
 from scripts.runtime.engines.llamacpp import LlamaCppEngine
+from scripts.runtime.engines.llamacpp_vulkan import LlamaCppVulkanEngine
 from scripts.workloads.llamabench_benchmark import LlamaBenchBenchmark
 from scripts.runtime.shared import Shared
 
@@ -20,6 +21,8 @@ def test_find_binary_via_llamacpp_dir(monkeypatch, tmp_path):
     nested.mkdir(parents=True)
     exe = nested / "llama-bench"
     exe.write_text("")
+    (nested / "llama-server").touch()
+    (nested / "llama-batched-bench").touch()
     monkeypatch.setattr("scripts.workloads.llamabench_benchmark.shutil.which", lambda name: None)
     assert LlamaBenchBenchmark.find_binary() == str(exe)
 
@@ -34,21 +37,23 @@ def test_find_binary_skips_a_same_named_source_directory(monkeypatch, tmp_path):
     nested.mkdir(parents=True)
     exe = nested / "llama-bench"
     exe.write_text("")
+    (nested / "llama-server").touch()
+    (nested / "llama-batched-bench").touch()
     monkeypatch.setattr("scripts.workloads.llamabench_benchmark.shutil.which", lambda name: None)
     assert LlamaBenchBenchmark.find_binary() == str(exe)
 
 
-def test_find_binary_falls_back_to_path(monkeypatch, tmp_path):
+def test_find_binary_rejects_system_path(monkeypatch, tmp_path):
     monkeypatch.setattr("scripts.workloads.llamabench_benchmark.platform.system", lambda: "Linux")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
     monkeypatch.setattr(
         "scripts.workloads.llamabench_benchmark.shutil.which",
         lambda name: "/usr/local/bin/llama-bench" if name == "llama-bench" else None,
     )
-    assert LlamaBenchBenchmark.find_binary() == "/usr/local/bin/llama-bench"
+    assert LlamaBenchBenchmark.find_binary() is None
 
 
-def test_find_binary_checks_macos_homebrew_prefixes(monkeypatch, tmp_path):
+def test_find_binary_rejects_macos_homebrew_prefixes(monkeypatch, tmp_path):
     monkeypatch.setattr("scripts.workloads.llamabench_benchmark.platform.system", lambda: "Darwin")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
     monkeypatch.setattr("scripts.workloads.llamabench_benchmark.shutil.which", lambda name: None)
@@ -59,7 +64,7 @@ def test_find_binary_checks_macos_homebrew_prefixes(monkeypatch, tmp_path):
         return str(self) == "/opt/homebrew/bin/llama-bench" or real_is_file(self)
 
     monkeypatch.setattr(Path, "is_file", fake_is_file)
-    assert LlamaBenchBenchmark.find_binary() == "/opt/homebrew/bin/llama-bench"
+    assert LlamaBenchBenchmark.find_binary() is None
 
 
 def test_find_binary_returns_none_when_missing(monkeypatch, tmp_path):
@@ -67,6 +72,12 @@ def test_find_binary_returns_none_when_missing(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
     monkeypatch.setattr("scripts.workloads.llamabench_benchmark.shutil.which", lambda name: None)
     assert LlamaBenchBenchmark.find_binary() is None
+
+
+def test_find_engine_binary_uses_the_selected_llamacpp_runtime(monkeypatch):
+    engine = LlamaCppVulkanEngine()
+    monkeypatch.setattr(engine, "tool_path", lambda name: f"/vulkan/{name}")
+    assert LlamaBenchBenchmark.find_engine_binary(engine) == "/vulkan/llama-bench"
 
 
 def test_build_prefill_command_shape():
@@ -91,6 +102,19 @@ def test_build_prefill_command_never_passes_unsupported_repack_option(monkeypatc
         "llama-bench", Path("/models/x.gguf"), [512], 2048, 512, 3, 999,
     )
     assert "--no-repack" not in cmd
+
+
+def test_build_prefill_command_can_disable_host_buffer_except_on_cpu(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_NO_HOST", True)
+    gpu_cmd = LlamaBenchBenchmark.build_prefill_command(
+        "llama-bench", Path("/models/x.gguf"), [512], 2048, 512, 3, 999,
+    )
+    cpu_cmd = LlamaBenchBenchmark.build_prefill_command(
+        "llama-bench", Path("/models/x.gguf"), [512], 2048, 512, 3, 0,
+    )
+    index = gpu_cmd.index("--no-host")
+    assert gpu_cmd[index:index + 2] == ["--no-host", "1"]
+    assert "--no-host" not in cpu_cmd
 
 
 def test_build_decode_command_shape():
@@ -363,7 +387,7 @@ def fake_engine(monkeypatch):
         LlamaCppEngine, "_resolve_model_files",
         classmethod(lambda cls, tag: [Path(f"/models/{tag}.gguf")]),
     )
-    monkeypatch.setattr(LlamaBenchBenchmark, "find_binary", staticmethod(lambda: "llama-bench"))
+    monkeypatch.setattr(engine, "tool_path", lambda name: f"/fake/{name}")
     return engine
 
 
@@ -382,8 +406,9 @@ def test_run_skips_non_llamacpp_engine():
 
 
 def test_run_returns_empty_when_binary_missing(monkeypatch):
-    monkeypatch.setattr(LlamaBenchBenchmark, "find_binary", staticmethod(lambda: None))
-    result = LlamaBenchBenchmark().run(LlamaCppEngine(), _MODELS, reps=3)
+    engine = LlamaCppEngine()
+    monkeypatch.setattr(engine, "tool_path", lambda _name: None)
+    result = LlamaBenchBenchmark().run(engine, _MODELS, reps=3)
     assert result == {}
 
 
@@ -502,6 +527,8 @@ def test_run_preserves_rows_streamed_before_same_sweep_times_out(
 
 def test_run_journal_commits_each_row_before_same_sweep_timeout(
         fake_engine, monkeypatch, small_matrix):
+    monkeypatch.setattr(Shared, "verify_resume_model", lambda *_args: None)
+
     class Journal:
         def __init__(self):
             self.entries = []

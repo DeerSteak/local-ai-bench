@@ -2,12 +2,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 MODEL="gemma3:1b-it-q4_K_M"
 OUT_ROOT=""
 DRY_RUN=false
 
 usage() {
-    echo "Usage: bash run_power_qualification_m5_pro.sh [--out-root DIR] [--dry-run]"
+    echo "Usage: bash qualification/run_power_qualification_m5_pro.sh [--out-root DIR] [--dry-run]"
 }
 
 while [ "$#" -gt 0 ]; do
@@ -24,7 +25,7 @@ if [ "$(uname -s)" != "Darwin" ] && [ "$DRY_RUN" = false ]; then
     exit 1
 fi
 if [ -z "$OUT_ROOT" ]; then
-    OUT_ROOT="$SCRIPT_DIR/results/qualification/power-m5-pro-pre4-$(date '+%Y%m%d-%H%M%S')"
+    OUT_ROOT="$ROOT/results/qualification/power-m5-pro-pre4-$(date '+%Y%m%d-%H%M%S')"
 fi
 
 for interval in 0.25 0.5 1.0; do

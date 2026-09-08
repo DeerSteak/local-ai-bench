@@ -21,6 +21,9 @@ class FakeEngine(InferenceEngine):
 
     name = "fake"
 
+    def resume_artifact_paths(self, tag):
+        return ()
+
     def __init__(self, behaviors: dict[str, tuple[str, str]],
                  tool_behaviors: dict[str, tuple] | None = None):
         # marker -> (kind, text): kind in {"ok","timeout","loop","crash"}
@@ -59,11 +62,12 @@ class FakeEngine(InferenceEngine):
         return True
 
     # inference
-    def generate(self, tag, prompt, timeout=600, num_ctx=None, n_parallel=1):
+    def generate(self, tag, prompt, timeout=600, num_ctx=None, n_parallel=1,
+                 cache_prompt=False):
         return GenerationMeasurement(0.1, 1, 1.0, 1.1, 1.0)
 
     def chat(self, tag, messages, timeout=600, num_ctx=None, num_predict=1024,
-             check_loop=False, token_budget=None):
+             check_loop=False, token_budget=None, cache_prompt=False):
         self.chat_contexts.append(num_ctx)
         content = messages[-1]["content"]
         for marker, (kind, text) in self._behaviors.items():

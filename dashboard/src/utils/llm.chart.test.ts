@@ -3,13 +3,15 @@ import { describe, it, expect } from "vitest";
 import {
   buildLLMBarConfigsByModel,
   buildLLMBarDataByModel,
+  buildLLMCacheComparisonConfigs,
+  buildLLMCacheComparisonData,
   buildLLMData,
   buildLLMLineConfigs,
   buildLLMLineConfigsByCtx,
   buildLLMLineDataByCtx,
   getBarStatusLabel,
 } from "./llm";
-import { CTX_COLORS } from "../constants";
+import { CATEGORY_COLORS, CTX_COLORS } from "../constants";
 
 const sample = (tps_mean: number) => ({ tps_mean });
 
@@ -20,6 +22,41 @@ const dash = (config: object): string | undefined =>
   (config as { strokeDasharray?: string }).strokeDasharray;
 
 const ALL = new Set(["gemma3-1b", "gemma3-27b-q4"]);
+
+describe("cached versus uncached comparison", () => {
+  it("pairs prefill and generation values by model and context", () => {
+    const files = [{ id: "a", hostname: "alpha", data: {
+      llm: { m: { "2K": { tps_mean: 40, prefill_tps_mean: 900 } } },
+      llm_cached: { m: { "2K": { tps_mean: 55, prefill_tps_mean: 12000 } } },
+    } }];
+    expect(buildLLMCacheComparisonData(files, "m", "prefill")).toEqual([
+      { ctxLabel: "2K", f0_uncached: 900, f0_cached: 12000 },
+    ]);
+    expect(buildLLMCacheComparisonData(files, "m", "tps")).toEqual([
+      { ctxLabel: "2K", f0_uncached: 40, f0_cached: 55 },
+    ]);
+  });
+
+  it("uses cache-state colors for one file and file colors plus line styles for several", () => {
+    const single = buildLLMCacheComparisonConfigs([file("alpha", {})]);
+    expect(single.map(config => config.name)).toEqual(["Uncached", "Cached"]);
+    expect(single.map(config => config.stroke)).toEqual(CATEGORY_COLORS.slice(0, 2));
+    const configs = buildLLMCacheComparisonConfigs([file("alpha", {}), file("beta", {})]);
+    expect(configs.map(config => config.name)).toEqual([
+      "alpha — Uncached", "alpha — Cached", "beta — Uncached", "beta — Cached",
+    ]);
+    expect(dash(configs[0])).toBe("8 5");
+    expect(dash(configs[1])).toBeUndefined();
+  });
+
+  it("drops rows whose present samples do not contain the requested metric", () => {
+    const files = [{ id: "a", hostname: "alpha", data: {
+      llm: { m: { "2K": { tps_mean: 40 } } },
+      llm_cached: { m: { "2K": {} } },
+    } }];
+    expect(buildLLMCacheComparisonData(files, "m", "prefill")).toEqual([]);
+  });
+});
 
 
 // An unrecognized anchor cascades nothing — see docs/dashboard.md.

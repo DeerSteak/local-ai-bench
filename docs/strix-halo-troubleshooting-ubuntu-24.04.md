@@ -53,7 +53,7 @@ An affected pre-fix qualification log contained `amdgpu-dkms is already the newe
 Use commit `cd21b58` or newer and run the normal target:
 
 ```bash
-./run_qualification.sh ryzen-ai-halo-llamacpp-rocm
+./qualification/run_qualification.sh ryzen-ai-halo-llamacpp-rocm
 ```
 
 The managed recovery performs the equivalent of:
@@ -121,13 +121,13 @@ Do not change NetworkManager configuration or install a third-party Ethernet dri
 Once `rocminfo` reports `gfx1151`, run the normal smallest-model qualification:
 
 ```bash
-./run_qualification.sh ryzen-ai-halo-llamacpp-rocm
+./qualification/run_qualification.sh ryzen-ai-halo-llamacpp-rocm
 ```
 
 The launcher reuses the installed ROCm stack, installs the project-managed llama.cpp toolset, ComfyUI environment, and qualifying models, and then runs the ordinary benchmark. After llama.cpp qualification, the separate managed vLLM target is:
 
 ```bash
-./run_qualification.sh ryzen-ai-halo-vllm-rocm
+./qualification/run_qualification.sh ryzen-ai-halo-vllm-rocm
 ```
 
 Setup output is retained before a benchmark journal exists. Every attempt appends terminal output to `qualification-evidence/TARGET/setup.log` and writes the latest attempt state to `qualification-evidence/TARGET/setup-status.json`. A setup interruption leaves the status as `running`; a completed setup attempt records `passed` or `failed`, its exit code, timestamps, and the log name.

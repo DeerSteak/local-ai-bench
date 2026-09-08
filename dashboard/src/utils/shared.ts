@@ -111,7 +111,7 @@ export function getGpuSplitMethodologyWarning(files: ResultsFile[]): string {
 
 export function getNoRepackMethodologyWarning(files: ResultsFile[], section?: string): string {
   if (section && ["images", "llamabench", "vllmbench"].includes(section)) return "";
-  const relevant = files.filter(file => file.engine === "llamacpp" || file.engine == null);
+  const relevant = files.filter(file => engineFamily(file.engine) === "llamacpp" || file.engine == null);
   if (relevant.length < 2) return "";
   const modes = new Set(relevant.map(file =>
     file.data?.run?.effective_config?.llamacpp_no_repack === true));
@@ -136,8 +136,8 @@ export function getMemoryTelemetryMethodologyWarning(files: ResultsFile[]): stri
 // runtimes: llama.cpp measures Q4_K_M GGUFs, vLLM measures 4-bit AWQ/GPTQ/W4A16
 // safetensors of the same base model. Matching bit width is as close as they get.
 export function getCrossEngineWeightsWarning(files: ResultsFile[]): string {
-  const engines = new Set(files.map(file => file.engine).filter(Boolean));
-  return engines.size > 1
+  const families = new Set(files.map(file => engineFamily(file.engine)).filter(Boolean));
+  return families.size > 1
     ? "Loaded files span multiple engines. They do not measure the same weights: "
       + "llama.cpp runs Q4_K_M GGUFs and vLLM runs 4-bit AWQ/GPTQ safetensors of the "
       + "same base model, so differences reflect the quantization as well as the runtime."
@@ -168,20 +168,27 @@ export function backendLabel(backend: string | null | undefined): string {
 }
 
 export function engineLabel(engine: string | null | undefined): string {
-  const labels: Record<string, string> = { llamacpp: "llama.cpp", vllm: "vLLM" };
+  const labels: Record<string, string> = {
+    llamacpp: "llama.cpp", "llamacpp-vulkan": "llama.cpp Vulkan", vllm: "vLLM",
+  };
   const key = String(engine || "").toLowerCase();
   return labels[key] || String(engine || "");
+}
+
+export function engineFamily(engine: string | null | undefined): string {
+  const key = String(engine || "").toLowerCase();
+  return key === "llamacpp-vulkan" ? "llamacpp" : key;
 }
 
 export function engineRunLabel(file: ResultsFile, section?: string): string {
   const displayEngine = engineLabel(file.engine);
   const labels = [displayEngine];
-  if (file.engine === "llamacpp"
+  if (engineFamily(file.engine) === "llamacpp"
       && !["llamabench", "vllmbench"].includes(section || "")
       && file.data?.run?.effective_config?.llamacpp_no_repack === true) {
     labels.push("-nr");
   }
-  if (["llamacpp", "vllm"].includes(file.engine || "")
+  if (["llamacpp", "vllm"].includes(engineFamily(file.engine))
       && file.data?.run?.effective_config?.mtp_enabled === true) {
     labels.push("MTP on");
   }

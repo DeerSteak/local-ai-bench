@@ -6,6 +6,7 @@ from scripts.release.qualification_targets import qualification_target
 from scripts.setup.rocm_install import (
     native_rocm_install_plan, qualification_needs_native_rocm,
     qualification_needs_wsl_rocm, run_rocm_install, ryzen_ai_halo_oem_kernel_ready,
+    setup_needs_wsl_rocm,
     ryzen_ai_halo_dkms_packages, wsl_rocm_install_plan,
 )
 
@@ -167,6 +168,25 @@ def test_non_wsl_target_does_not_request_wsl_rocm_install():
     target = qualification_target("radeon-linux-llamacpp-rocm")
     assert not qualification_needs_wsl_rocm(
         target, os_name="Linux", release="6.14-generic", rocm_available=False,
+    )
+
+
+def test_setup_requests_wsl_rocm_for_host_amd_gpu_only_when_missing():
+    gpu = {"name": "AMD Radeon PRO W7800"}
+    assert setup_needs_wsl_rocm(
+        os_name="Linux", release="microsoft-standard-WSL2", amd_gpus=[gpu],
+        rocm_available=False,
+    )
+    assert not setup_needs_wsl_rocm(
+        os_name="Linux", release="microsoft-standard-WSL2", amd_gpus=[gpu],
+        rocm_available=True,
+    )
+    assert not setup_needs_wsl_rocm(
+        os_name="Linux", release="6.14-generic", amd_gpus=[gpu], rocm_available=False,
+    )
+    assert not setup_needs_wsl_rocm(
+        os_name="Linux", release="microsoft-standard-WSL2", amd_gpus=[],
+        rocm_available=False,
     )
 
 

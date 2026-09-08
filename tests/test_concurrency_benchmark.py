@@ -55,12 +55,19 @@ def test_slot_ctx_for_adds_generation_headroom_to_padded_prompt():
     assert ConcurrencyBenchmark.slot_ctx_for(4096) == 4096 + config.GENERATE_MAX_TOKENS
 
 
+def test_slot_ctx_for_also_reserves_chat_template_headroom():
+    assert ConcurrencyBenchmark.slot_ctx_for(512, 2048) == 3072
+
+
 class _FakeEngine:
     name = "fake"
 
     def __init__(self):
         self.seen_prompts = []
         self.seen_num_ctx = []
+
+    def generation_prompt_headroom(self):
+        return 0
 
     def generate(self, tag, prompt, timeout, per_request_context, level):
         self.seen_prompts.append(prompt)
@@ -91,6 +98,9 @@ def test_fire_batch_gives_each_concurrent_request_a_distinct_prompt():
 def test_fire_batch_propagates_a_request_failure():
     class CrashingEngine:
         name = "fake"
+
+        def generation_prompt_headroom(self):
+            return 0
 
         def generate(self, tag, prompt, timeout, per_request_context, level):
             raise RuntimeError("boom")

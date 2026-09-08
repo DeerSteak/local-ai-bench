@@ -50,6 +50,11 @@ if [ ! -d "$DASHBOARD_DIR/node_modules" ]; then
     echo
 fi
 
+OPEN_PATH="/"
+if [ ${#SELECTED_RESULTS[@]} -gt 0 ]; then
+    OPEN_PATH="/?autoload=1"
+fi
+
 echo "Building dashboard ..."
 (cd "$DASHBOARD_DIR" && npm run build)
 # "${arr[@]}" on a genuinely empty array raises "unbound variable" under `set -u` on
@@ -57,6 +62,12 @@ echo "Building dashboard ..."
 node "$DASHBOARD_DIR/stage_selected_results.mjs" "$DASHBOARD_DIR/dist" "${SELECTED_RESULTS[@]+"${SELECTED_RESULTS[@]}"}"
 echo "Build complete."
 echo
+
+if (cd "$SCRIPT_DIR" && "$SCRIPT_DIR/bench-env/bin/python" -m scripts.app.dashboard_reuse \
+        --port "$PORT" --open-path "$OPEN_PATH"); then
+    echo "Dashboard already running -> http://localhost:$PORT$OPEN_PATH"
+    exit 0
+fi
 
 echo "Dashboard -> http://localhost:$PORT"
 echo "Drop your results JSON files onto the page to analyze them."
@@ -76,9 +87,5 @@ cleanup_selected_results() {
 }
 trap cleanup_selected_results EXIT
 
-OPEN_PATH="/"
-if [ ${#SELECTED_RESULTS[@]} -gt 0 ]; then
-    OPEN_PATH="/?autoload=1"
-fi
 (cd "$SCRIPT_DIR" && "$SCRIPT_DIR/bench-env/bin/python" -m scripts.app.workspace_server \
     --dist "$DASHBOARD_DIR/dist" --port "$PORT" --open-path "$OPEN_PATH")

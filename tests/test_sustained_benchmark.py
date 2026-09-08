@@ -1,8 +1,15 @@
 import pytest
 
+from scripts.runtime import config
 from scripts.workloads.sustained_benchmark import (
-    aligned_sustained_windows, sustained_measurement_valid,
+    SustainedBenchmark, aligned_sustained_windows, sustained_measurement_valid,
 )
+
+
+def test_sustained_server_context_reserves_template_and_generation_tokens():
+    assert SustainedBenchmark.server_context_for(1_000_000, 2048) == (
+        config.SUSTAINED_CONTEXT_TOKENS + config.GENERATE_MAX_TOKENS + 2048
+    )
 
 
 def blocks():

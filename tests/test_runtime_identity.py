@@ -109,6 +109,7 @@ def test_source_build_version_uses_utc_commit_date_and_short_hash(tmp_path):
 
     assert source_commit_version(identity, tmp_path, run=run) == "2026.08.11-a1b2c3d"
     assert calls[0][0][-1] == "a1b2c3d4e5f6"
+    assert calls[1][0][-1] == "a1b2c3d4e5f6"
     assert calls[1][1]["env"]["TZ"] == "UTC"
 
 
@@ -126,6 +127,22 @@ def test_source_build_version_uses_exact_release_tag(tmp_path):
     )
 
     assert result == "10362"
+
+
+def test_source_build_version_does_not_inherit_head_tag_without_binary_commit(tmp_path):
+    (tmp_path / ".git").mkdir()
+    identity = RuntimeIdentity(
+        "llamacpp", "app_managed", "/runtime", "0.3.0", "version: 0.3.0",
+    )
+
+    result = source_commit_version(
+        identity, tmp_path,
+        run=lambda *_args, **_kwargs: SimpleNamespace(
+            stdout="b10615\n", stderr="", returncode=0,
+        ),
+    )
+
+    assert result == "0.3.0"
 
 
 def test_source_build_version_falls_back_when_git_metadata_is_unavailable(tmp_path):
@@ -150,6 +167,22 @@ def test_engine_runtime_version_resolves_managed_llamacpp_source_commit(monkeypa
         return SimpleNamespace(stdout="version: 1 (a1b2c3d4)", stderr="", returncode=0)
 
     assert engine_runtime_version("llamacpp", engine, run=run) == "2026.08.11-a1b2c3d"
+
+
+def test_engine_runtime_version_uses_the_vulkan_managed_source_root(monkeypatch, tmp_path):
+    (tmp_path / ".git").mkdir()
+    executable = tmp_path / "build" / "bin" / "llama-server"
+    monkeypatch.setattr("scripts.setup.runtime_identity.config.LLAMACPP_VULKAN_DIR", tmp_path)
+    engine = type("Engine", (), {"runtime_location": lambda self: executable})()
+
+    def run(command, **_kwargs):
+        if command[0] == "git":
+            return SimpleNamespace(stdout="2026.08.12\n", stderr="", returncode=0)
+        return SimpleNamespace(stdout="version: 2 (b2c3d4e5)", stderr="", returncode=0)
+
+    assert engine_runtime_version(
+        "llamacpp-vulkan", engine, run=run,
+    ) == "2026.08.12-b2c3d4e"
 
 
 def test_source_build_version_rejects_malformed_git_date(tmp_path):
@@ -227,3 +260,27 @@ def test_probe_vllm_server_health_checks_status_and_authentication():
     assert not probe_vllm_server_health(
         "http://external", open_fn=lambda *_a, **_k: (_ for _ in ()).throw(OSError()), env={},
     )
+
+
+@pytest.mark.parametrize('output,build,commit', [
+    ('version: 0.4.0-dev (build 10840, commit 73ab759)', '10840', '73ab759'),
+    ('version: 0.3.0-dev (build 10687, commit c841aeeb8)\nbuilt with AppleClang', '10687', 'c841aeeb8'),
+    ('version: 0.4.0-dev (build 10840, commit ABCDEF123)', '10840', 'abcdef123'),
+])
+def test_modern_llamacpp_output_exposes_build_and_commit(output, build, commit):
+    assert parse_runtime_version(output) == build
+    assert parse_llamacpp_commit(output) == commit
+
+
+@pytest.mark.parametrize('source_checkout', [False, True])
+def test_modern_embedded_build_does_not_require_git_tags(tmp_path, source_checkout):
+    if source_checkout:
+        (tmp_path / '.git').mkdir()
+    identity = RuntimeIdentity('llamacpp', 'app_managed', str(tmp_path / 'llama-server'),
+                               '10840', 'version: 0.4.0-dev (build 10840, commit 73ab759)')
+    assert source_commit_version(identity, tmp_path, run=lambda *a, **k: pytest.fail('no git needed')) == '10840'
+
+
+def test_semantic_version_without_build_is_not_a_build_number():
+    assert parse_runtime_version('version: 0.4.0-dev') == '0.4.0-dev'
+    assert parse_llamacpp_commit('version: 0.4.0-dev') is None

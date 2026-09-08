@@ -31,6 +31,17 @@ def test_median_and_coefficient_of_variation_require_real_samples():
 def test_context_label_preserves_fractional_kilobyte_checkpoint():
     assert Shared.context_label(512) == "0.5K"
     assert Shared.context_label(2048) == "2K"
+    assert Shared.context_label(131072) == "128K"
+
+
+def test_supported_prompt_sizes_requires_room_beyond_128k():
+    sizes = [32768, 131072]
+    assert Shared.supported_prompt_sizes(sizes, 131072) == [32768]
+    assert Shared.supported_prompt_sizes(sizes, 131073) == sizes
+
+
+def test_supported_prompt_sizes_preserves_existing_exact_ceiling_behavior():
+    assert Shared.supported_prompt_sizes([8192, 32768, 65536], 32768) == [8192, 32768]
 
 
 def test_build_prompt_for_context_reaches_target_length():

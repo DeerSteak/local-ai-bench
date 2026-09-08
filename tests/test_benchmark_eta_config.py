@@ -39,3 +39,22 @@ def test_sustained_eta_adds_only_its_runtime_shaping_settings():
     assert matched["sustained_duration_sec"] == 900
     assert matched["sustained_window_sec"] > 0
     assert matched["sustained_context_tokens"] > 0
+
+
+def test_only_native_llamabench_plan_and_eta_use_sparse_depths():
+    from scripts.runtime import config
+
+    args = SimpleNamespace(
+        warmup=1, cpu_only=False, force_all=False, max_prompt_tokens=131072, sample=None,
+    )
+    original = list(config.LLAMABENCH_PP)
+    for engine in ("llamacpp", "llamacpp-vulkan"):
+        shaping = runtime_shaping_config(args, engine_name=engine)
+        assert shaping["llamabench_pp"] == [8192, 16384, 32768, 65536, 131072]
+        assert eta_match_config(args, engine_name=engine)["llamabench_pp"] == shaping["llamabench_pp"]
+        assert shaping["llamabench_tg"] == config.LLAMABENCH_TG
+        assert shaping["context_lengths"] == config.CONTEXT_LENGTHS
+        assert shaping["runs"] == config.N_RUNS
+    assert runtime_shaping_config(args, engine_name="vllm")["llamabench_pp"] == original
+    assert config.LLAMABENCH_PP == original
+    assert config.LLAMABENCH_CONC_PP == 8192

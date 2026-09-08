@@ -151,6 +151,20 @@ def test_methodology_profile_is_identity_bearing_and_validated():
         make_plan(effective_config=missing).validate_for_execution()
 
 
+def test_vulkan_llamacpp_plan_validates_shared_sampling_but_keeps_engine_identity():
+    config = complete_plan().effective_config
+    config.update({
+        "methodology_profile": "neutral-v2",
+        "effective_optimizations": ["llamacpp-vulkan:flash_attention=on"],
+        "sampling_profile": baseline_sampling_profile("llamacpp"),
+    })
+    plan = make_plan(engine_name="llamacpp-vulkan", effective_config=config)
+    plan.validate_for_execution()
+    assert plan.to_dict()["engine"] == "llamacpp-vulkan"
+    assert plan.execution_identity["methodology"]["sampling"] == \
+        baseline_sampling_profile("llamacpp")
+
+
 def test_sustained_plan_requires_the_deterministic_sampling_baseline():
     config = complete_plan().effective_config
     sampling = baseline_sampling_profile("llamacpp")

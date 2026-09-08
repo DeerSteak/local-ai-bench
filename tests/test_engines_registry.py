@@ -2,20 +2,23 @@ import pytest
 
 from scripts.runtime.engines import engine_display_name, engine_names, get_engine
 from scripts.runtime.engines.llamacpp import LlamaCppEngine
+from scripts.runtime.engines.llamacpp_vulkan import LlamaCppVulkanEngine
 from scripts.runtime.engines.vllm import VllmEngine
 
 
 def test_engine_names_lists_every_registered_engine():
-    assert engine_names() == ["llamacpp", "vllm"]
+    assert engine_names() == ["llamacpp", "llamacpp-vulkan", "vllm"]
 
 
 def test_engine_display_name_only_expands_llamacpp_branding():
     assert engine_display_name("llamacpp") == "llama.cpp"
+    assert engine_display_name("llamacpp-vulkan") == "llama.cpp Vulkan"
     assert engine_display_name("vllm") == "vllm"
 
 
 def test_get_engine_returns_registered_type():
     assert isinstance(get_engine("llamacpp"), LlamaCppEngine)
+    assert isinstance(get_engine("llamacpp-vulkan"), LlamaCppVulkanEngine)
     assert isinstance(get_engine("vllm"), VllmEngine)
 
 

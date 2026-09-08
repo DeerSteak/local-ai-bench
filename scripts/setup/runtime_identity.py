@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from scripts.runtime import config
+from scripts.runtime.engine_identity import engine_family
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,7 @@ def runtime_ownership(location: str | Path | None, managed_root: Path) -> str:
 def parse_runtime_version(output: str | None) -> str | None:
     text = (output or "").strip()
     patterns = (
+        r"(?im)^version\s*:\s*\S+\s+\(build\s+(\d+),\s*commit\s+[0-9a-f]{7,40}\)",
         r"(?im)^vllm\s+([0-9]+(?:\.[0-9A-Za-z+-]+)+)\s*$",
         r"(?im)^version\s*:\s*([^\s]+)",
         r"(?i)\bversion\s+v?([0-9]+(?:\.[0-9A-Za-z+-]+)+)",
@@ -54,7 +56,8 @@ def parse_runtime_version(output: str | None) -> str | None:
 
 
 def parse_llamacpp_commit(output: str | None) -> str | None:
-    match = re.search(r"\(([0-9a-f]{7,40})\)", output or "", re.IGNORECASE)
+    match = re.search(r"\((?:build\s+\d+,\s*commit\s+)?([0-9a-f]{7,40})\)",
+                      output or "", re.IGNORECASE)
     return match.group(1).lower() if match else None
 
 
@@ -76,10 +79,17 @@ def managed_distribution_version(managed_root: Path, distribution: str) -> str |
 def source_commit_version(identity: RuntimeIdentity, managed_root: Path, *,
                           run=subprocess.run) -> str | None:
     """Prefer a sortable commit identity for a managed llama.cpp source build."""
-    commit = parse_llamacpp_commit(identity.version_output)
-    if not identity.managed or not commit or not (Path(managed_root) / ".git").exists():
+    if re.search(r"\(build\s+\d+,\s*commit\s+[0-9a-f]{7,40}\)",
+                 identity.version_output, re.IGNORECASE):
+        version = parse_runtime_version(identity.version_output)
+        if version and version.isdigit() and int(version) > 1:
+            return version
+    if not identity.managed or not (Path(managed_root) / ".git").exists():
         return identity.version
     try:
+        commit = parse_llamacpp_commit(identity.version_output)
+        if not commit:
+            return identity.version
         tag_result = run(
             ["git", "-C", str(managed_root), "describe", "--tags", "--exact-match", commit],
             capture_output=True, text=True, timeout=15,
@@ -125,14 +135,18 @@ def engine_runtime_version(engine_name: str, engine, *, run=subprocess.run) -> s
         if server_url:
             return probe_vllm_server_version(server_url)
     location = getattr(engine, "runtime_location", lambda: None)()
-    managed_root = config.LLAMACPP_DIR if engine_name == "llamacpp" else config.VLLM_VENV
+    managed_root = (
+        config.LLAMACPP_VULKAN_DIR if engine_name == "llamacpp-vulkan"
+        else config.LLAMACPP_DIR if engine_family(engine_name) == "llamacpp"
+        else config.VLLM_VENV
+    )
     if (engine_name == "vllm" and runtime_ownership(location, managed_root) == "app_managed"):
         version = managed_distribution_version(managed_root, "vllm")
         if version:
             return version
     process_env = getattr(engine, "process_environment", lambda: None)()
     identity = inspect_runtime(engine_name, location, managed_root, run=run, env=process_env)
-    if engine_name == "llamacpp":
+    if engine_family(engine_name) == "llamacpp":
         return source_commit_version(identity, managed_root, run=run)
     return identity.version
 

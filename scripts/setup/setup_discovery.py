@@ -58,6 +58,30 @@ class DisplayDiscovery:
     name: str | None
 
 
+_WINDOWS_AMD_INVENTORY_SCRIPT = r"""
+$devices = Get-CimInstance Win32_VideoController | Where-Object {
+    $_.PNPDeviceID -like 'PCI\VEN_1002*' -and ($_.Name -match 'AMD|Radeon')
+}
+$inventory = @($devices | ForEach-Object {
+    $memory = $null
+    try {
+        $driver = (Get-PnpDeviceProperty -InstanceId $_.PNPDeviceID `
+            -KeyName DEVPKEY_Device_Driver -ErrorAction Stop).Data
+        $properties = Get-ItemProperty -LiteralPath `
+            "HKLM:\SYSTEM\CurrentControlSet\Control\Class\$driver" -ErrorAction Stop
+        $memory = $properties.'HardwareInformation.qwMemorySize'
+    } catch {}
+    [pscustomobject]@{
+        name = $_.Name
+        pnp_device_id = $_.PNPDeviceID
+        driver = $_.DriverVersion
+        vram_bytes = $memory
+    }
+})
+ConvertTo-Json -InputObject $inventory -Compress
+"""
+
+
 def discover_system(meminfo_path: Path = Path("/proc/meminfo")) -> SystemDiscovery:
     os_name = platform.system()
     total_ram_gb = None
@@ -206,6 +230,65 @@ def discover_windows_gpu() -> DisplayDiscovery:
         if hardware.is_intel_xpu_display(name):
             return DisplayDiscovery("intel", hardware.classify_gpu(name), name)
     return DisplayDiscovery(None, None, None)
+
+
+def parse_windows_amd_gpus(output: str) -> list[dict]:
+    """Parse active Windows AMD adapters and their driver-reported 64-bit VRAM."""
+    try:
+        data = json.loads(output)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(data, list):
+        return []
+    devices = []
+    seen = set()
+    for item in data:
+        if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+            continue
+        identity = item.get("pnp_device_id")
+        if not isinstance(identity, str) or not identity or identity in seen:
+            continue
+        seen.add(identity)
+        try:
+            vram_bytes = int(item.get("vram_bytes") or 0)
+        except (TypeError, ValueError):
+            vram_bytes = 0
+        devices.append({
+            "name": item["name"].strip(),
+            "vram_gb": vram_bytes / (1024 ** 3) if vram_bytes > 0 else None,
+            "driver": str(item.get("driver") or ""),
+            "vendor": "amd",
+            "backend": "vulkan",
+            "kind": hardware.classify_gpu(item["name"]),
+            "pnp_device_id": identity,
+        })
+    return devices
+
+
+def discover_windows_amd_gpus() -> list[dict]:
+    if platform.system() != "Windows":
+        return []
+    try:
+        output = subprocess.check_output(
+            ["powershell", "-NoProfile", "-Command", _WINDOWS_AMD_INVENTORY_SCRIPT],
+            text=True, stderr=subprocess.DEVNULL,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return []
+    return parse_windows_amd_gpus(output)
+
+
+def discover_wsl_windows_amd_gpus() -> list[dict]:
+    if not hardware.detect_wsl(platform.system(), platform.release()):
+        return []
+    try:
+        output = subprocess.check_output(
+            ["powershell.exe", "-NoProfile", "-Command", _WINDOWS_AMD_INVENTORY_SCRIPT],
+            text=True, stderr=subprocess.DEVNULL,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return []
+    return parse_windows_amd_gpus(output)
 
 
 def discover_linux_intel_gpu() -> DisplayDiscovery:

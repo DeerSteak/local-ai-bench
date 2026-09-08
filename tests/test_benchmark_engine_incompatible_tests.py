@@ -25,6 +25,12 @@ def test_engine_own_native_tests_are_kept():
     assert engine_incompatible_tests(["vllmbench"], "vllm") == []
 
 
+def test_vulkan_llamacpp_keeps_llamacpp_native_tests():
+    assert engine_incompatible_tests(
+        ["llamabench", "llamabenchconc", "vllmbench"], "llamacpp-vulkan",
+    ) == ["vllmbench"]
+
+
 def test_unknown_engine_drops_every_others_native_test():
     """A future third engine has no ENGINE_NATIVE_TESTS entry of its own, so both
     llama.cpp's and vLLM's native tests are foreign to it."""

@@ -2,10 +2,12 @@
 
 from scripts.runtime.engines.base import InferenceEngine
 from scripts.runtime.engines.llamacpp import LlamaCppEngine
+from scripts.runtime.engines.llamacpp_vulkan import LlamaCppVulkanEngine
 from scripts.runtime.engines.vllm import VllmEngine
 
 _REGISTRY: dict[str, type[InferenceEngine]] = {
     "llamacpp": LlamaCppEngine,
+    "llamacpp-vulkan": LlamaCppVulkanEngine,
     "vllm": VllmEngine,
 }
 
@@ -21,7 +23,10 @@ def get_engine(name: str) -> InferenceEngine:
 
 
 def engine_display_name(name: str) -> str:
-    return "llama.cpp" if name == "llamacpp" else name
+    return {
+        "llamacpp": "llama.cpp",
+        "llamacpp-vulkan": "llama.cpp Vulkan",
+    }.get(name, name)
 
 
 def installed_engine_names(factory=None) -> list[str]:

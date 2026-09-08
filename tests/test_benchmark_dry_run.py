@@ -175,3 +175,16 @@ def test_resolved_plan_tolerates_missing_families_and_unlabeled_models(monkeypat
     )
     assert "llm: tiny — contexts 512" in preview
     assert "emb: (no models) — one document" in preview
+
+
+def test_preview_shows_sparse_llamabench_but_unchanged_concurrency_and_vllm():
+    from scripts.runtime import config
+
+    preview = format_resolved_plan(
+        "llamacpp", ["llamabench", "llamabenchconc", "vllmbench"],
+        {"llm": [{"label": "Demo"}]}, None, runs=3, warmups=1,
+        max_prompt_tokens=131072, sample_size=None,
+    )
+    assert "llamabench: Demo — pp [8192, 16384, 32768, 65536, 131072]" in preview
+    assert "llamabenchconc: Demo — pp 8192;" in preview
+    assert f"vllmbench: Demo — input {config.LLAMABENCH_PP};" in preview

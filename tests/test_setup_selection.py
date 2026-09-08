@@ -123,3 +123,17 @@ def test_select_models_delegates_cancel(monkeypatch, tmp_path):
     )
 
     assert cancelled == [True]
+
+
+def test_terminal_picker_restores_exact_model_choices_without_cleanup(monkeypatch, tmp_path):
+    from scripts.setup.setup_preferences import model_keys
+
+    monkeypatch.setattr("builtins.input", lambda _prompt: "")
+    keys = model_keys()
+    selected = keys["llm_tags"][-1]
+    prefs = {"models": {key: key == selected for names in keys.values() for key in names}}
+    llms, images, embeddings, cleanup, vllm_cleanup = select_models(
+        memory_ceiling_gb=1, vllm_cache_home=tmp_path, cancel=lambda: None, preferences=prefs,
+    )
+    assert [model["tag"] for model in llms] == [selected]
+    assert images == embeddings == cleanup == vllm_cleanup == []

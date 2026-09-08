@@ -49,6 +49,7 @@ from scripts.runtime.comfyui_installation import find_comfyui_installation, norm
 from scripts.runtime.engines import (
     engine_display_name, engine_names, get_engine, installed_engine_names,
 )
+from scripts.runtime.engine_identity import engine_family
 from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.setup.model_inventory import build_model_inventory
 from scripts.app.engine_management import collect_engine_management
@@ -91,7 +92,8 @@ from scripts.app.benchmark_gui_process import (
     windows_host_utc_offset_minutes,
 )
 from scripts.app.benchmark_gui_resources import (
-    PsutilLike, parse_gpu_process_memory, parse_gpu_usage, process_resource_usage,
+    PsutilLike, configured_vram_total, parse_gpu_process_memory, parse_gpu_usage,
+    process_resource_usage,
     query_gpu_process_memory, query_gpu_usage, query_vram_usage,
     resource_usage_rows, show_vram_usage, system_memory_usage,
 )
@@ -109,6 +111,7 @@ from scripts.app.benchmark_gui_support import (
     effective_gui_options,
     estimate_remaining_seconds,
     format_run_outcome,
+    format_gpu_inventory,
     gpu_split_mode_labels,
     gpu_split_mode_value,
     mtp_mode_value,
@@ -265,7 +268,7 @@ def normalize_gui_option_values(values: dict[str, Any]) -> dict[str, Any]:
     options["gpu_split_mode"] = gpu_split_mode_value(values["gpu_split_mode"])
     options["mtp"] = mtp_mode_value(values["mtp"])
     for key in ("cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
-                "power_telemetry", "llamacpp_no_repack"):
+                "power_telemetry", "llamacpp_no_repack", "llamacpp_no_host"):
         options[key] = values[key]
     for key in ("out", "comfyui"):
         options[key] = str(values[key]).strip()
@@ -473,6 +476,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         ram_gb=system_ram_gb, backend=hardware_backend,
         tools=detected_tools,
         comfyui_dir=found_comfyui, inventory=inventory,
+        gpu_devices=configured_gpu_devices(setup),
         free_storage_gb=shutil.disk_usage(config.SCRIPT_DIR).free / 1e9,
     )
     loading_status.configure(text="Building benchmark controls…")
@@ -523,9 +527,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
 
     engine_updates = EngineUpdateActions(setup, hardware_backend)
     llamacpp_update_prompts = {
-        "Darwin": "Download and validate the latest official macOS llama.cpp release, then replace the current one?",
-        "Windows": "Download and validate the latest compatible llama.cpp release, then replace the current one?",
-        "Linux": "Clone and build the latest llama.cpp, then replace the current checkout?",
+        "Darwin": "Download and validate the latest official macOS llama.cpp release, then replace the managed runtime?",
+        "Windows": "Download and validate one llama.cpp release for every installed managed backend, then replace them?",
+        "Linux": "Clone and build one llama.cpp release for every installed managed backend, then replace them?",
     }
 
     notebook = ttk.Notebook(root)
@@ -625,7 +629,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             engine_check_vars[selection.engines[0]].set(True)
         engine_var.set(selection.value)
         engine_note.set(selection.note)
-        llamacpp_only = selection.engines == ["llamacpp"]
+        llamacpp_only = bool(selection.engines) and all(
+            engine_family(name) == "llamacpp" for name in selection.engines
+        )
         if not llamacpp_only:
             selected_tags = {
                 value for value, variable in model_vars.items() if variable.get()
@@ -777,6 +783,15 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         repack_row, text="Reset", width=6,
         command=lambda: option_vars["llamacpp_no_repack"].set(False),
     ).grid(row=0, column=2, padx=(8, 0))
+    no_host_row = execution_row()
+    ttk.Checkbutton(
+        no_host_row, text="Bypass llama.cpp host model buffer (--no-host)",
+        variable=option_vars["llamacpp_no_host"],
+    ).grid(row=0, column=0, columnspan=2, sticky="w")
+    ttk.Button(
+        no_host_row, text="Reset", width=6,
+        command=lambda: option_vars["llamacpp_no_host"].set(False),
+    ).grid(row=0, column=2, padx=(8, 0))
     ttk.Label(
         execution_row(pady=(8, 0)), text="More warmups/runs improve repeatability but increase time. CPU-only changes the tested device; force-all can make runs much longer.",
         wraplength=430,
@@ -841,7 +856,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
                     "sustained_duration", "ambient_temp_c", "gpu_split_mode",
                     "mtp",
                     "cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
-                    "power_telemetry", "llamacpp_no_repack"):
+                    "power_telemetry", "llamacpp_no_repack", "llamacpp_no_host"):
             variable = option_vars[key]
             variable.set(gui_option_control_value(key, defaults[key]))
 
@@ -1070,6 +1085,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     }
     system_memory_baseline = [0.0]
     has_discrete_vram = [False]
+    configured_vram_gb: list[float | None] = [None]
 
     def show_progress_window(tests, entries, engines=None):
         nonlocal progress_metrics, progress_started_at
@@ -1077,7 +1093,9 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             "usage": None, "memory": None, "vram": None, "next_at": 0.0,
             "running": False, "generation": gpu_sample["generation"] + 1,
         })
-        has_discrete_vram[0] = show_vram_usage(configured_gpu_devices(setup))
+        devices = configured_gpu_devices(setup)
+        has_discrete_vram[0] = show_vram_usage(devices)
+        configured_vram_gb[0] = configured_vram_total(devices)
         system_memory_baseline[0] = system_memory_usage()[0]
         run_engines = list(engines or parse_engine_selection(engine_var.get()))
         progress_screen.show(
@@ -1180,7 +1198,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             resources = resource_usage_rows(
                 usage, system_memory_usage(), system_memory_baseline[0],
                 gpu_sample["usage"], gpu_sample["memory"], gpu_sample["vram"],
-                has_discrete_vram[0],
+                has_discrete_vram[0], configured_vram_gb[0],
             )
             progress_screen.set_resources(resources, estimate)
         root.after(100, poll_output)

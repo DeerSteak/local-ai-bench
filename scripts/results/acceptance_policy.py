@@ -14,6 +14,7 @@ EVIDENCE_REQUIREMENTS = {"single_run", "repeated_trials"}
 SECTION_METRICS = {
     "llm": {"tps_mean", "ttft_mean_sec"},
     "llm_conversation": {"tps_mean", "client_ttft_mean_sec", "server_prompt_mean_sec"},
+    "llm_cached": {"tps_mean", "prefill_tps_mean", "server_prompt_mean_sec"},
     "embeddings": {"chunks_per_sec_mean"},
     "images": {"sec_per_image_mean"},
     "mcq": {"accuracy_pct"}, "math": {"accuracy_pct"},
@@ -21,7 +22,7 @@ SECTION_METRICS = {
     "tool": {"accuracy_pct"},
     "concurrency_tool": {"aggregate_tps"}, "concurrency_chat": {"aggregate_tps"},
 }
-CASE_REQUIRED = {"llm", "llm_conversation", "images", "concurrency_tool", "concurrency_chat"}
+CASE_REQUIRED = {"llm", "llm_cached", "llm_conversation", "images", "concurrency_tool", "concurrency_chat"}
 
 
 def validate_policy(policy: dict) -> dict:

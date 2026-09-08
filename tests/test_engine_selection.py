@@ -1,11 +1,14 @@
 from scripts.setup.engine_selection import (
     LLAMACPP,
+    LLAMACPP_VULKAN,
     VLLM,
     apply_engine_preset,
     build_engine_entries,
     engine_summary_line,
     engines_needing_install,
     needs_python_headers,
+    model_engine_names,
+    llamacpp_vulkan_setup_state,
     qualification_engines_needing_install,
     qualification_setup_failed,
     select_engines,
@@ -65,6 +68,64 @@ def test_an_uninstalled_vllm_starts_unselected():
     assert find_entry(entries, LLAMACPP)["checked"] is True
     assert find_entry(entries, VLLM)["checked"] is False
     assert selected_engine_names(entries) == [LLAMACPP]
+
+
+def test_vulkan_engine_is_enabled_only_on_supported_platforms():
+    unsupported = build_engine_entries(llamacpp_vulkan_note="requires Windows or Linux")
+    assert find_entry(unsupported, LLAMACPP_VULKAN) == {
+        "name": LLAMACPP_VULKAN,
+        "label": "llama.cpp Vulkan",
+        "checked": False,
+        "enabled": False,
+        "installed": False,
+        "note": "requires Windows or Linux",
+    }
+    supported = build_engine_entries(
+        llamacpp_vulkan_supported=True,
+        llamacpp_vulkan_note="will be installed",
+    )
+    assert find_entry(supported, LLAMACPP_VULKAN)["enabled"] is True
+    assert toggle_engine(supported, LLAMACPP_VULKAN) is True
+
+
+def test_installed_vulkan_runtime_starts_selected_even_if_platform_gate_is_unavailable():
+    entries = build_engine_entries(llamacpp_vulkan_found=True)
+    vulkan = find_entry(entries, LLAMACPP_VULKAN)
+    assert (vulkan["enabled"], vulkan["checked"], vulkan["note"]) == (
+        True, True, "already installed",
+    )
+
+
+def test_vulkan_and_native_llamacpp_share_one_model_family():
+    assert model_engine_names([LLAMACPP, LLAMACPP_VULKAN, VLLM]) == [LLAMACPP, VLLM]
+    assert model_engine_names([LLAMACPP_VULKAN]) == [LLAMACPP]
+
+
+def test_vulkan_setup_state_gates_platform_and_requires_a_complete_vulkan_toolset():
+    ready = llamacpp_vulkan_setup_state(
+        "Windows", "AMD64", runtime_present=True, backend="vulkan", toolset_ready=True,
+    )
+    assert ready == {
+        "supported": True, "found": True,
+        "note": "will use the official Windows Vulkan package", "problem": None,
+    }
+    assert llamacpp_vulkan_setup_state(
+        "Darwin", "arm64", runtime_present=False, backend=None, toolset_ready=False,
+    )["supported"] is False
+    assert llamacpp_vulkan_setup_state(
+        "Windows", "arm64", runtime_present=False, backend=None, toolset_ready=False,
+    )["supported"] is False
+
+
+def test_vulkan_setup_state_distinguishes_wrong_backend_and_missing_tools():
+    wrong = llamacpp_vulkan_setup_state(
+        "Linux", "x86_64", runtime_present=True, backend="cuda", toolset_ready=True,
+    )
+    incomplete = llamacpp_vulkan_setup_state(
+        "Linux", "x86_64", runtime_present=True, backend="vulkan", toolset_ready=False,
+    )
+    assert (wrong["found"], wrong["problem"]) == (False, "wrong_backend")
+    assert (incomplete["found"], incomplete["problem"]) == (False, "incomplete_toolset")
 
 
 def test_an_installed_engine_starts_selected():

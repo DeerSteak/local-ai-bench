@@ -6,22 +6,24 @@ import tempfile
 from pathlib import Path
 
 
-# 3 adds the optional "vllm" block; older files stay loadable and simply lack it.
-SCHEMA_VERSION = 3
-SUPPORTED_SCHEMA_VERSIONS = {1, 2, SCHEMA_VERSION}
+# 4 adds the optional Vulkan llama.cpp toolset; older files simply lack it.
+SCHEMA_VERSION = 4
+SUPPORTED_SCHEMA_VERSIONS = {1, 2, 3, SCHEMA_VERSION}
 
 
 def load_setup_config(path: Path) -> dict:
     """Load a valid setup configuration, or return an empty configuration."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, ValueError):
         return {}
-    return data if isinstance(data, dict) and data.get("schema_version") in SUPPORTED_SCHEMA_VERSIONS else {}
+    return data if (isinstance(data, dict) and type(data.get("schema_version")) is int
+                    and data["schema_version"] in SUPPORTED_SCHEMA_VERSIONS) else {}
 
 
 def write_setup_config(path: Path, *, comfyui_dir: Path | None,
                        llamacpp_tools: dict[str, str | None],
+                       llamacpp_vulkan_tools: dict[str, str | None] | None = None,
                        gpu_devices: list[dict] | None = None,
                        vllm: dict | None = None) -> None:
     """Atomically write durable setup paths without credentials."""
@@ -29,9 +31,18 @@ def write_setup_config(path: Path, *, comfyui_dir: Path | None,
         "schema_version": SCHEMA_VERSION,
         "comfyui": {"program_dir": str(comfyui_dir.resolve()) if comfyui_dir else None},
         "llama_cpp": llamacpp_tools,
+        "llama_cpp_vulkan": llamacpp_vulkan_tools or {},
         "gpu": {"devices": gpu_devices or []},
         "vllm": vllm or {},
     }
+    preferences = load_setup_config(path).get("setup_preferences")
+    if isinstance(preferences, dict):
+        data["setup_preferences"] = preferences
+    write_setup_data(path, data)
+
+
+def write_setup_data(path: Path, data: dict) -> None:
+    """Publish setup state atomically so interrupted writes retain the previous choices."""
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
@@ -69,6 +80,11 @@ def configured_llamacpp_tool(data: dict, base_name: str) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def configured_llamacpp_vulkan_tool(data: dict, base_name: str) -> str | None:
+    value = data.get("llama_cpp_vulkan", {}).get(base_name)
+    return value if isinstance(value, str) and value else None
+
+
 def configured_vllm(data: dict) -> dict:
     """Recorded vLLM runtime: executable, launcher, server URL, and launcher extra args."""
     value = data.get("vllm")
@@ -100,4 +116,6 @@ def available_gpu_split_modes(data: dict, runtime_backend: str) -> tuple[str, ..
     matching = [device for device in devices if device.get("backend") == runtime_backend]
     if runtime_backend in {"cuda", "rocm"} and len(matching) >= 2:
         return "single", "layer", "tensor"
+    if runtime_backend in {"cuda", "rocm", "vulkan", "xpu"} and matching:
+        return "single", "layer"
     return ("layer",)

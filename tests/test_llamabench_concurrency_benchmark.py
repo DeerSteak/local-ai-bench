@@ -9,6 +9,7 @@ import pytest
 
 from scripts.runtime import config
 from scripts.runtime.engines.llamacpp import LlamaCppEngine
+from scripts.runtime.engines.llamacpp_vulkan import LlamaCppVulkanEngine
 from scripts.workloads.llamabench_concurrency_benchmark import LlamaBenchConcurrencyBenchmark as LBC
 from scripts.runtime.shared import Shared
 
@@ -25,6 +26,8 @@ def test_find_binary_via_llamacpp_dir(monkeypatch, tmp_path):
     nested.mkdir(parents=True)
     exe = nested / "llama-batched-bench"
     exe.write_text("")
+    (nested / "llama-server").touch()
+    (nested / "llama-bench").touch()
     monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.shutil.which", lambda name: None)
     assert LBC.find_binary() == str(exe)
 
@@ -37,21 +40,23 @@ def test_find_binary_skips_a_same_named_source_directory(monkeypatch, tmp_path):
     nested.mkdir(parents=True)
     exe = nested / "llama-batched-bench"
     exe.write_text("")
+    (nested / "llama-server").touch()
+    (nested / "llama-bench").touch()
     monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.shutil.which", lambda name: None)
     assert LBC.find_binary() == str(exe)
 
 
-def test_find_binary_falls_back_to_path(monkeypatch, tmp_path):
+def test_find_binary_rejects_system_path(monkeypatch, tmp_path):
     monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.platform.system", lambda: "Linux")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
     monkeypatch.setattr(
         "scripts.workloads.llamabench_concurrency_benchmark.shutil.which",
         lambda name: "/usr/local/bin/llama-batched-bench" if name == "llama-batched-bench" else None,
     )
-    assert LBC.find_binary() == "/usr/local/bin/llama-batched-bench"
+    assert LBC.find_binary() is None
 
 
-def test_find_binary_checks_macos_homebrew_prefixes(monkeypatch, tmp_path):
+def test_find_binary_rejects_macos_homebrew_prefixes(monkeypatch, tmp_path):
     monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.platform.system", lambda: "Darwin")
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
     monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.shutil.which", lambda name: None)
@@ -62,7 +67,7 @@ def test_find_binary_checks_macos_homebrew_prefixes(monkeypatch, tmp_path):
         return str(self) == "/opt/homebrew/bin/llama-batched-bench" or real_is_file(self)
 
     monkeypatch.setattr(Path, "is_file", fake_is_file)
-    assert LBC.find_binary() == "/opt/homebrew/bin/llama-batched-bench"
+    assert LBC.find_binary() is None
 
 
 def test_find_binary_returns_none_when_missing(monkeypatch, tmp_path):
@@ -70,6 +75,12 @@ def test_find_binary_returns_none_when_missing(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "LLAMACPP_DIR", tmp_path / "nonexistent")
     monkeypatch.setattr("scripts.workloads.llamabench_concurrency_benchmark.shutil.which", lambda name: None)
     assert LBC.find_binary() is None
+
+
+def test_find_engine_binary_uses_the_selected_llamacpp_runtime(monkeypatch):
+    engine = LlamaCppVulkanEngine()
+    monkeypatch.setattr(engine, "tool_path", lambda name: f"/vulkan/{name}")
+    assert LBC.find_engine_binary(engine) == "/vulkan/llama-batched-bench"
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -81,6 +92,18 @@ def test_fit_npl_keeps_everything_when_context_is_ample():
     pp, npl = LBC.fit_npl(8192, [128, 512], [1, 2, 4, 8, 16], 1_000_000)
     assert pp == 8192
     assert npl == [1, 2, 4, 8, 16]
+
+
+@pytest.mark.parametrize("tg", [[128], [512], [128, 512]])
+@pytest.mark.parametrize("model_max, expected_levels", [
+    (131072, [1, 2, 4, 8]),
+    (262144, [1, 2, 4, 8, 16]),
+])
+def test_default_prompt_reserves_generation_space_at_high_concurrency(tg, model_max, expected_levels):
+    pp, npl = LBC.fit_npl(config.LLAMABENCH_CONC_PP, tg, config.LLAMABENCH_CONC_NPL, model_max)
+    assert pp == 8192
+    assert npl == expected_levels
+    assert max(npl) * (pp + max(tg)) <= model_max
 
 
 def test_fit_npl_drops_levels_that_would_not_fit():
@@ -166,6 +189,20 @@ def test_build_command_can_disable_repacking(monkeypatch):
         [128], [1], 2048, 512, 999,
     )
     assert "--no-repack" in cmd
+
+
+def test_build_command_can_disable_host_buffer_except_on_cpu(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_NO_HOST", True)
+    gpu_cmd = LBC.build_command(
+        "llama-batched-bench", Path("/models/x.gguf"), 4096, 512,
+        [128], [1], 2048, 512, 999,
+    )
+    cpu_cmd = LBC.build_command(
+        "llama-batched-bench", Path("/models/x.gguf"), 4096, 512,
+        [128], [1], 2048, 512, 0,
+    )
+    assert "--no-host" in gpu_cmd
+    assert "--no-host" not in cpu_cmd
 
 
 def test_build_command_uses_f16_cache_for_tensor_split(monkeypatch):
@@ -359,7 +396,7 @@ def fake_engine(monkeypatch):
         LlamaCppEngine, "_resolve_model_files",
         classmethod(lambda cls, tag: [Path(f"/models/{tag}.gguf")]),
     )
-    monkeypatch.setattr(LBC, "find_binary", staticmethod(lambda: "llama-batched-bench"))
+    monkeypatch.setattr(engine, "tool_path", lambda name: f"/fake/{name}")
     return engine
 
 
@@ -371,8 +408,9 @@ def test_run_skips_non_llamacpp_engine():
 
 
 def test_run_returns_empty_when_binary_missing(monkeypatch):
-    monkeypatch.setattr(LBC, "find_binary", staticmethod(lambda: None))
-    assert LBC().run(LlamaCppEngine(), _MODELS) == {}
+    engine = LlamaCppEngine()
+    monkeypatch.setattr(engine, "tool_path", lambda _name: None)
+    assert LBC().run(engine, _MODELS) == {}
 
 
 def test_run_skips_unpulled_models(fake_engine, monkeypatch):
@@ -398,6 +436,8 @@ def test_run_records_entries_and_sweep_shape_on_success(fake_engine, monkeypatch
 
 def test_run_uses_only_journal_pending_cells_on_resume(fake_engine, monkeypatch):
     captured = []
+
+    monkeypatch.setattr(Shared, "verify_resume_model", lambda *_args: None)
 
     class Journal:
         def __init__(self): self.entries = []
@@ -481,10 +521,10 @@ def test_run_sizes_ctx_and_npl_from_the_model_context(fake_engine, monkeypatch):
 
     monkeypatch.setattr(LBC, "run_one", classmethod(fake_run_one))
     result = LBC().run(fake_engine, _MODELS)
-    assert captured["npl"] == [1, 2, 4]
-    assert captured["pp"] == 4096
-    assert captured["ctx_size"] == 4 * (4096 + 512)
-    assert result["m1"]["ctx_size"] == 4 * (4096 + 512)
+    assert captured["npl"] == [1, 2]
+    assert captured["pp"] == 8192
+    assert captured["ctx_size"] == 2 * (8192 + 512)
+    assert result["m1"]["ctx_size"] == 2 * (8192 + 512)
 
 
 def test_run_clamps_prompt_depth_on_small_context_models(fake_engine, monkeypatch):

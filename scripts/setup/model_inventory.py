@@ -12,6 +12,7 @@ from scripts.workloads.models import (
 )
 from scripts.workloads.model_variants import expanded_variant_catalog
 from scripts.runtime.model_identity import model_tag_slug
+from scripts.runtime.engine_identity import engine_family
 
 
 def sanitize_tag_to_short(tag: str) -> str:
@@ -196,7 +197,8 @@ def installed_image_models(models_dir: Path, image_catalog: list[dict] | None = 
 
 def build_model_inventory(engine, image_models_dir: Path) -> dict[str, list[dict]]:
     """Build the complete read-only inventory with benchmark-managed images."""
-    llm_catalog = expanded_variant_catalog(LLM_MODELS) if engine.name == "llamacpp" else LLM_MODELS
+    llm_catalog = expanded_variant_catalog(LLM_MODELS) \
+        if engine_family(engine.name) == "llamacpp" else LLM_MODELS
     inventory = classify_engine_models(engine.list_installed_models(), llm_catalog=llm_catalog)
     inventory["image"] = installed_image_models(image_models_dir)
     return inventory

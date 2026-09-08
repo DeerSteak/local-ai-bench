@@ -3,6 +3,7 @@
 import hashlib
 import json
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,27 +23,37 @@ def stable_environment(environment: dict | None) -> dict:
     }
 
 
-def file_identity(path: Path) -> dict:
+def file_identity(path: Path, progress=None) -> dict:
     digest = hashlib.sha256()
     size = 0
+    total = Path(path).stat().st_size if progress else 0
+    last_report = time.monotonic() if progress else 0
+    if progress:
+        progress(Path(path), 0, total)
     with Path(path).open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
             size += len(chunk)
+            if progress and time.monotonic() - last_report >= 5:
+                progress(Path(path), size, total)
+                last_report = time.monotonic()
+    if progress:
+        progress(Path(path), size, total)
     return {"sha256": digest.hexdigest(), "size": size}
 
 
 def build_resume_identity(plan: RunPlan, *, artifacts: dict[str, Path],
                           runtimes: dict[str, Path], methodology: dict[str, str],
-                          digest_cache: dict | None = None, environment: dict | None = None) -> dict:
+                          digest_cache: dict | None = None, environment: dict | None = None,
+                          progress=None) -> dict:
     names = [*artifacts, *runtimes, *methodology]
     if any(not isinstance(name, str) or not IDENTITY_NAME.fullmatch(name) for name in names):
         raise ValueError("resume identity names must be stable logical identifiers")
     return {
         "plan_id": plan.plan_id,
-        "artifacts": {name: cached_file_identity(path, digest_cache)
+        "artifacts": {name: cached_file_identity(path, digest_cache, progress=progress)
                       for name, path in sorted(artifacts.items())},
-        "runtimes": {name: cached_file_identity(path, digest_cache)
+        "runtimes": {name: cached_file_identity(path, digest_cache, progress=progress)
                      for name, path in sorted(runtimes.items())},
         "methodology": dict(sorted(methodology.items())),
         "environment": environment or {},
@@ -53,14 +64,14 @@ def build_engine_resume_identity(plan: RunPlan, engine, *, model_families,
                                  include_engine_runtime=True, extra_runtimes=None,
                                  extra_artifacts=None,
                                  digest_cache_path=None, environment=None,
-                                 use_digest_cache=True) -> dict:
+                                 use_digest_cache=True, progress=None, deferred_artifacts: dict | None = None) -> dict:
     """Resolve byte identities for every journal-backed model and runtime in a plan."""
     artifacts = dict(extra_artifacts or {})
     tags = {
         model["tag"] for family in model_families
         for model in plan.models[family] if model.get("tag")
     }
-    for tag in sorted(tags):
+    for tag in sorted(tags) if deferred_artifacts is None else ():
         # A model the engine cannot find is skipped by every workload, so it has no
         # artifact to protect; installing one later changes this identity and blocks resume.
         if not engine.model_pulled(tag):
@@ -68,6 +79,9 @@ def build_engine_resume_identity(plan: RunPlan, engine, *, model_families,
         paths = engine.resume_artifact_paths(tag)
         for number, path in enumerate(paths, 1):
             artifacts[f"model:{tag}:part{number}"] = path
+    if deferred_artifacts is not None:
+        artifacts = {name: path for name, path in artifacts.items()
+                     if not name.startswith(("model:", "image:"))}
     runtimes = dict(engine.resume_runtime_paths()) if include_engine_runtime else {}
     runtimes.update(extra_runtimes or {})
     methodology = {
@@ -80,8 +94,11 @@ def build_engine_resume_identity(plan: RunPlan, engine, *, model_families,
         if digest_cache_path and use_digest_cache else None
     identity = build_resume_identity(
         plan, artifacts=artifacts, runtimes=runtimes, methodology=methodology,
-        digest_cache=cache, environment=environment_identity,
+        digest_cache=cache, environment=environment_identity, progress=progress,
     )
+    if deferred_artifacts is not None:
+        identity["artifacts"].update({name: value for name, value in deferred_artifacts.items()
+                                      if name.startswith(("model:", "image:"))})
     if digest_cache_path and use_digest_cache:
         atomic_write_json(Path(digest_cache_path), {"schema_version": 1, "files": cache})
     return identity
@@ -96,7 +113,7 @@ def load_digest_cache(path: Path) -> dict:
     return files if isinstance(files, dict) else {}
 
 
-def cached_file_identity(path: Path, cache: dict | None) -> dict:
+def cached_file_identity(path: Path, cache: dict | None, progress=None) -> dict:
     path = Path(path).resolve()
     stat = path.stat()
     key = str(path)
@@ -105,7 +122,7 @@ def cached_file_identity(path: Path, cache: dict | None) -> dict:
             and cached.get("mtime_ns") == stat.st_mtime_ns \
             and isinstance(cached.get("sha256"), str):
         return {"sha256": cached["sha256"], "size": stat.st_size}
-    identity = file_identity(path)
+    identity = file_identity(path) if progress is None else file_identity(path, progress=progress)
     if cache is not None:
         cache[key] = {**identity, "mtime_ns": stat.st_mtime_ns}
     return identity

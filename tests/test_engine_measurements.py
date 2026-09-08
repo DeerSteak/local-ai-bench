@@ -4,7 +4,7 @@ import pytest
 
 from scripts.runtime.engines.base import (
     EmbeddingMeasurement, GenerationMeasurement, aggregate_generation_measurements,
-    embedding_validation_errors,
+    embedding_validation_errors, measurement_prefill_tokens,
     is_valid_measurement, measurement_validation_errors,
 )
 
@@ -126,6 +126,21 @@ def test_aggregate_reports_prefill_throughput_per_run_and_averaged():
     assert aggregate["prefill_tps_stdev"] > 0
     assert aggregate["valid_samples"][0]["prefill_tps"] == 4096.0
     assert aggregate["valid_samples"][0]["prompt_tokens"] == 2048
+    assert aggregate["valid_samples"][0]["prefill_tokens"] == 2048
+
+
+def test_aggregate_uses_explicit_cached_prompt_basis_without_replacing_raw_count():
+    measurement = replace(
+        valid_measurement(), prompt_tokens=5, prefill_tokens=32768,
+        server_prompt_sec=0.125,
+    )
+    aggregate = aggregate_generation_measurements([measurement], 1)
+    assert measurement_prefill_tokens(measurement) == 32768
+    assert aggregate["prefill_tps_mean"] == 262144.0
+    sample = aggregate["valid_samples"][0]
+    assert sample["prompt_tokens"] == 5
+    assert sample["prefill_tokens"] == 32768
+    assert sample["prefill_tps"] == 262144.0
 
 
 def test_aggregate_omits_prefill_throughput_when_no_run_reported_prompt_timing():

@@ -242,12 +242,16 @@ def llamacpp_cmake_flags(backend: str, *, nvcc: str | None = None,
         if architecture:
             flags.append(f"-DCMAKE_CUDA_ARCHITECTURES={architecture}")
         return flags
+    if backend == "metal":
+        return ["-DGGML_METAL=ON"]
     if backend == "rocm":
         return ["-DGGML_HIP=ON"]
     if backend == "xpu":
         return [
             "-DGGML_SYCL=ON", "-DCMAKE_C_COMPILER=icx", "-DCMAKE_CXX_COMPILER=icpx",
         ]
+    if backend == "vulkan":
+        return ["-DGGML_VULKAN=ON"]
     return []
 
 
@@ -269,14 +273,15 @@ def validate_llamacpp_build(source_dir: Path, *, required_backend: str | None = 
                             env=None, run=subprocess.run) -> RuntimeUpdateResult:
     tools = {}
     for name in LLAMACPP_TARGETS:
-        matches = [path for path in source_dir.rglob(name) if path.is_file()]
+        matches = [path for suffix in (name, f"{name}.exe")
+                   for path in source_dir.rglob(suffix) if path.is_file()]
         if not matches:
             return RuntimeUpdateResult(False, f"Staged llama.cpp build is missing {name}.")
         tools[name] = matches[0]
     try:
         result = run(
             [str(tools["llama-server"]), "--version"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=30, env=env,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return RuntimeUpdateResult(False, f"Staged llama.cpp validation failed: {exc}")
@@ -390,28 +395,33 @@ def fetch_llamacpp_release_tag(tag: str, *, opener=urllib.request.urlopen) -> di
 
 
 def select_windows_llamacpp_release(release: dict, max_cuda_version: str | None, *,
-                                    intel_xpu: bool = False) -> WindowsLlamacppRelease | None:
+                                    intel_xpu: bool = False,
+                                    vulkan: bool = False) -> WindowsLlamacppRelease | None:
     assets = release.get("assets", [])
+    if intel_xpu and vulkan:
+        raise ValueError("SYCL and Vulkan llama.cpp selection are mutually exclusive")
     if intel_xpu:
         sycl = next((asset for asset in assets
                      if "win-sycl-x64" in str(asset.get("name", "")).lower()
                      and str(asset.get("name", "")).endswith(".zip")), None)
         return WindowsLlamacppRelease("SYCL", (sycl,)) if sycl is not None else None
-    cuda_pair = hardware.select_cuda_release_assets(assets, max_cuda_version)
-    if cuda_pair is not None:
-        return WindowsLlamacppRelease(
-            f"CUDA {cuda_pair[2]}", (cuda_pair[0], cuda_pair[1]),
-        )
-    vulkan = next((asset for asset in assets
-                   if "win-vulkan-x64" in str(asset.get("name", "")).lower()
-                   and str(asset.get("name", "")).endswith(".zip")), None)
-    return WindowsLlamacppRelease("Vulkan", (vulkan,)) if vulkan is not None else None
+    if not vulkan:
+        cuda_pair = hardware.select_cuda_release_assets(assets, max_cuda_version)
+        if cuda_pair is not None:
+            return WindowsLlamacppRelease(
+                f"CUDA {cuda_pair[2]}", (cuda_pair[0], cuda_pair[1]),
+            )
+    vulkan_asset = next((asset for asset in assets
+                         if "win-vulkan-x64" in str(asset.get("name", "")).lower()
+                         and str(asset.get("name", "")).endswith(".zip")), None)
+    return WindowsLlamacppRelease("Vulkan", (vulkan_asset,)) \
+        if vulkan_asset is not None else None
 
 
 def select_windows_llamacpp_assets(release: dict, max_cuda_version: str | None, *,
-                                   intel_xpu: bool = False) -> list[dict]:
+                                   intel_xpu: bool = False, vulkan: bool = False) -> list[dict]:
     selected = select_windows_llamacpp_release(
-        release, max_cuda_version, intel_xpu=intel_xpu,
+        release, max_cuda_version, intel_xpu=intel_xpu, vulkan=vulkan,
     )
     return list(selected.assets) if selected is not None else []
 
@@ -510,7 +520,7 @@ def update_macos_llamacpp(target: Path, machine: str, *,
 
 
 def update_windows_llamacpp(target: Path, max_cuda_version: str | None, *,
-                            intel_xpu: bool = False,
+                            intel_xpu: bool = False, vulkan: bool = False,
                             release_fetcher=fetch_llamacpp_release,
                             downloader=download_file, extractor=safe_extract_zip,
                             run=subprocess.run, replace=os.replace, remove=shutil.rmtree,
@@ -528,7 +538,7 @@ def update_windows_llamacpp(target: Path, max_cuda_version: str | None, *,
     try:
         release = release_fetcher()
         assets = select_windows_llamacpp_assets(
-            release, max_cuda_version, intel_xpu=intel_xpu,
+            release, max_cuda_version, intel_xpu=intel_xpu, vulkan=vulkan,
         )
         if not assets:
             return RuntimeUpdateResult(False, "The latest release has no compatible Windows asset.")
@@ -594,8 +604,6 @@ def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
     target = Path(target)
     if not target.is_dir():
         return RuntimeUpdateResult(False, f"Managed llama.cpp checkout does not exist: {target}")
-    if os_name == "nt":
-        return RuntimeUpdateResult(False, "Managed Windows release updates are not available yet.")
     nvcc = find_nvcc() if backend == "cuda" else None
     if backend == "cuda" and nvcc is None:
         return RuntimeUpdateResult(False, "CUDA rebuild requires nvcc; the current runtime was preserved.")

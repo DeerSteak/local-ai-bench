@@ -48,9 +48,9 @@ export default function Controls({
   const cleanSuffix = sanitizeForFilename(filenameSuffix);
   const isConcurrency = section === "concurrency_tool" || section === "concurrency_chat";
   const isLlamaBench = section === "llamabench";
-  // Line-only, no tier split — same treatment as the concurrency sections.
   const isLlamaBenchConc = section === "llamabenchconc";
   const isSustained = section === "sustained";
+  const isCacheComparison = section === "llm_cache_comparison";
   return (
     <div className="card" style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
       <div>
@@ -79,7 +79,7 @@ export default function Controls({
         </div>
       )}
 
-      {section !== "accuracy" && !isConcurrency && !isLlamaBench && !isLlamaBenchConc && !isSustained && (
+      {section !== "accuracy" && !isConcurrency && !isLlamaBench && !isLlamaBenchConc && !isSustained && !isCacheComparison && (
         <div className={styles.dividerGroup}>
           <div className={styles.controlLabel}>Chart Style</div>
           <div style={{ display: "flex", gap: 6 }}>
@@ -93,7 +93,7 @@ export default function Controls({
         </div>
       )}
 
-      {section !== "accuracy" && !isConcurrency && !isLlamaBenchConc && !isSustained && (
+      {section !== "accuracy" && !isConcurrency && !isSustained && !isCacheComparison && (
         <div className={styles.dividerGroup}>
           <div className={styles.controlLabel}>Group By</div>
           <div style={{ display: "flex", gap: 6 }}>
@@ -107,7 +107,7 @@ export default function Controls({
         </div>
       )}
 
-      {groupBy === "system" && (section === "llm" || section === "llm_conversation" || section === "llamabench") && (
+      {groupBy === "system" && (["llm", "llm_cached", "llm_conversation", "llamabench", "llamabenchconc"].includes(section)) && (
         <div className={styles.dividerGroup}>
           <div className={styles.controlLabel}>Model Sizes</div>
           <div style={{ display: "flex", gap: 6 }}>
@@ -166,7 +166,7 @@ export default function Controls({
 
       <div className={styles.rowBreak} />
 
-      {(section === "llm" || section === "llm_conversation" || section === "accuracy" || isConcurrency || isLlamaBench || isLlamaBenchConc || isSustained) && allModels.length > 0 && (
+      {(["llm", "llm_cached", "llm_cache_comparison", "llm_conversation", "accuracy"].includes(section) || isConcurrency || isLlamaBench || isLlamaBenchConc || isSustained) && allModels.length > 0 && (
         <div className={styles.freshRowGroup}>
           <div className={styles.controlLabel}>Models</div>
           <div className={styles.filterGroup}>

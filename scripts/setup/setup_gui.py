@@ -8,6 +8,9 @@ import subprocess
 import sys
 import tempfile
 
+from scripts.setup.setup_preferences import (
+    restore_engine_selection, restore_model_selection, restored_comfyui_options,
+)
 from scripts.runtime import hardware
 from scripts.workloads.models import (
     EMBED_MODELS,
@@ -22,7 +25,7 @@ from scripts.workloads.model_variants import (
     variant_selection_target,
 )
 from scripts.runtime.comfyui_installation import normalize_comfyui_dir
-from scripts.setup.engine_selection import LLAMACPP, VLLM
+from scripts.setup.engine_selection import LLAMACPP, VLLM, model_engine_names
 from scripts.setup.model_inventory import (
     engine_fit_report, engine_fit_warnings, fits_any_engine, format_engine_sizes,
 )
@@ -59,7 +62,7 @@ def focus_scroll_fraction(*, widget_top: int, widget_bottom: int, view_top: int,
 
 def model_row_label(model: dict, engines, memory_ceiling_gb: float | None) -> str:
     """One model row: per-engine sizes, plus a warning per engine it won't fit."""
-    report = engine_fit_report(model, engines, memory_ceiling_gb)
+    report = engine_fit_report(model, model_engine_names(list(engines)), memory_ceiling_gb)
     if not report:  # image checkpoints carry no per-engine weights
         return f"{model['label']}  {model.get('download_size', '')}".rstrip()
     label = f"{model['label']}  {format_engine_sizes(report)}"
@@ -72,6 +75,7 @@ def default_model_selection(memory_ceiling_gb: float | None,
                             engines=(LLAMACPP,)) -> dict[str, bool]:
     """Memory-aware defaults, matching terminal setup. Checked if it fits any engine."""
     selected: dict[str, bool] = {}
+    engines = model_engine_names(list(engines))
     for _, models in LLM_GROUPS:
         for model in models:
             selected[model["tag"]] = (not model.get("variant") or model.get("default", False)) and fits_any_engine(
@@ -84,6 +88,20 @@ def default_model_selection(memory_ceiling_gb: float | None,
             model["checkpoint"], model["short"], memory_ceiling_gb,
         ) is not False
     return selected
+
+
+def variant_parent_widget_state(selection_state: str) -> tuple[str, str]:
+    """Map child selection to an explicit Tk checked, partial, or empty state."""
+    if selection_state == "all":
+        return "selected", "!alternate"
+    if selection_state == "some":
+        return "!selected", "alternate"
+    return "!selected", "!alternate"
+
+
+def apply_variant_parent_state(widget, variable, selection_state: str) -> None:
+    variable.set(selection_state == "all")
+    widget.state(variant_parent_widget_state(selection_state))
 
 
 def validate_gui_plan(plan: dict) -> list[str]:
@@ -179,6 +197,7 @@ def build_setup_plan(*, model_selection: dict[str, bool], cleanup_names: list[st
                                if selected],
         "hf_token": hf_token,
         "save_hf_token": should_save_gui_token(hf_token, save_token),
+        "save_token_preference": save_token,
         "use_existing_hf_token": existing_hf_token and not hf_token,
         "comfyui_mode": comfyui_mode,
         "comfyui_path": comfyui_path.strip(),
@@ -214,7 +233,8 @@ def run_setup_wizard_process(*, memory_ceiling_gb: float | None,
                              vllm_cleanup: list[dict] | None = None,
                              existing_hf_token: bool = False,
                              engine_entries: list[dict] | None = None,
-                             sudo_package: str | None = None) -> dict | None:
+                             sudo_package: str | None = None,
+                             preferences: dict | None = None) -> dict | None:
     request_handle, request_name = tempfile.mkstemp(prefix="local-ai-bench-setup-request-", suffix=".json")
     response_handle, response_name = tempfile.mkstemp(prefix="local-ai-bench-setup-response-", suffix=".json")
     os.close(request_handle)
@@ -229,6 +249,7 @@ def run_setup_wizard_process(*, memory_ceiling_gb: float | None,
             "existing_hf_token": existing_hf_token,
             "engine_entries": engine_entries or [],
             "sudo_package": sudo_package,
+            "preferences": preferences or {},
         }))
         result = subprocess.run([
             sys.executable, "-m", "scripts.setup.setup_gui",
@@ -249,7 +270,8 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
                      vllm_cleanup: list[dict] | None = None,
                      existing_hf_token: bool = False,
                      engine_entries: list[dict] | None = None,
-                     sudo_package: str | None = None) -> dict | None:  # pragma: no cover — interactive desktop UI
+                     sudo_package: str | None = None,
+                     preferences: dict | None = None) -> dict | None:  # pragma: no cover — interactive desktop UI
     import tkinter as tk
     import webbrowser
     from tkinter import filedialog, messagebox, ttk
@@ -271,9 +293,13 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     root.after(150, bring_to_front)
 
     engine_entries = engine_entries or []
+    preferences = preferences or {}
+    restore_engine_selection(engine_entries, preferences)
     initial_engines = [entry["name"] for entry in engine_entries
                        if entry["checked"] and entry["enabled"]] or [LLAMACPP]
-    defaults = default_model_selection(memory_ceiling_gb, initial_engines)
+    defaults = restore_model_selection(
+        default_model_selection(memory_ceiling_gb, initial_engines), preferences,
+    )
     model_vars = {key: tk.BooleanVar(value=value) for key, value in defaults.items()}
     labelled_models: dict[str, tuple] = {}
     variant_groups: dict[str, list[dict]] = {}
@@ -285,7 +311,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     variant_child_rows: dict[str, tuple] = {}
     applied_engines = list(initial_engines)
     token_var = tk.StringVar()
-    save_token_var = tk.BooleanVar(value=True)
+    save_token_var = tk.BooleanVar(value=preferences.get("save_token_preference", True))
     override_token_var = tk.BooleanVar(value=False)
     cleanup_var = tk.BooleanVar(value=False)
     vllm_cleanup = list(vllm_cleanup or [])
@@ -293,8 +319,9 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     # each entry is opted into individually rather than as a group.
     vllm_cleanup_vars = {entry["directory_name"]: tk.BooleanVar(value=False)
                          for entry in vllm_cleanup}
-    comfy_mode_var = tk.StringVar(value="detected" if detected_comfyui else "download")
-    comfy_path_var = tk.StringVar(value=str(detected_comfyui or ""))
+    comfy_mode, comfy_path = restored_comfyui_options(preferences, detected_comfyui)
+    comfy_mode_var = tk.StringVar(value=comfy_mode)
+    comfy_path_var = tk.StringVar(value=comfy_path)
     result: dict | None = None
     pages: list[ttk.Frame] = []
     page_index = 0
@@ -323,7 +350,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     ttk.Label(
         welcome,
         text=("This wizard detects existing tools, lets you choose every model and credential option, "
-              "and shows a final review before downloading anything."),
+              "restores your last confirmed choices, and shows a final review before downloading anything."),
         wraplength=740, justify="left",
     ).grid(sticky="w", pady=(14, 8))
     memory_text = (f"Detected model-memory ceiling: approximately {memory_ceiling_gb:.1f} GB."
@@ -378,12 +405,11 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
 
     def sync_variant_parents() -> None:
         selected = selected_model_tags()
-        for base_model, (widget, _row) in variant_parent_widgets.items():
+        for base_model, (widget, variable, _row) in variant_parent_widgets.items():
             state = variant_selection_state(
                 [model["tag"] for model in variant_groups[base_model]], selected,
             )
-            widget.state(["selected" if state == "all" else "!selected"])
-            widget.state(["alternate" if state == "some" else "!alternate"])
+            apply_variant_parent_state(widget, variable, state)
 
     def toggle_variant_parent(base_model: str) -> None:
         tags = [model["tag"] for model in variant_groups[base_model]]
@@ -422,12 +448,14 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             key = model.get("tag") or model["short"]
             base_model = model.get("base_model")
             if base_model and model.get("variant") and base_model not in rendered_variant_parents:
+                parent_var = tk.BooleanVar(value=False)
                 parent = ttk.Checkbutton(
                     model_list, text=model.get("base_label", base_model),
+                    variable=parent_var,
                     command=lambda base=base_model: toggle_variant_parent(base),
                 )
                 parent.grid(row=row, column=0, sticky="w", padx=(16, 12), pady=(5, 1))
-                variant_parent_widgets[base_model] = (parent, row)
+                variant_parent_widgets[base_model] = (parent, parent_var, row)
                 rendered_variant_parents.add(base_model)
                 row += 1
             option_row = ttk.Frame(model_list)
@@ -459,7 +487,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
     sync_variant_parents()
 
     def apply_variant_engine_mode(engines: list[str]) -> None:
-        llamacpp_only = engines == [LLAMACPP]
+        llamacpp_only = bool(engines) and model_engine_names(engines) == [LLAMACPP]
         if not llamacpp_only:
             collapsed = collapse_variant_selection(
                 [model for variants in variant_groups.values() for model in variants],
@@ -468,7 +496,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             for variants in variant_groups.values():
                 for model in variants:
                     model_vars[model["tag"]].set(model["tag"] in collapsed)
-        for widget, parent_row in variant_parent_widgets.values():
+        for widget, _variable, parent_row in variant_parent_widgets.values():
             if llamacpp_only:
                 widget.grid(row=parent_row, column=0, sticky="w", padx=(16, 12), pady=(5, 1))
             else:
@@ -659,7 +687,7 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
         return chosen or [LLAMACPP]
 
     def refresh_model_rows() -> None:
-        """Re-label and re-default the model list for the checked engines."""
+        """Refresh backend fit labels without discarding model choices."""
         nonlocal applied_engines
         engines = selected_engines()
         if engines == applied_engines:
@@ -667,9 +695,6 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
         applied_engines = engines
         for key, (checkbutton, model) in labelled_models.items():
             checkbutton.configure(text=model_row_label(model, engines, memory_ceiling_gb))
-        for key, value in default_model_selection(memory_ceiling_gb, engines).items():
-            if key in model_vars:
-                model_vars[key].set(value)
         apply_variant_engine_mode(engines)
 
     def show_page(index: int) -> None:
@@ -703,6 +728,8 @@ def run_setup_wizard(*, memory_ceiling_gb: float | None,
             *page_controls, back_button, next_button, cancel_button,
         ])
         if pages[index] is models_page:
+            sync_variant_parents()
+
             def reveal_model_control(event) -> None:
                 region = canvas.bbox("all")
                 if region is None:
@@ -771,6 +798,7 @@ def main() -> None:  # pragma: no cover
         existing_hf_token=request["existing_hf_token"],
         engine_entries=request.get("engine_entries") or [],
         sudo_package=request.get("sudo_package"),
+        preferences=request.get("preferences", {}),
     )
     args.response.write_text(json.dumps({"plan": plan}))
 

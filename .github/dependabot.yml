@@ -13,6 +13,10 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      - dependency-name: numpy
+        versions:
+          - ">=2.5"
 
   - package-ecosystem: npm
     directory: "/dashboard"

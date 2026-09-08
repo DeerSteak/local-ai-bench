@@ -73,7 +73,7 @@ def test_benchmark_gui_builds_all_tabs_and_controller_wiring(monkeypatch):
         engine_buttons = [
             widget for widget in descendants(engine_tab)
             if isinstance(widget, ttk.Button) and widget.cget("text") in {
-                "Refresh", "Copy Diagnostics", "Update / Rebuild llama.cpp",
+                    "Refresh", "Copy Diagnostics", "Update / Rebuild llama.cpp Runtimes",
                 "Update vLLM", "Cancel Operation",
             }
         ]
@@ -107,7 +107,7 @@ def test_benchmark_gui_builds_all_tabs_and_controller_wiring(monkeypatch):
         },
         "space_bindings": {"TButton": True, "TCheckbutton": True, "TRadiobutton": True},
         "engine_actions": [
-            "Refresh", "Copy Diagnostics", "Update / Rebuild llama.cpp",
+                "Refresh", "Copy Diagnostics", "Update / Rebuild llama.cpp Runtimes",
             "Update vLLM", "Cancel Operation",
         ],
         "initial_layout_refreshed": True,

@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -320,3 +321,30 @@ def test_recovery_executor_retries_only_selected_case_and_keeps_run_incomplete(t
     assert projection["cases"][untouched]["state"] == "timed_out"
     assert projection["jobs"][plan.job_id]["state"] == "failed"
     assert retried["llm"]["model"]["512"]["tps_mean"] == 50
+
+
+def test_resume_logs_before_identity_verification_even_when_it_fails(tmp_path, monkeypatch):
+    from scripts.results import recovery_executor
+
+    result, _ = stopped_result(tmp_path)
+    messages = []
+    monkeypatch.setattr(recovery_executor.Shared, "log", messages.append)
+
+    def identity_builder(_plan):
+        assert messages and "Checking recovery plan" in messages[0]
+        raise ValueError("identity unavailable")
+
+    with pytest.raises(ValueError, match="identity unavailable"):
+        resume_journal_run(result, identity_builder=identity_builder)
+    assert not any("resuming unfinished" in message for message in messages)
+
+
+def test_identity_progress_log_shows_filename_bytes_and_percent(monkeypatch):
+    from scripts.results import recovery_executor
+
+    messages = []
+    monkeypatch.setattr(recovery_executor.Shared, "log", messages.append)
+    recovery_executor._log_identity_progress(Path("model.gguf"), 1024 ** 3, 2 * 1024 ** 3)
+    assert messages == ["Verifying model.gguf: 1.00/2.00 GiB (50%)"]
+    recovery_executor._log_identity_progress(Path("empty"), 0, 0)
+    assert "(100%)" in messages[-1]

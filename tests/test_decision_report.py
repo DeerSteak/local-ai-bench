@@ -30,7 +30,7 @@ def test_report_model_uses_explicit_evidence_without_composite_score():
     assert model.title == "Local AI Bench Decision Report - commercial-golden-system"
     assert model.readiness == "COMPLETE EVIDENCE"
     assert model.performance == (
-        ("Single-shot LLM", "golden", "2K", "50.00", "0.250"),
+        ("Uncached Prefill / Generation", "golden", "2K", "50.00", "0.250"),
         ("Conversation", "golden", "0K", "48.00", "0.100"),
     )
     assert model.accuracy == (("MCQ", "golden", "75.0%", "3 / 4"),)
@@ -38,7 +38,7 @@ def test_report_model_uses_explicit_evidence_without_composite_score():
     assert ("Offline mode", "Yes") in model.metadata
     assert model.optimizations == ("llamacpp:flash_attention=on",)
     assert model.evidence == (
-        ("Single-shot LLM", "golden / 2K", "2", "0"),
+        ("Uncached Prefill / Generation", "golden / 2K", "2", "0"),
         ("Conversation", "golden / 0K", "1", "0"),
     )
 
@@ -53,7 +53,7 @@ def test_invalid_only_case_requires_review_without_an_aggregate():
     }
     model = build_report_model(result)
     assert model.readiness == "REVIEW REQUIRED"
-    assert ("Single-shot LLM", "golden / 8K", "0", "1") in model.evidence
+    assert ("Uncached Prefill / Generation", "golden / 8K", "0", "1") in model.evidence
     assert not any(row[2] == "8K" for row in model.performance)
 
 

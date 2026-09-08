@@ -4,7 +4,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-Set-Location $PSScriptRoot
+$Root = Split-Path -Parent $PSScriptRoot
+Set-Location $Root
 
 $intervalDirectories = [ordered]@{
     "1.0" = "1s"
@@ -33,7 +34,7 @@ function Invoke-BenchmarkCase {
     }
     $arguments += @("--out", (Join-Path $OutputDirectory "$Mode-$Number.json"))
 
-    & "$PSScriptRoot\run_bench.bat" @arguments
+    & "$Root\run_bench.bat" @arguments
     if ($LASTEXITCODE -ne 0) {
         throw "Pair $Number telemetry $Mode failed with exit code $LASTEXITCODE."
     }
@@ -43,7 +44,7 @@ function Invoke-Interval {
     param([string]$Value)
 
     $env:LOCAL_AI_BENCH_MEMORY_INTERVAL_SEC = $Value
-    $outputDirectory = Join-Path $PSScriptRoot (
+    $outputDirectory = Join-Path $Root (
         "results\qualification\rtx-5090-windows\" + $intervalDirectories[$Value]
     )
     New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null

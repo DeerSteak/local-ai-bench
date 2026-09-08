@@ -95,7 +95,7 @@ def compatible_environment_identity(current_identity: dict, current_profile: dic
     return current_identity
 
 
-def current_resume_identity_for_result(result_path: Path, plan=None) -> dict:
+def current_resume_identity_for_result(result_path: Path, plan=None, *, progress=None) -> dict:
     """Build the current identity with compatibility for pre-fix timestamped journals."""
     result_path = Path(result_path).resolve()
     result = json.loads(result_path.read_text(encoding="utf-8"))
@@ -111,7 +111,7 @@ def current_resume_identity_for_result(result_path: Path, plan=None) -> dict:
         engine, plan.tests, cpu_only=plan.cpu_only, engine_name=plan.engine_name,
     )
     current_identity = current_resume_identity(
-        plan, profile=current_profile, engine=engine, event_path=journal_path,
+        plan, profile=current_profile, engine=engine, event_path=journal_path, progress=progress, deferred_artifacts=saved_identity.get("artifacts", {}),
     )
     return compatible_environment_identity(
         current_identity, current_profile, saved_identity, result.get("profile"),
@@ -120,13 +120,13 @@ def current_resume_identity_for_result(result_path: Path, plan=None) -> dict:
 
 def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find_llamacpp_tool,
                             digest_cache_path=config.RESUME_DIGEST_CACHE_PATH,
-                            event_path: Path | None = None):
+                            event_path: Path | None = None, progress=None, deferred_artifacts=None):
     """Discover the current local identities needed by the plan's journal stages."""
     engine = engine or get_engine(plan.engine_name)
     stages = set(plan.stage_order) & JOURNAL_STAGES
     families = []
     accuracy_stages = stages & set(ACCURACY_TESTS)
-    if stages & {"llm", "conv", "llamabench", "llamabenchconc", "vllmbench", "sustained", *ACCURACY_TESTS}:
+    if stages & {"llm", "llm_cached", "conv", "llamabench", "llamabenchconc", "vllmbench", "sustained", *ACCURACY_TESTS}:
         families.append("llm")
     if stages & {"conc_tool", "conc_chat"}:
         families.append("concurrency")
@@ -173,12 +173,12 @@ def current_resume_identity(plan, *, profile=None, engine=None, tool_finder=find
     return build_engine_resume_identity(
         plan, engine, model_families=families,
         include_engine_runtime=bool(stages & {
-            "llm", "conv", "vllmbench", "sustained", "emb", "conc_tool", "conc_chat",
+            "llm", "llm_cached", "conv", "vllmbench", "sustained", "emb", "conc_tool", "conc_chat",
             *ACCURACY_TESTS,
         }), extra_runtimes=extra,
         extra_artifacts=extra_artifacts,
         digest_cache_path=digest_cache_path, environment=profile,
-        use_digest_cache=False,
+        use_digest_cache=False, progress=progress, deferred_artifacts=deferred_artifacts,
     )
 
 
@@ -217,6 +217,7 @@ def inspect_recovery(result_path, identity_builder=None):
     can_resume = not reasons
     return {
         "schema_version": 1, "action": "resume" if can_resume else "fork",
+        "model_verification": "before_load",
         "can_resume": can_resume, "reasons": reasons,
         "job_id": plan.job_id, "plan_id": plan.plan_id,
         "stage_states": stage_states, "case_counts": dict(sorted(case_states.items())),

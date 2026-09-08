@@ -170,6 +170,47 @@ def test_parse_rocm_smi_gpus_preserves_each_device_capacity():
     assert hardware.parse_rocm_smi_gpus("not json", []) == []
 
 
+def test_gpu_tensor_split_reduces_nominal_device_capacities():
+    devices = [
+        {"backend": "cuda", "vram_gb": 31.984375},
+        {"backend": "cuda", "vram_gb": 15.921875},
+    ]
+
+    assert hardware.gpu_tensor_split(devices) == "2,1"
+    assert hardware.gpu_tensor_split([
+        {"backend": "cuda", "vram_gb": 24},
+        {"backend": "cuda", "vram_gb": 16},
+    ]) == "3,2"
+
+
+@pytest.mark.parametrize("devices", [
+    [],
+    [{"backend": "vulkan", "vram_gb": 16}],
+    [{"backend": "vulkan", "vram_gb": 16}, {"backend": "cuda", "vram_gb": 16}],
+    [{"backend": "vulkan", "vram_gb": 16}, {"backend": "vulkan", "vram_gb": None}],
+    [{"backend": "vulkan", "vram_gb": 16}, {"backend": "vulkan", "vram_gb": 1}],
+])
+def test_gpu_tensor_split_rejects_incomplete_or_mixed_topologies(devices):
+    assert hardware.gpu_tensor_split(devices) is None
+
+
+def test_vulkan_split_omits_unverified_device_indices_and_ratios():
+    devices = [
+        {"backend": "vulkan", "vram_gb": 16},
+        {"backend": "vulkan", "vram_gb": 32},
+    ]
+    assert hardware.gpu_tensor_split(devices) is None
+
+
+def test_vulkan_split_does_not_assume_discovery_matches_runtime_order():
+    devices = [
+        {"backend": "vulkan", "name": "AMD Radeon Graphics", "vram_gb": 64},
+        {"backend": "vulkan", "name": "AMD Radeon RX 7600", "vram_gb": 8},
+        {"backend": "vulkan", "name": "AMD Radeon PRO W7800", "vram_gb": 32},
+    ]
+    assert hardware.gpu_tensor_split(devices) is None
+
+
 # ── select_cuda_release_assets ──
 
 def _asset(name, size=100):

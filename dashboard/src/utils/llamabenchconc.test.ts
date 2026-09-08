@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  llamaBenchConcTgValues, llamaBenchConcLevels, buildLlamaBenchConcLineData,
+  buildLlamaBenchConcSystemGroups, llamaBenchConcTgValues, llamaBenchConcLevels, buildLlamaBenchConcLineData,
   llamaBenchConcPromptDepth, flattenLlamaBenchConcData, llamaBenchConcSortValue,
 } from "./llamabenchconc";
 
@@ -136,5 +136,56 @@ describe("llamaBenchConcSortValue", () => {
   it("passes other keys through, with a stable fallback for missing values", () => {
     expect(llamaBenchConcSortValue({ speed_tg: 12 }, "speed_tg")).toBe(12);
     expect(llamaBenchConcSortValue({}, "speed_tg")).toBe("");
+  });
+});
+
+describe("buildLlamaBenchConcSystemGroups", () => {
+  it("separates systems and generation sizes, unions sparse levels and retains zero throughput", () => {
+    const f = { ...fileA, data: { llamabenchconc: {
+      ...fileA.data.llamabenchconc,
+      m2: { pp: 4096, entries: [entry(2, 128, 0), entry(16, 128, 20), entry(4, 512, null)] },
+    } } };
+    const groups = buildLlamaBenchConcSystemGroups([f, fileB, emptyFile], ["m1", "m2"], false);
+    expect(groups.map(g => g.file.id)).toEqual(["a", "b"]);
+    const metrics = groups[0].groups[0].metrics;
+    expect(metrics.map(m => m.key)).toEqual(["tg128", "tg512"]);
+    expect(metrics[0].lineData).toEqual([
+      { levelLabel: "1-way", m0: 40 }, { levelLabel: "2-way", m1: 0 },
+      { levelLabel: "4-way", m0: 120 }, { levelLabel: "16-way", m1: 20 },
+    ]);
+    expect(metrics[0].lineConfigs.map(c => c.name)).toEqual(["m1 — pp8192", "m2 — pp4096"]);
+    expect(metrics[1].lineConfigs.map(c => c.dataKey)).toEqual(["m0"]);
+    expect(groups[1].skipEntries).toEqual([{ key: "m2", label: "m2: no output for 1800s (idle timeout)" }]);
+  });
+
+  it("honors model filtering and preserves error-only systems", () => {
+    const groups = buildLlamaBenchConcSystemGroups([fileA, fileB], ["m2"], false);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].groups).toEqual([]);
+    expect(groups[0].skipEntries).toHaveLength(1);
+    expect(buildLlamaBenchConcSystemGroups([fileA, fileB], [], true)).toEqual([]);
+  });
+
+  it("tolerates legacy fields, null values and unusable entries", () => {
+    const file = { id: "old", hostname: "old", data: { llamabenchconc: {
+      m1: { entries: [{ pl: 1, speed_tg: 5 }, { speed_tg: 9 }] },
+      m2: { entries: [{ pl: 1, speed_tg: null }] }, m3: null,
+    } } };
+    const metric = buildLlamaBenchConcSystemGroups([file, emptyFile], ["m1", "m2", "m3"], false)[0].groups[0].metrics[0];
+    expect(metric.key).toBe("tg0");
+    expect(metric.lineData).toEqual([{ levelLabel: "1-way", m0: 5 }]);
+    expect(metric.lineConfigs.map(c => c.name)).toEqual(["m1"]);
+    expect(buildLlamaBenchConcSystemGroups([file], ["m2", "m3"], false)).toEqual([]);
+  });
+
+  it("splits tiers in canonical order with stable colors", () => {
+    const models = ["llama3.3-70b-q4", "qwen3.5-4b-q4"];
+    const f = { id: "tiers", hostname: "tiers", data: { llamabenchconc: Object.fromEntries(
+      models.map(m => [m, { entries: [entry(1, 128, 10)] }]),
+    ) } };
+    const split = buildLlamaBenchConcSystemGroups([f], models, true)[0].groups;
+    expect(split.map(g => g.tier)).toEqual(["xsmall", "large"]);
+    const combined = buildLlamaBenchConcSystemGroups([f], models, false)[0].groups[0].metrics[0];
+    expect(split[0].metrics[0].lineConfigs[0].stroke).toBe(combined.lineConfigs[1].stroke);
   });
 });

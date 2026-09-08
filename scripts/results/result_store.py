@@ -195,6 +195,19 @@ class ResultStore:
         self._writer = writer
 
     def checkpoint(self) -> None:
+        from scripts.runtime.telemetry import derive_run_memory_summary, derive_run_power_summary
+
+        sections = {key: value for key, value in self.data.items()
+                    if key not in {"run", "preflight", "profile"}}
+        run = self.data.get("run")
+        if isinstance(run, dict):
+            for key, derive in (("memory_summary", derive_run_memory_summary),
+                                ("power_summary", derive_run_power_summary)):
+                summary = derive(sections)
+                if summary is None:
+                    run.pop(key, None)
+                else:
+                    run[key] = summary
         validate_json_data(self.data)
         self._writer(self.path, self.data)
 

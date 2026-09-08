@@ -1,0 +1,27 @@
+{
+  "approval": {
+    "date": "2026-09-08",
+    "maintainer": "Ben Funk (DeerSteak)",
+    "verification_gates": "Maintainer confirmed all verification gates closed; packaging checks are separate from external qualification."
+  },
+  "archive_method": "git archive --format=tar; gzip with empty filename and mtime=0",
+  "archive_prefix": "local-ai-bench-6.1/",
+  "format": "local-ai-bench-release-provenance",
+  "release_branch": "release/6.1",
+  "release_date": "2026-09-08",
+  "release_tag": "v6.1",
+  "repository": "https://github.com/DeerSteak/local-ai-bench",
+  "schema_version": 1,
+  "signing": {
+    "fingerprint": "SHA256:p6Vheb5UuDuKpSTmcoDg4xN8DTPDgItwVR8LdJ4UbZk",
+    "format": "SSH detached signature",
+    "identity": "DeerSteak@users.noreply.github.com",
+    "namespace": "file",
+    "public_key": "local_ai_bench_signing.pub"
+  },
+  "source_archive": "local-ai-bench-6.1.tar.gz",
+  "source_commit": "0c2a39b168154591be3c225d17ca6186c9bbb754",
+  "source_tree": "14c41291282f6089101f30211243a88789db006b",
+  "tag_relationship": "The signed release tag identifies the main merge containing this source and the public release payload. The archive packages source_commit before adding the payload, avoiding recursive archive contents.",
+  "version": "6.1"
+}

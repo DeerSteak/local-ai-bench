@@ -80,7 +80,9 @@ def build_history_screen(notebook, *, tk, ttk) -> HistoryScreen:
     )
     engine_combo.pack(side="left", padx=(8, 14))
     tree = ttk.Treeview(
-        frame, columns=("date", "system", "status", "engine", "profile", "models"),
+        frame, columns=(
+            "date", "system", "status", "engine", "backend", "mtp", "profile", "models",
+        ),
         show="headings", selectmode="extended", style="History.Treeview", takefocus=True,
     )
     style = ttk.Style(tree)
@@ -110,7 +112,8 @@ def build_history_screen(notebook, *, tk, ttk) -> HistoryScreen:
     )
     for column, label, width in (
         ("date", "Started", 170), ("system", "System", 190), ("status", "Status", 95),
-        ("engine", "Engine", 95), ("profile", "Profile", 110), ("models", "Models", 70),
+        ("engine", "Engine", 85), ("backend", "Backend", 80), ("mtp", "MTP", 55),
+        ("profile", "Profile", 110), ("models", "Models", 70),
     ):
         tree.heading(column, text=label)
         tree.column(column, width=width, anchor="w")

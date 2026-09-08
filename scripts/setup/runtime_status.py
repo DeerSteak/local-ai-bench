@@ -92,7 +92,7 @@ def build_llamacpp_status(location: str | Path | None, managed_root: Path, backe
         identity.engine, identity.ownership, identity.location, version, identity.version_output,
     )
     components = {"install_type": llamacpp_install_type(identity, managed_root)}
-    if (identity.managed and identity.version and identity.version != "1"
+    if (identity.managed and identity.version and identity.version.isdigit() and identity.version != "1"
             and parse_llamacpp_commit(identity.version_output)):
         components["build_number"] = identity.version
     return _status(adjusted, backend, health, components, warnings)

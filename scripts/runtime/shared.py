@@ -9,6 +9,7 @@ import random
 import re
 import statistics
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -16,6 +17,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit
 
 import psutil
 import requests
@@ -24,10 +26,10 @@ from scripts.runtime import config
 from scripts.runtime.comfyui_installation import (
     checkpoint_names_from_object_info,
     find_comfyui_python,
-    managed_checkpoints_visible,
     write_extra_model_paths,
 )
 from scripts.runtime import hardware
+from scripts.runtime.rex_comfyui import prepare_rex_comfyui
 from scripts.runtime.log_redaction import redact_log_text
 from scripts.workloads.models import (
     IMAGE_MODELS, image_checkpoint_groups, image_checkpoint_path,
@@ -152,6 +154,7 @@ def split_token_budget(token_budget: int, first_pass_fraction: float) -> tuple[i
 class Shared:
     # Both the inference engine's server and ComfyUI register here so shutdown_managed() can clean up everything at once.
     _managed_procs: list[subprocess.Popen] = []
+    _comfyui_process: subprocess.Popen | None = None
 
     # Set once by benchmark.py so shutdown_managed() can reach the engine without every caller threading it through.
     _active_engine: "InferenceEngine | None" = None
@@ -211,6 +214,15 @@ class Shared:
     @staticmethod
     def context_label(tokens: int) -> str:
         return f"{tokens / 1024:g}K"
+
+    @staticmethod
+    def supported_prompt_sizes(sizes: list[int], model_max: int) -> list[int]:
+        """Keep configured prompt sizes the model can run, with generation room at 128K."""
+        return [
+            size for size in sizes
+            if size <= model_max
+            and (size != config.PREFILL_128K_TOKENS or size < model_max)
+        ]
 
     @staticmethod
     def system_ram_gb():
@@ -319,29 +331,64 @@ class Shared:
         return Shared._tail_log(Shared._comfyui_log_path, "ComfyUI", n_lines)
 
     @staticmethod
+    def verify_resume_model(journal, model, engine=None):
+        from scripts.results.model_verification import verify_resume_model
+
+        def progress(path, completed, total):
+            percent = completed * 100 / total if total else 100
+            Shared.log(f"Verifying {path.name}: {completed / 1024**3:.2f}/{total / 1024**3:.2f} GiB ({percent:.0f}%)")
+
+        verify_resume_model(journal, model, engine, progress=progress)
+
+    @staticmethod
     def find_comfyui_python(comfyui_dir: Path) -> str:
         """Return the selected installation's Python environment."""
         return find_comfyui_python(comfyui_dir)
 
     @staticmethod
-    def ensure_comfyui(comfyui_dir: Path) -> bool:  # pragma: no cover — spawns a real subprocess and polls a live server
-        """Start ComfyUI if not already running. Returns whether it's now available."""
-        if Shared.comfyui_available():
-            try:
-                managed_models = [model for model in IMAGE_MODELS
-                                  if image_checkpoint_path(model, config.COMFYUI_MODELS_DIR).is_file()]
-                for loader, managed in image_checkpoint_groups(managed_models).items():
-                    response = requests.get(f"{config.COMFYUI_URL}/object_info/{loader}", timeout=5)
-                    available = checkpoint_names_from_object_info(response.json(), loader)
-                    if not managed_checkpoints_visible(available, managed):
-                        Shared.warn("ComfyUI is running but has not loaded Local AI Bench's managed model path")
-                        Shared.warn("Stop it without active work, restart it once, then retry the image workload")
-                        return False
-            except Exception as exc:
-                Shared.warn(f"Could not verify checkpoints in the running ComfyUI server: {exc}")
-                return False
-            Shared.ok("ComfyUI already running")
+    def running_comfyui_models_visible() -> bool:
+        """Check that the endpoint can load every downloaded benchmark checkpoint."""
+        try:
+            managed_models = [model for model in IMAGE_MODELS
+                              if image_checkpoint_path(model, config.COMFYUI_MODELS_DIR).is_file()]
+            for loader, managed in image_checkpoint_groups(managed_models).items():
+                response = requests.get(f"{config.COMFYUI_URL}/object_info/{loader}", timeout=5)
+                response.raise_for_status()
+                available = checkpoint_names_from_object_info(response.json(), loader)
+                if not managed.issubset(available):
+                    return False
             return True
+        except Exception as exc:
+            Shared.warn(f"Could not verify checkpoints in the running ComfyUI server: {exc}")
+            return False
+
+    @staticmethod
+    def comfyui_launch_address(isolate: bool) -> tuple[str, int]:
+        """Use a separate loopback port when an existing server cannot load our models."""
+        if isolate:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+                listener.bind(("127.0.0.1", 0))
+                return "127.0.0.1", listener.getsockname()[1]
+        endpoint = urlsplit(config.COMFYUI_URL)
+        if endpoint.scheme != "http" or endpoint.hostname not in {"localhost", "127.0.0.1", "::1"}:
+            raise ValueError("Cannot launch ComfyUI for a non-local HTTP endpoint")
+        return endpoint.hostname, endpoint.port or 8188
+
+    @staticmethod
+    def ensure_comfyui(comfyui_dir: Path) -> bool:  # pragma: no cover — spawns a real subprocess and polls a live server
+        """Reuse a compatible server or start a benchmark-owned instance."""
+        rex_ready = prepare_rex_comfyui(
+            config.COMFYUI_MODELS_DIR, config.COMFYUI_URL,
+            visible=Shared.running_comfyui_models_visible, log=Shared.log, warn=Shared.warn,
+        )
+        if rex_ready is not None:
+            return rex_ready
+        isolate = Shared.comfyui_available()
+        if isolate:
+            if Shared.running_comfyui_models_visible():
+                Shared.ok("ComfyUI already running")
+                return True
+            Shared.warn("Running ComfyUI cannot load all managed checkpoints; starting a separate benchmark instance")
 
         if not comfyui_dir.exists():
             Shared.warn(f"ComfyUI directory not found at {comfyui_dir}")
@@ -364,17 +411,23 @@ class Shared:
             return False
         Shared.log(f"Found {len(found)}/{len(known)} image checkpoints: {found}")
 
+        try:
+            host, port = Shared.comfyui_launch_address(isolate)
+        except (OSError, ValueError) as exc:
+            Shared.err(f"Could not select a ComfyUI endpoint: {exc}")
+            return False
         python_exe = Shared.find_comfyui_python(comfyui_dir)
 
         # Windows portable builds: python_embeded is a sibling of ComfyUI/, cwd must be the parent
         portable_windows = (comfyui_dir.parent / "python_embeded" / "python.exe").exists()
         if portable_windows:
-            cmd = [python_exe, "-s", str(main_py), "--windows-standalone-build", "--listen"]
+            cmd = [python_exe, "-s", str(main_py), "--windows-standalone-build"]
             launch_cwd = str(comfyui_dir.parent)
         else:
-            cmd = [python_exe, str(main_py), "--listen"]
+            cmd = [python_exe, str(main_py)]
             launch_cwd = str(comfyui_dir)
 
+        cmd.extend(["--listen", host, "--port", str(port)])
         write_extra_model_paths(config.COMFYUI_EXTRA_MODEL_PATHS, config.COMFYUI_MODELS_DIR)
         cmd.extend(["--extra-model-paths-config", str(config.COMFYUI_EXTRA_MODEL_PATHS)])
 
@@ -405,22 +458,29 @@ class Shared:
             )
             log_fh.close()
             Shared._managed_procs.append(proc)
+            Shared._comfyui_process = proc
         except Exception as e:
             Shared.err(f"Failed to start ComfyUI: {e}")
             return False
+
+        url_host = f"[{host}]" if ":" in host else host
+        config.COMFYUI_URL = f"http://{url_host}:{port}"
+        Shared.log(f"Benchmark ComfyUI endpoint: {config.COMFYUI_URL}")
 
         # Wait up to 60s — model loading takes time
         Shared.log("Waiting for ComfyUI to be ready (up to 60s) ...")
         for i in range(60):
             time.sleep(1)
-            if Shared.comfyui_available():
-                Shared.ok(f"ComfyUI started (pid {proc.pid}) — log: {Shared._comfyui_log_path}")
-                return True
             if proc.poll() is not None:
                 Shared.err(f"ComfyUI exited unexpectedly (code {proc.returncode})")
                 Shared.err(f"Last output from ComfyUI:\n{Shared.tail_comfyui_log()}")
-                Shared.err(f"Try starting manually: cd {comfyui_dir} && python main.py {' '.join(cmd[2:])}")
                 return False
+            if Shared.comfyui_available():
+                if not Shared.running_comfyui_models_visible():
+                    Shared.err("Started ComfyUI cannot load the managed checkpoints")
+                    return False
+                Shared.ok(f"ComfyUI started (pid {proc.pid}) — log: {Shared._comfyui_log_path}")
+                return True
             if (i + 1) % 10 == 0:
                 Shared.log(f"Still waiting ... ({i+1}s)")
 
@@ -806,6 +866,7 @@ class Shared:
                     results = journal.export_results()
                     answers_out = journal.export_answers()
                     continue
+                Shared.verify_resume_model(journal, model, engine)
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not downloaded — skipping")
                     Shared.warn("Download it with: python setup_check.py")

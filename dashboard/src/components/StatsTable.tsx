@@ -145,6 +145,7 @@ function SustainedTable({ files, sortConfig, onCycleSort }: {
 
 function LLMTable({  files, section, sortConfig, onCycleSort  }: { files: ResultsFile[], section: string, sortConfig: SortConfig, onCycleSort: CycleSort }) {
   const isMulti = files.length > 1;
+  const isCached = section === "llm_cached";
   const rows = sortRows(flattenLLMData(files, section), sortConfig);
 
   return (
@@ -156,8 +157,9 @@ function LLMTable({  files, section, sortConfig, onCycleSort  }: { files: Result
           <SortTh label="Context" sortKey="ctx" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="TPS" sortKey="tps_mean" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <th className={styles.th}>± stdev</th>
-          <SortTh label="TTFT" sortKey="ttft_mean" sortConfig={sortConfig} onCycleSort={onCycleSort} />
-          <th className={styles.th}>± stdev</th>
+          <SortTh label="Prefill TPS" sortKey="prefill_tps" sortConfig={sortConfig} onCycleSort={onCycleSort} />
+          {!isCached && <SortTh label="TTFT" sortKey="ttft_mean" sortConfig={sortConfig} onCycleSort={onCycleSort} />}
+          {!isCached && <th className={styles.th}>± stdev</th>}
           <SortTh label="Host RAM peak" sortKey="host_ram_peak_gb" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="Process RSS peak" sortKey="process_rss_peak_gb" sortConfig={sortConfig} onCycleSort={onCycleSort} />
           <SortTh label="Accelerator peak" sortKey="accelerator_memory_peak_gb" sortConfig={sortConfig} onCycleSort={onCycleSort} />
@@ -183,8 +185,9 @@ function LLMTable({  files, section, sortConfig, onCycleSort  }: { files: Result
             <td className={`${styles.td} ${styles.tdCtx}`}>{r.ctx}</td>
             <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.tps_mean, "tps")}</td>
             <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.tps_stdev, "tps")}</td>
-            <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.ttft_mean, "sec")}</td>
-            <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.ttft_stdev, "sec")}</td>
+            <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.prefill_tps, "tps")}</td>
+            {!isCached && <td className={`${styles.td} ${styles.tdNum}`}>{fmt(r.ttft_mean, "sec")}</td>}
+            {!isCached && <td className={`${styles.td} ${styles.tdStdev}`}>{fmt(r.ttft_stdev, "sec")}</td>}
             <td className={`${styles.td} ${styles.tdNum}`}>{r.host_ram_peak_gb == null ? "Not recorded" : `${fmt(r.host_ram_peak_gb, "gb")} GB`}</td>
             <td className={`${styles.td} ${styles.tdNum}`}>{r.process_rss_peak_gb == null ? "Not recorded" : `${fmt(r.process_rss_peak_gb, "gb")} GB`}</td>
             <td className={`${styles.td} ${styles.tdNum}`}>{r.accelerator_memory_peak_gb == null ? "Not recorded" : `${fmt(r.accelerator_memory_peak_gb, "gb")} GB`}</td>
@@ -492,6 +495,7 @@ export default function StatsTable({ files, section, accuracyTest, sortConfig, o
   files: ResultsFile[], section: string, accuracyTest: string, sortConfig: SortConfig, onCycleSort: CycleSort,
 }) {
   if (!files.length) return null;
+  if (section === "llm_cache_comparison") return null;
 
   const title = section === "accuracy"
     ? `Raw Numbers — Accuracy (${lookup(ACCURACY_TEST_LABELS, accuracyTest)})`
@@ -500,7 +504,7 @@ export default function StatsTable({ files, section, accuracyTest, sortConfig, o
   return (
     <div className={`card ${styles.wrapper}`}>
       <div className={styles.tableTitle}>{title}</div>
-      {(section === "llm" || section === "llm_conversation") &&
+      {(["llm", "llm_cached", "llm_conversation"].includes(section)) &&
         <LLMTable files={files} section={section} sortConfig={sortConfig} onCycleSort={onCycleSort} />}
       {(section === "concurrency_tool" || section === "concurrency_chat") &&
         <ConcurrencyTable files={files} section={section} sortConfig={sortConfig} onCycleSort={onCycleSort} />}

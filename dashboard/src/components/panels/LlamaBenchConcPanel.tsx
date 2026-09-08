@@ -1,23 +1,29 @@
 import type { RefObject } from "react";
 import { getAllLLMModels } from "../../utils/llm";
 import {
-  llamaBenchConcTgValues, buildLlamaBenchConcLineData, llamaBenchConcPromptDepth,
+  buildLlamaBenchConcSystemGroups, llamaBenchConcTgValues, buildLlamaBenchConcLineData, llamaBenchConcPromptDepth,
 } from "../../utils/llamabenchconc";
 import { buildFileLineConfigs, modelLabel, isNotNull } from "../../utils/shared";
+import BySystemPanel from "./BySystemPanel";
 import { ChartCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
 import type { ResultsFile } from "../../types";
 import styles from "../ChartPanel.module.css";
 
-// llama-batched-bench: one card per model, one chart per tg, X = concurrency level.
-// Line-only and group-by-agnostic, same reasoning as ConcurrencyPanel.
-export default function LlamaBenchConcPanel({ containerRef, files, enabledModels, chartWidth, logoSrc, isMultiFile }: {
+export default function LlamaBenchConcPanel({ containerRef, files, enabledModels, chartWidth, logoSrc, isMultiFile, isBySystem, isSplit }: {
   containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], enabledModels: Set<string>,
-  chartWidth: number, logoSrc?: string | null, isMultiFile: boolean,
+  chartWidth: number, logoSrc?: string | null, isMultiFile: boolean, isBySystem: boolean, isSplit: boolean,
 }) {
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getAllLLMModels(files)
     .filter(m => enabledModels.has(m) && files.some(f => f.data.llamabenchconc?.[m]));
+  if (isBySystem) {
+    return <BySystemPanel
+      containerRef={containerRef} chartWidth={chartWidth} logoSrc={logoSrc} isBar={false}
+      emptyLabel="No llama-batched-bench data in the loaded file(s)"
+      systemGroups={buildLlamaBenchConcSystemGroups(files, allModels, isSplit)}
+    />;
+  }
   const lineConfigs = buildFileLineConfigs(files);
 
   const modelGroups = allModels.map(model => {

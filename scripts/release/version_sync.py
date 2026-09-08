@@ -34,7 +34,7 @@ TARGETS = (
     _prose("docs/telemetry.md", "^Local AI Bench ", " sends no product telemetry", "telemetry intro"),
     _prose("docs/security-and-privacy.md", "^Version ", " sends no product telemetry", "telemetry section"),
     _prose("docs/maintenance.md", "^Version ", " has no automatic updater", "updater section"),
-    _prose("docs/release-policy.md", "^Local AI Bench ", " is a preview engineering build", "policy intro"),
+    _prose("docs/release-policy.md", "^Local AI Bench ", " uses evidence-based platform support", "policy intro"),
     _prose("docs/product-requirements.md", "^The primary ", " product workflow", "workflow intro"),
     _prose("docs/product-requirements.md", "^## Supported ", " scope", "supported-scope heading"),
 )

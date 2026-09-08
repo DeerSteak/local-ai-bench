@@ -153,6 +153,13 @@ def qualification_needs_wsl_rocm(target: dict, *, os_name: str, release: str,
     return not rocm_available
 
 
+def setup_needs_wsl_rocm(*, os_name: str, release: str, amd_gpus: list[dict],
+                         rocm_available: bool) -> bool:
+    return bool(
+        detect_wsl(os_name, release) and amd_gpus and not rocm_available
+    )
+
+
 def qualification_needs_native_rocm(target: dict, *, os_name: str, release: str,
                                     rocm_available: bool) -> bool:
     if target["platform"] != "linux" or target["backend"] != "rocm":

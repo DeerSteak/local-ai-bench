@@ -12,7 +12,7 @@ Start with the exact error and the latest durable result rather than deleting st
 |---|---|---|
 | GUI does not open | Whether the session is SSH/headless and whether the active Python has Tk | Use the terminal interface or rerun setup after installing the offered Tk package; GUI absence never blocks CLI use |
 | Double-click launcher leaves its Terminal window open | macOS Terminal profile setting | Close it normally or change Terminal → Settings → Profiles → Shell → “When the shell exits”; Local AI Bench does not automate Terminal windows |
-| Setup cannot find llama.cpp tools | Read-only inventory and `PATH`; distinguish server from optional benchmark tools | Supply/install the missing tool explicitly; setup does not replace a working system installation merely because an optional tool is absent |
+| Setup cannot find llama.cpp tools | Inspect the complete three-tool set under `llama.cpp/` or `llama.cpp-vulkan/` | Rerun Setup to install or repair the managed runtime; system and Homebrew binaries are ignored |
 | Setup cannot find ComfyUI | Saved path, running process, common locations, and whether the path contains `main.py` | Select the actual program directory or portable root; an invalid path falls back to the reviewed managed download |
 | Image models are missing in system ComfyUI | `extra_model_paths.yaml` managed block and whether a running server predates it | Stop/restart ComfyUI so it reloads the added managed-model path |
 | Download/extraction stops | Free space, proxy/network, archive validation error, upstream availability | Preserve the error, remove only the named partial download if instructed, and retry; never bypass traversal/link validation |

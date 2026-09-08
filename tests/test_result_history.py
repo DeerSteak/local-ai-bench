@@ -6,7 +6,8 @@ import pytest
 from scripts.results.result_history import (
     compare_results, delete_multiple_run_artifacts, delete_run_artifacts,
     discover_results, existing_run_artifacts,
-    extract_comparable_metrics, filter_results, run_artifact_paths, summarize_result,
+    extract_comparable_metrics, filter_results, history_backend_label, history_mtp_label,
+    run_artifact_paths, summarize_result,
 )
 
 
@@ -28,10 +29,11 @@ def test_delete_multiple_runs_removes_each_exact_artifact_set(tmp_path):
 def result(*, hostname="system", started="2026-01-01T00:00:00Z", tps=50.0):
     settings = {
         "methodology_profile": "neutral-v1", "runs": 3, "cpu_only": False,
-        "effective_optimizations": ["llamacpp:flash_attention=on"],
+        "effective_optimizations": ["llamacpp:flash_attention=on"], "mtp_enabled": False,
     }
     return {
-        "version": "4.1", "engine": "llamacpp", "profile": {"hostname": hostname},
+        "version": "4.1", "engine": "llamacpp",
+        "profile": {"hostname": hostname, "backend": "vulkan"},
         "run": {"started_at": started, "status": "complete", "plan": {"effective_config": settings},
                 "stages": {"llm": {"models_with_results": 1}}},
         "llm": {"model": {"2K": {"tps_mean": tps, "ttft_mean_sec": 0.2}}},
@@ -50,6 +52,8 @@ def test_summary_and_discovery_sort_results_and_report_malformed_files(tmp_path)
     entries, skipped = discover_results(tmp_path)
     assert [entry["system"] for entry in entries] == ["new", "system"]
     assert entries[0]["models_with_results"] == 1
+    assert entries[0]["runtime_backend"] == "Vulkan"
+    assert entries[0]["mtp"] == "Off"
     assert skipped[0]["path"].endswith("bad.json")
 
 
@@ -61,6 +65,24 @@ def test_history_filter_combines_query_status_and_engine():
     assert [item["system"] for item in filter_results(entries, query="alp")] == ["Alpha"]
     assert [item["system"] for item in filter_results(entries, status="interrupted")] == ["Beta"]
     assert filter_results(entries, engine="other") == []
+    assert [item["system"] for item in filter_results(entries, query="vulkan")] == ["Alpha", "Beta"]
+    assert [item["system"] for item in filter_results(entries, query="mtp off")] == ["Alpha", "Beta"]
+
+
+@pytest.mark.parametrize("backend,label", [
+    ("cuda", "CUDA"), ("rocm", "ROCm"), ("metal", "Metal"),
+    ("vulkan", "Vulkan"), ("xpu", "XPU"), ("cpu", "CPU"),
+    ("custom", "custom"), (None, "Not recorded"),
+])
+def test_history_backend_label_normalizes_known_runtime_families(backend, label):
+    assert history_backend_label({"backend": backend}) == label
+
+
+@pytest.mark.parametrize("enabled,label", [
+    (True, "On"), (False, "Off"), (None, "Not recorded"), ("on", "Not recorded"),
+])
+def test_history_mtp_label_requires_recorded_boolean(enabled, label):
+    assert history_mtp_label({"mtp_enabled": enabled}) == label
 
 
 def test_run_artifact_paths_cover_run_journal_sidecars_images_and_regrades(tmp_path):

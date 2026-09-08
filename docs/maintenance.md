@@ -8,13 +8,13 @@ Maintenance is deliberately split between project-owned files and external/syste
 
 ## Upgrade and rollback
 
-Version 6.0 has no automatic updater. A preview upgrade is a separately downloaded source release applied only after the user backs up projects/results and reviews its release notes and compatibility axes. The old directory remains the rollback copy until the new build passes setup health and a verification run. Models and imported result bundles can be reused through explicit paths, but executable environments are rebuilt from the target release rather than shared across versions.
+Version 6.1 has no automatic updater. A preview upgrade is a separately downloaded source release applied only after the user backs up projects/results and reviews its release notes and compatibility axes. The old directory remains the rollback copy until the new build passes setup health and a verification run. Models and imported result bundles can be reused through explicit paths, but executable environments are rebuilt from the target release rather than shared across versions.
 
 Signed in-place upgrade and rollback remain stable-release blockers. They require signed packages and manifests, downgrade protection, staged channels, migration dry runs, power/network interruption tests, and a tested last-known-good restoration path. The application must not present manual source replacement as a commercially supported automatic update.
 
 ## Uninstall
 
-`build_uninstall_plan()` previews exact repository-owned paths. The default removes only `bench-env/` and managed runtime source/install directories (`ComfyUI/` and `llama.cpp/` when present). It preserves downloaded models, results, `local_ai_bench_config.json`, `hf.txt`, projects, presets, and the source tree. Models, results, and credentials require separate explicit choices.
+`build_uninstall_plan()` previews exact repository-owned paths. The default removes only `bench-env/` and managed runtime source/install directories (`ComfyUI/`, `llama.cpp/`, and `llama.cpp-vulkan/` when present). It preserves downloaded models, results, `local_ai_bench_config.json`, `hf.txt`, projects, presets, and the source tree. Models, results, and credentials require separate explicit choices.
 
 `execute_uninstall_plan()` accepts only immediate children from a fixed managed-name allowlist and requires the exact typed confirmation `REMOVE LOCAL AI BENCH COMPONENTS`. It rejects unrelated directories and never follows a plan target outside the validated repository root. The GUI/packaged maintenance surface should present this plan and preservation list before enabling removal.
 

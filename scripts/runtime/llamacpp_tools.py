@@ -7,7 +7,6 @@ import subprocess
 from pathlib import Path
 
 from scripts.runtime import config
-from scripts.setup.setup_config import configured_llamacpp_tool, load_setup_config
 
 
 # The WSL-Ubuntu CUDA toolkit installs here and never puts itself on PATH.
@@ -62,6 +61,9 @@ def llamacpp_backend_error(binary: str | Path | None, required_backend: str | No
 
 
 def managed_llamacpp_tools(vendored_dir: Path, platform_name: str) -> dict[str, str]:
+    vendored_dir = Path(vendored_dir)
+    if vendored_dir.is_symlink():
+        return {}
     exe_suffix = ".exe" if platform_name == "Windows" else ""
     server_name = f"{LLAMACPP_TOOL_NAMES[0]}{exe_suffix}"
     for server in sorted(Path(vendored_dir).rglob(server_name)):
@@ -69,7 +71,8 @@ def managed_llamacpp_tools(vendored_dir: Path, platform_name: str) -> dict[str, 
             name: server.parent / f"{name}{exe_suffix}"
             for name in LLAMACPP_TOOL_NAMES
         }
-        if all(path.is_file() for path in tools.values()):
+        if all(path.is_file() and path.resolve().is_relative_to(vendored_dir.resolve())
+               for path in tools.values()):
             return {name: str(path) for name, path in tools.items()}
     return {}
 
@@ -97,28 +100,8 @@ def cuda_architecture(compute_cap: str | None) -> str | None:
 
 
 def find_llamacpp_tool(base_name: str, *, vendored_dir: Path | None = None,
-                       platform_name: str | None = None, which_fn=None) -> str | None:
+                       platform_name: str | None = None, which_fn=None,
+                       engine_name: str = "llamacpp") -> str | None:
     platform_name = platform_name or platform.system()
     vendored_dir = Path(vendored_dir) if vendored_dir is not None else config.LLAMACPP_DIR
-    which_fn = which_fn or shutil.which
-    exe_name = f"{base_name}.exe" if platform_name == "Windows" else base_name
-    managed_tools = managed_llamacpp_tools(vendored_dir, platform_name) \
-        if vendored_dir.exists() else {}
-    if base_name in managed_tools:
-        return managed_tools[base_name]
-    found = which_fn(base_name)
-    if found:
-        return found
-    if platform_name == "Darwin":
-        for prefix in ("/opt/homebrew/bin", "/usr/local/bin"):
-            candidate = Path(prefix) / exe_name
-            if candidate.is_file():
-                return str(candidate)
-    configured = configured_llamacpp_tool(load_setup_config(config.SETUP_CONFIG_PATH), base_name)
-    if configured and Path(configured).is_file():
-        return configured
-    if vendored_dir.exists():
-        match = next((path for path in vendored_dir.rglob(exe_name) if path.is_file()), None)
-        if match is not None:
-            return str(match)
-    return None
+    return managed_llamacpp_tools(vendored_dir, platform_name).get(base_name)

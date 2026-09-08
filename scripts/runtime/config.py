@@ -5,7 +5,8 @@ import os
 import math
 from pathlib import Path
 
-VERSION        = "6.0"
+VERSION        = "6.1"
+PREFILL_128K_TOKENS = 1 << 17
 
 COMFYUI_URL  = "http://localhost:8188"
 
@@ -22,6 +23,7 @@ LLAMACPP_NUM_BATCH = 512
 LLAMACPP_KV_CACHE_TYPE = "q8_0"
 LLAMACPP_GPU_SPLIT_MODE = "layer"
 LLAMACPP_NO_REPACK = False
+LLAMACPP_NO_HOST = False
 
 # Repository root shared by all package groups.
 SCRIPT_DIR   = Path(__file__).resolve().parents[2]
@@ -31,6 +33,7 @@ SETUP_CONFIG_PATH = SCRIPT_DIR / "local_ai_bench_config.json"
 # Vendored llama.cpp location (Linux source build / Windows prebuilt zip); macOS's brew
 # install goes on PATH instead. LlamaCppEngine._binary_path checks both.
 LLAMACPP_DIR = SCRIPT_DIR / "llama.cpp"
+LLAMACPP_VULKAN_DIR = SCRIPT_DIR / "llama.cpp-vulkan"
 
 # Own venv: vLLM pins a torch build that would collide with bench-env's.
 VLLM_VENV = SCRIPT_DIR / "vllm-env"
@@ -60,7 +63,9 @@ RESUME_DIGEST_CACHE_PATH = SCRIPT_DIR / ".resume_digest_cache.json"
 
 RESULTS_DIR = SCRIPT_DIR / "results"
 
-CONTEXT_LENGTHS = [512, 2048, 8192, 32768, 65536]   # tokens (approximate, via prompt padding)
+CONTEXT_LENGTHS = [
+    512, 2048, 8192, 32768, 65536, PREFILL_128K_TOKENS,
+]   # tokens (approximate, via prompt padding)
 ACCURACY_CONTEXT = 32768   # fixed llama-server allocation shared by accuracy warmup and questions
 
 # See docs/workloads.md#concurrency for "tool" vs. "chat" and the soft-exit rationale.
@@ -70,7 +75,8 @@ CONCURRENCY_CHAT_LEVELS  = [1, 2, 4, 8, 16, 24, 32]
 CONCURRENCY_CHAT_CONTEXT = 16384   # tokens per concurrent request/slot (padded prompt size)
 CONCURRENCY_CHAT_MIN_LEVEL_BEFORE_SOFT_EXIT = 8
 
-GENERATE_MAX_TOKENS = 512   # n_predict for engine.generate(); concurrency slot ctx must add this on top of the padded prompt
+GENERATE_MAX_TOKENS = 512   # output budget; generated-prompt contexts also reserve engine wrapping
+LLAMACPP_TEMPLATE_HEADROOM = 2048  # embedded templates may add default system/control tokens
 IMAGE_RESOLUTIONS = [(1024, 1024), (1536, 1536)]
 # Steps are per-model in IMAGE_MODELS
 IMAGE_SEED  = 42
@@ -130,7 +136,10 @@ PRACTICAL_ACCURACY_THRESHOLD_PCT = 1.0
 # llama-bench pp/tg throughput sweep (opt-in `llamabench` test) — see docs/workloads.md#llama-bench.
 # Matches every non-zero size from CONTEXT_LENGTHS (prefill) and LLMConversationBenchmark.CONV_CHECKPOINTS
 # (conversation) so llama-bench numbers can stand in for both as they're phased out.
-LLAMABENCH_PP = [512, 2048, 4096, 8192, 16384, 32768, 49152, 65536, 81920, 98304]
+LLAMABENCH_PP = [
+    512, 2048, 4096, 8192, 16384, 32768, 49152, 65536, 81920, 98304,
+    PREFILL_128K_TOKENS,
+]
 LLAMABENCH_TG = [128, 512]
 LLAMABENCH_BATCH_SIZE = 2048
 LLAMABENCH_UBATCH_SIZE = 512
@@ -154,7 +163,7 @@ VLLMBENCH_TIMEOUT = 1800
 VLLM_COLD_IMPORT_TIMEOUT = 300
 
 # llama-batched-bench concurrency sweep (opt-in `llamabenchconc` test) — see docs/workloads.md#llama-bench-concurrency.
-LLAMABENCH_CONC_PP = 4096   # matches CONCURRENCY_TOOL_CONTEXT, so this cross-checks conc_tool at the same depth
+LLAMABENCH_CONC_PP = 8192
 LLAMABENCH_CONC_TG = [128, 512]
 LLAMABENCH_CONC_NPL = [1, 2, 4, 8, 16]
 LLAMABENCH_CONC_GPU_LAYERS = "auto"

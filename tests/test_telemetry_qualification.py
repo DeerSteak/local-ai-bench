@@ -187,8 +187,8 @@ def test_temperature_mode_rejects_wrong_identity_or_unavailable_source():
 
 
 def test_windows_launcher_delegates_pair_ordering_to_powershell():
-    batch = (ROOT / "qual_windows.bat").read_text()
-    powershell = (ROOT / "qual_windows.ps1").read_text()
+    batch = (ROOT / "qualification" / "qual_windows.bat").read_text()
+    powershell = (ROOT / "qualification" / "qual_windows.ps1").read_text()
     assert 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File' in batch
     assert '$order = if ($pair % 2 -eq 1) { @("off", "on") } else { @("on", "off") }' in powershell
     assert 'Invoke-BenchmarkCase -Mode $order[0]' in powershell

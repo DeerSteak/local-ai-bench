@@ -20,6 +20,14 @@ class DirectorySwapOutcome:
     backup_cleanup_error: OSError | None = None
 
 
+@dataclass(frozen=True)
+class DirectorySwapSpec:
+    target: Path
+    staged: Path
+    backup: Path
+    had_target: bool = True
+
+
 class DirectorySwapError(RuntimeError):
     def __init__(self, cause: BaseException | str, rollback_error: BaseException | None = None):
         message = str(cause)
@@ -27,6 +35,44 @@ class DirectorySwapError(RuntimeError):
             message = f"{message}; rollback: {rollback_error}"
         super().__init__(message)
         self.rollback_error = rollback_error
+
+
+def swap_staged_directories(specs: list[DirectorySwapSpec], *,
+                            replace: Callable[[Path, Path], object],
+                            remove: Callable[[Path], object]) -> tuple[OSError, ...]:
+    """Commit several staged directories as one rollback unit."""
+    backed_up: list[DirectorySwapSpec] = []
+    installed: list[DirectorySwapSpec] = []
+    try:
+        for spec in specs:
+            if spec.had_target:
+                replace(spec.target, spec.backup)
+                backed_up.append(spec)
+        for spec in specs:
+            replace(spec.staged, spec.target)
+            installed.append(spec)
+    except Exception as exc:
+        rollback_errors = []
+        for spec in reversed(installed):
+            try:
+                if spec.target.exists():
+                    remove(spec.target)
+            except Exception as rollback_exc:
+                rollback_errors.append(rollback_exc)
+        for spec in reversed(backed_up):
+            try:
+                replace(spec.backup, spec.target)
+            except Exception as rollback_exc:
+                rollback_errors.append(rollback_exc)
+        rollback_error = rollback_errors[0] if rollback_errors else None
+        raise DirectorySwapError(exc, rollback_error) from exc
+    cleanup_errors = []
+    for spec in backed_up:
+        try:
+            remove(spec.backup)
+        except OSError as exc:
+            cleanup_errors.append(exc)
+    return tuple(cleanup_errors)
 
 
 def swap_staged_directory(target: Path, staged: Path, backup: Path, *,

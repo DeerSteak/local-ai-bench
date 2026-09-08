@@ -1,4 +1,5 @@
 from scripts.runtime import config
+from scripts.runtime.sampling import baseline_sampling_profile
 
 from scripts.workloads.methodology_profile import resolve_methodology_profile
 
@@ -16,9 +17,11 @@ def test_neutral_profile_records_only_settings_for_selected_runtime_paths():
             "llamacpp:gpu_split=layer",
             "llamacpp:flash_attention=on",
             "llamacpp:repack=enabled",
+            "llamacpp:host_buffer=enabled",
             f"llama.cpp:native_kv_cache={config.LLAMACPP_KV_CACHE_TYPE}",
             "llama.cpp:native_gpu_split=layer",
             f"llama.cpp:llama_bench_gpu_layers={config.LLAMABENCH_FULL_OFFLOAD_NGL}",
+            "llama.cpp:llama_bench_host_buffer=enabled",
         "comfyui:dynamic_vram=disabled",
     ]
 
@@ -52,6 +55,22 @@ def test_no_repack_profile_records_server_and_supported_native_path(monkeypatch)
     assert "llama.cpp:native_repack=disabled" in optimizations
     assert "llama.cpp:llama_bench_gpu_layers=999" in optimizations
     assert "llama.cpp:llama_batched_bench_gpu_layers=auto" in optimizations
+
+
+def test_no_host_profile_records_gpu_paths_and_keeps_cpu_host_buffer(monkeypatch):
+    monkeypatch.setattr(config, "LLAMACPP_NO_HOST", True)
+    gpu = resolve_methodology_profile(
+        engine_name="llamacpp", tests=["llm", "llamabench", "llamabenchconc"], cpu_only=False,
+    )["effective_optimizations"]
+    cpu = resolve_methodology_profile(
+        engine_name="llamacpp", tests=["llm", "llamabench", "llamabenchconc"], cpu_only=True,
+    )["effective_optimizations"]
+    assert "llamacpp:host_buffer=disabled" in gpu
+    assert "llama.cpp:llama_bench_host_buffer=disabled" in gpu
+    assert "llama.cpp:llama_batched_bench_host_buffer=disabled" in gpu
+    assert "llamacpp:host_buffer=enabled" in cpu
+    assert "llama.cpp:llama_bench_host_buffer=enabled" in cpu
+    assert "llama.cpp:llama_batched_bench_host_buffer=enabled" in cpu
 
 
 def test_llamabench_profile_does_not_record_unsupported_repack_setting(monkeypatch):
@@ -110,6 +129,14 @@ def test_text_sampling_profile_maps_to_the_selected_engine():
     assert llama["semantic_controls"] == vllm["semantic_controls"]
     assert "repeat_penalty" in llama["engine_controls"]
     assert "repetition_penalty" in vllm["engine_controls"]
+
+
+def test_vulkan_llamacpp_uses_llamacpp_sampling_with_distinct_optimization_identity():
+    profile = resolve_methodology_profile(
+        engine_name="llamacpp-vulkan", tests=["llm"], cpu_only=False,
+    )
+    assert profile["sampling_profile"] == baseline_sampling_profile("llamacpp")
+    assert "llamacpp-vulkan:flash_attention=on" in profile["effective_optimizations"]
 
 
 def test_vllm_profile_records_one_cache_policy_for_server_and_native_workloads():

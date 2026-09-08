@@ -1,6 +1,8 @@
 import pytest
 
-from scripts.app.interface_mode import desktop_available, is_ssh_session, select_interface_mode
+from scripts.app.interface_mode import (
+    desktop_available, is_ssh_session, is_wsl_session, select_interface_mode,
+)
 
 
 def test_ssh_detection_accepts_common_environment_markers():
@@ -44,6 +46,24 @@ def test_auto_prefers_terminal_over_forwarded_display_in_ssh():
         env={"DISPLAY": ":10", "SSH_CONNECTION": "remote"},
         stdin_is_tty=True, gui_available=True,
     ) == "terminal"
+
+
+def test_auto_prefers_terminal_in_interactive_wsl_even_with_wslg():
+    env = {
+        "DISPLAY": ":0", "WAYLAND_DISPLAY": "wayland-0", "WSL_DISTRO_NAME": "Ubuntu-24.04",
+    }
+    assert is_wsl_session("Linux", env)
+    assert select_interface_mode(
+        "auto", platform_name="Linux", env=env,
+        stdin_is_tty=True, gui_available=True,
+    ) == "terminal"
+
+
+def test_explicit_gui_remains_available_in_wsl():
+    assert select_interface_mode(
+        "gui", platform_name="Linux", env={"WSL_INTEROP": "/run/WSL/1_interop"},
+        stdin_is_tty=True, gui_available=True,
+    ) == "gui"
 
 
 def test_auto_falls_back_to_terminal_when_gui_is_not_installed():

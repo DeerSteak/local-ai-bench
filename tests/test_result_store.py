@@ -188,3 +188,34 @@ def test_result_store_recovery_rejects_running_or_complete_stage_reopen(tmp_path
     store.start_stage("llm", 1)
     with pytest.raises(ValueError, match="not terminal"):
         store.resume_stage("llm", 1)
+
+
+def test_checkpoints_rebuild_nested_telemetry_after_recovery(tmp_path):
+    power = {"energy_joules": 12, "scope": "accelerator", "source": "test"}
+    data = {"run": {"power_summary": {"energy_joules": 999}},
+            "preflight": {"power": {"energy_joules": 999}},
+            "llamabench": {"m": {"prefill_entries": [{"power": power}]}},
+            "images": {"m": {"power": {**power, "energy_joules": None}}}}
+    store = result_store.ResultStore(tmp_path / "result.json", data)
+    store.checkpoint()
+    saved = json.loads(store.path.read_text())
+    assert saved["run"]["power_summary"]["energy_joules"] == 12
+    assert saved["run"]["power_summary"]["recorded_cases"] == 1
+    assert saved["run"]["power_summary"]["total_cases"] == 2
+    data["llamabench"] = {}
+    data["images"] = {}
+    data["run"]["memory_summary"] = {"stale": True}
+    store.checkpoint()
+    assert "power_summary" not in data["run"]
+    assert "memory_summary" not in data["run"]
+
+
+def test_checkpoint_refreshes_memory_summary_from_nested_measurements(tmp_path):
+    data = {"run": {"memory_summary": {"stale": True}}, "llamabenchconc": {
+        "model": {"entries": [{"memory": {"summary": {
+            "host_ram_used_gb": {"peak_gb": 25}}, "headroom": {
+                "absolute_gb": None, "fraction": None, "state": "unknown"}}}]}}}
+    store = result_store.ResultStore(tmp_path / "result.json", data)
+    store.checkpoint()
+    assert json.loads(store.path.read_text())["run"]["memory_summary"] == {
+        "channels": {"host_ram_used_gb": {"peak_gb": 25}}, "tightest_headroom": None}

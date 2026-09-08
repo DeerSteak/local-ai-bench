@@ -20,7 +20,7 @@ DIAGNOSTIC_FIELDS = (
 SECRET_PATTERN = re.compile(r"(?i)(hf_[a-z0-9]{12,}|bearer\s+[a-z0-9._-]+)")
 PATH_PATTERN = re.compile(r"(?:[A-Za-z]:\\|/Users/|/home/)[^\s,;]+")
 PUBLIC_SECTIONS = {
-    "run", "llm", "llm_conversation", "embeddings", "images", "mcq", "math",
+    "run", "llm", "llm_cached", "llm_conversation", "embeddings", "images", "mcq", "math",
     "reasoning", "code", "tool", "concurrency_tool", "concurrency_chat",
     "llamabench", "llamabenchconc", "sustained",
 }

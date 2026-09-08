@@ -2,7 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON="$SCRIPT_DIR/bench-env/bin/python"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PYTHON="$ROOT/bench-env/bin/python"
 MODEL=""
 ENGINE="llamacpp"
 TELEMETRY_MODE="memory"
@@ -17,7 +18,7 @@ OUT_DIR=""
 DRY_RUN=false
 
 usage() {
-    echo "Usage: bash run_telemetry_trials.sh --model TAG [--engine NAME] [--pairs N]"
+    echo "Usage: bash qualification/run_telemetry_trials.sh --model TAG [--engine NAME] [--pairs N]"
     echo "       [--telemetry memory|power|temperature] [--workload llm|sustained]"
     echo "       [--sustained-duration SEC --ambient-temp-c C] [--interval SEC] [--wait SEC]"
     echo "       [--out-dir DIR] [--dry-run]"
@@ -77,14 +78,14 @@ if [ ! -x "$PYTHON" ]; then
     echo "Virtual environment not found at $PYTHON — run setup.sh first." >&2
     exit 1
 fi
-if [ "$DRY_RUN" = false ] && [ -n "$(git -C "$SCRIPT_DIR" status --porcelain)" ]; then
+if [ "$DRY_RUN" = false ] && [ -n "$(git -C "$ROOT" status --porcelain)" ]; then
     echo "Qualification requires a clean Git worktree; run git status --short." >&2
     exit 1
 fi
 
-cd "$SCRIPT_DIR"
+cd "$ROOT"
 if [ -z "$OUT_DIR" ]; then
-    OUT_DIR="$SCRIPT_DIR/results/qualification/$TELEMETRY_MODE-$(date '+%Y%m%d-%H%M%S')"
+    OUT_DIR="$ROOT/results/qualification/$TELEMETRY_MODE-$(date '+%Y%m%d-%H%M%S')"
 fi
 OUT_DIR="$(mkdir -p "$OUT_DIR" && cd "$OUT_DIR" && pwd)"
 
@@ -123,7 +124,7 @@ run_trial() {
     local mode="$1" pair="$2" output="$3"
     local temperature_flag=0
     if [ "$mode" = "on" ]; then temperature_flag=1; fi
-    local command=(bash "$SCRIPT_DIR/run_bench.sh" --ui none --engine "$ENGINE"
+    local command=(bash "$ROOT/run_bench.sh" --ui none --engine "$ENGINE"
         --tests "$WORKLOAD" --llm-models "$MODEL" --warmup 2 --out "$output")
     if [ "$WORKLOAD" = "llm" ]; then
         command+=(--max-prompt-tokens 2048 --runs 3)

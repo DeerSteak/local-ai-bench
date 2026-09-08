@@ -36,10 +36,10 @@ class ConcurrencyBenchmark:
         return mean_tps < config.SLOW_MODEL_MIN_TPS
 
     @staticmethod
-    def slot_ctx_for(per_request_context: int) -> int:
+    def slot_ctx_for(per_request_context: int, template_headroom: int = 0) -> int:
         """Per-slot ctx budget: padded prompt plus generate()'s n_predict headroom,
         so a slot isn't sized to exactly the prompt with no room to generate."""
-        return per_request_context + config.GENERATE_MAX_TOKENS
+        return per_request_context + config.GENERATE_MAX_TOKENS + template_headroom
 
     @staticmethod
     def _fire_batch(engine, tag: str, level: int, per_request_context: int) -> list:
@@ -47,7 +47,9 @@ class ConcurrencyBenchmark:
         Returns named measurement samples."""
         prompts = [Shared.build_prompt_for_context(per_request_context, variant=index)
                    for index in range(level)]
-        slot_ctx = ConcurrencyBenchmark.slot_ctx_for(per_request_context)
+        slot_ctx = ConcurrencyBenchmark.slot_ctx_for(
+            per_request_context, engine.generation_prompt_headroom(),
+        )
         with ThreadPoolExecutor(max_workers=level) as pool:
             futures = [
                 pool.submit(engine.generate, tag, p, config.RUN_TIMEOUT, slot_ctx, level)
@@ -158,10 +160,13 @@ class ConcurrencyBenchmark:
                     Shared.log(f"{label}: preparing {level}-way concurrency at "
                                f"{per_request_context} tokens/slot ...")
 
+                    Shared.verify_resume_model(journal, model, engine)
                     if journal:
                         journal.begin_model_load()
                     if not engine.prepare_concurrency(
-                        tag, level, self.slot_ctx_for(per_request_context), warmup_runs,
+                        tag, level, self.slot_ctx_for(
+                            per_request_context, engine.generation_prompt_headroom(),
+                        ), warmup_runs,
                         timeout=config.RUN_TIMEOUT,
                     ):
                         Shared.warn(f"{label}: couldn't load at {level}-way concurrency — "
@@ -299,7 +304,7 @@ class ConcurrencyBenchmark:
                 entry = unexpected_model_failure(label, exc)
                 results.setdefault(short, {}).update(entry)
                 if journal:
-                    journal.record_model_state(model, "crashed", entry)
+                    journal.record_model_state(model, "failed", entry)
             finally:
                 if save_fn:
                     save_fn(journal.export() if journal else results)

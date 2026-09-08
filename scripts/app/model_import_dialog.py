@@ -4,6 +4,7 @@ import threading
 from pathlib import Path
 
 from scripts.runtime import config
+from scripts.runtime.engine_identity import engine_family
 from scripts.setup.custom_models import custom_model
 from scripts.setup.model_download import (
     custom_model_artifacts_present, enough_disk_space, import_model, load_hf_token,
@@ -16,13 +17,13 @@ from scripts.workloads.models import EMBED_MODELS, LLM_MODELS
 
 
 def import_destination(engine: str, tag: str, vllm_cache: Path | None = None) -> Path | None:
-    if engine == "llamacpp":
+    if engine_family(engine) == "llamacpp":
         return config.MODELS_DIR / "llamacpp" / (tag or "<tag>")
     return Path(vllm_cache) if engine == "vllm" and vllm_cache is not None else None
 
 
 def import_variants(inspection: RepositoryInspection, engine: str) -> tuple[ImportVariant, ...]:
-    if engine == "llamacpp":
+    if engine_family(engine) == "llamacpp":
         return inspection.llama_variants
     if engine == "vllm" and inspection.vllm_variant is not None:
         return (inspection.vllm_variant,)
@@ -32,7 +33,7 @@ def import_variants(inspection: RepositoryInspection, engine: str) -> tuple[Impo
 def supported_import_engines(inspection: RepositoryInspection,
                              engines: list[str]) -> list[str]:
     supported = []
-    if inspection.llama_variants and "llamacpp" in engines:
+    if inspection.llama_variants and any(engine_family(name) == "llamacpp" for name in engines):
         supported.append("llamacpp")
     if inspection.vllm_variant and "vllm" in engines:
         supported.append("vllm")
@@ -75,10 +76,11 @@ def import_validation_reason(*, busy: bool, inspection: RepositoryInspection | N
 
 def show_model_import_dialog(*, root, tk, ttk, messagebox, available_engines,
                              engine_factory, on_imported) -> None:  # pragma: no cover — interactive Tk UI
-    engines = [
-        name for name in available_engines if name in {"llamacpp", "vllm"}
+    engines = list(dict.fromkeys(
+        family for name in available_engines
+        if (family := engine_family(name)) in {"llamacpp", "vllm"}
         and getattr(engine_factory(name), "supports_model_import", lambda: True)()
-    ]
+    ))
     if not engines:
         messagebox.showerror(
             "Import unavailable", "Install a locally managed llama.cpp or vLLM first.", parent=root,

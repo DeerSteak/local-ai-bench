@@ -117,6 +117,14 @@ def sustained_measurement_valid(request_count: int, valid_request_count: int) ->
 class SustainedBenchmark:
     CRASH_CACHE = Path(".sustained_crash_cache.json")
 
+    @staticmethod
+    def server_context_for(model_max: int, template_headroom: int = 0) -> int:
+        return Shared.ctx_with_headroom(
+            config.SUSTAINED_CONTEXT_TOKENS,
+            config.GENERATE_MAX_TOKENS + template_headroom,
+            model_max,
+        )
+
     def run(self, engine, models, warmup_runs, duration_sec=config.SUSTAINED_DURATION_SEC,
             window_sec=config.SUSTAINED_WINDOW_SEC, ambient_temp_c=None, save_fn=None,
             telemetry_factory=None, journal=None, monotonic=time.monotonic):  # pragma: no cover
@@ -137,6 +145,7 @@ class SustainedBenchmark:
             case_started = False
             telemetry_finished = False
             try:
+                Shared.verify_resume_model(journal, model, engine)
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
                     continue
@@ -149,8 +158,8 @@ class SustainedBenchmark:
                         journal.record_model_state(model, "skipped", skip)
                     continue
                 model_max = engine.max_context_length(tag)
-                server_context = Shared.ctx_with_headroom(
-                    config.SUSTAINED_CONTEXT_TOKENS, config.GENERATE_MAX_TOKENS, model_max,
+                server_context = self.server_context_for(
+                    model_max, engine.generation_prompt_headroom(),
                 )
                 if server_context <= config.SUSTAINED_CONTEXT_TOKENS:
                     results[short] = {

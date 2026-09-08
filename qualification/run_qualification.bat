@@ -1,6 +1,7 @@
 @echo off
 setlocal EnableExtensions
-cd /d "%~dp0"
+for %%D in ("%~dp0..") do set "ROOT=%%~fD"
+cd /d "%ROOT%"
 
 if "%~1"=="--list-targets" goto list_targets
 if "%~1"=="" goto usage
@@ -27,6 +28,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts\release\qualifi
 exit /b %ERRORLEVEL%
 
 :usage
-echo Usage: %~nx0 TARGET [RESULT_JSON]
-echo        %~nx0 --list-targets
+echo Usage: qualification\%~nx0 TARGET [RESULT_JSON]
+echo        qualification\%~nx0 --list-targets
 exit /b 2

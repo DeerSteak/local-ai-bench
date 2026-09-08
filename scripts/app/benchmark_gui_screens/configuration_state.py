@@ -71,8 +71,9 @@ class ConfigurationStateController:
     def apply_control_values(self, values: dict) -> None:
         for name, variable in self.test_vars.items():
             variable.set(values["tests"].get(name, False))
-        for name, variable in self.model_vars.items():
-            variable.set(values["models"].get(name, False))
+        if "models" in values:
+            for name, variable in self.model_vars.items():
+                variable.set(values["models"].get(name, False))
         if values.get("engine"):
             self.set_selected_engines(parse_engine_selection(values["engine"]))
         self.cap_var.set(values["max_prompt_tokens"])
@@ -176,9 +177,12 @@ class ConfigurationStateController:
         )
 
     def scroll_form(self, event):
-        widget = self.root.winfo_containing(
-            self.root.winfo_pointerx(), self.root.winfo_pointery(),
-        )
+        try:
+            widget = self.root.winfo_containing(
+                self.root.winfo_pointerx(), self.root.winfo_pointery(),
+            )
+        except (KeyError, self.tk.TclError):
+            return None
         current = widget
         while current is not None and current not in {self.screen.canvas, self.screen.form}:
             current = getattr(current, "master", None)
