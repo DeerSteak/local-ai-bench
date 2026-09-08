@@ -327,3 +327,16 @@ def test_later_stage_must_match_jobs_saved_resume_identity(tmp_path):
     with pytest.raises(ValueError, match="resume identity"):
         store.start_stage(plan, "llm", {**identity, "artifacts": {}})
     store.close()
+
+
+def test_resume_marks_unclean_running_job_for_pending_stage_verification(tmp_path):
+    plan = make_plan()
+    store = EventStore(tmp_path / "events.sqlite3")
+    store.start_stage(plan, "llm")
+    store.resume_job(plan.job_id)
+    assert store.rebuild(plan.job_id)["jobs"][plan.job_id]["recovery"] == "resume"
+    sequence = store.last_sequence(plan.job_id)
+    store.resume_job(plan.job_id)
+    assert store.last_sequence(plan.job_id) == sequence
+    store.verify(plan.job_id)
+    store.close()

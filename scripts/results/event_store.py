@@ -405,8 +405,12 @@ class EventStore:
         projection = self.rebuild(job_id)
         current = projection["jobs"].get(job_id, {}).get("state")
         if current == "running":
-            return
-        if current not in RECOVERABLE_STATES:
+            if projection["jobs"][job_id].get("recovery") == "resume":
+                return
+            self.append(job_id, [JournalEvent(
+                "job", job_id, "interrupted", {"reason": "recovery"},
+            )])
+        elif current not in RECOVERABLE_STATES:
             raise ValueError(f"job cannot resume from state: {current}")
         self.append(job_id, [JournalEvent(
             "job", job_id, "running", {"recovery": "resume"},
