@@ -27,6 +27,14 @@ updates:
       timezone: America/Chicago
     target-branch: develop
     groups:
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+        update-types:
+          - major
+          - minor
+          - patch
       dashboard-minor-and-patch:
         update-types:
           - minor
