@@ -1345,7 +1345,7 @@ def main() -> None:  # pragma: no cover - real interactive installer
                 if visible is True:
                     ok("Running ComfyUI already sees Local AI Bench's managed models")
                 elif visible is False:
-                    warn("Restart running ComfyUI once to load the managed model path")
+                    warn("Benchmark will start a separate ComfyUI instance with the managed model path")
             else:
                 fail("No image checkpoints available — image benchmarks will be skipped")
                 issues.append("Download at least one image model through setup")
