@@ -23,6 +23,8 @@ Unresolved license records: **0**
 | npm | @babel/traverse | 7.29.7 | development | MIT | https://registry.npmjs.org/@babel/traverse/-/traverse-7.29.7.tgz |  |
 | npm | @babel/types | 7.29.7 | development | MIT | https://registry.npmjs.org/@babel/types/-/types-7.29.7.tgz |  |
 | npm | @bcoe/v8-coverage | 1.0.2 | development | MIT | https://registry.npmjs.org/@bcoe/v8-coverage/-/v8-coverage-1.0.2.tgz |  |
+| npm | @cacheable/memory | 2.2.0 | development | MIT | https://registry.npmjs.org/@cacheable/memory/-/memory-2.2.0.tgz |  |
+| npm | @cacheable/utils | 2.5.0 | development | MIT | https://registry.npmjs.org/@cacheable/utils/-/utils-2.5.0.tgz |  |
 | npm | @eslint-community/eslint-utils | 4.9.1 | development | MIT | https://registry.npmjs.org/@eslint-community/eslint-utils/-/eslint-utils-4.9.1.tgz |  |
 | npm | @eslint-community/eslint-utils/node_modules/eslint-visitor-keys | 3.4.3 | development | Apache-2.0 | https://registry.npmjs.org/eslint-visitor-keys/-/eslint-visitor-keys-3.4.3.tgz |  |
 | npm | @eslint-community/regexpp | 4.12.2 | development | MIT | https://registry.npmjs.org/@eslint-community/regexpp/-/regexpp-4.12.2.tgz |  |
@@ -31,7 +33,7 @@ Unresolved license records: **0**
 | npm | @eslint/core | 1.2.1 | development | Apache-2.0 | https://registry.npmjs.org/@eslint/core/-/core-1.2.1.tgz |  |
 | npm | @eslint/js | 10.0.1 | development | MIT | https://registry.npmjs.org/@eslint/js/-/js-10.0.1.tgz |  |
 | npm | @eslint/object-schema | 3.0.5 | development | Apache-2.0 | https://registry.npmjs.org/@eslint/object-schema/-/object-schema-3.0.5.tgz |  |
-| npm | @eslint/plugin-kit | 0.7.2 | development | Apache-2.0 | https://registry.npmjs.org/@eslint/plugin-kit/-/plugin-kit-0.7.2.tgz |  |
+| npm | @eslint/plugin-kit | 0.7.3 | development | Apache-2.0 | https://registry.npmjs.org/@eslint/plugin-kit/-/plugin-kit-0.7.3.tgz |  |
 | npm | @fontsource/ibm-plex-mono | 5.3.0 | runtime | OFL-1.1 | https://registry.npmjs.org/@fontsource/ibm-plex-mono/-/ibm-plex-mono-5.3.0.tgz |  |
 | npm | @fontsource/ibm-plex-sans | 5.3.0 | runtime | OFL-1.1 | https://registry.npmjs.org/@fontsource/ibm-plex-sans/-/ibm-plex-sans-5.3.0.tgz |  |
 | npm | @humanfs/core | 0.19.2 | development | Apache-2.0 | https://registry.npmjs.org/@humanfs/core/-/core-0.19.2.tgz |  |
@@ -44,6 +46,8 @@ Unresolved license records: **0**
 | npm | @jridgewell/resolve-uri | 3.1.2 | development | MIT | https://registry.npmjs.org/@jridgewell/resolve-uri/-/resolve-uri-3.1.2.tgz |  |
 | npm | @jridgewell/sourcemap-codec | 1.5.5 | development | MIT | https://registry.npmjs.org/@jridgewell/sourcemap-codec/-/sourcemap-codec-1.5.5.tgz |  |
 | npm | @jridgewell/trace-mapping | 0.3.31 | development | MIT | https://registry.npmjs.org/@jridgewell/trace-mapping/-/trace-mapping-0.3.31.tgz |  |
+| npm | @keyv/bigmap | 1.3.1 | development | MIT | https://registry.npmjs.org/@keyv/bigmap/-/bigmap-1.3.1.tgz |  |
+| npm | @keyv/serialize | 1.1.1 | development | MIT | https://registry.npmjs.org/@keyv/serialize/-/serialize-1.1.1.tgz |  |
 | npm | @oxc-project/types | 0.144.0 | development | MIT | https://registry.npmjs.org/@oxc-project/types/-/types-0.144.0.tgz |  |
 | npm | @reduxjs/toolkit | 2.12.0 | runtime | MIT | https://registry.npmjs.org/@reduxjs/toolkit/-/toolkit-2.12.0.tgz |  |
 | npm | @rolldown/binding-android-arm64 | 1.2.4 | development | MIT | https://registry.npmjs.org/@rolldown/binding-android-arm64/-/binding-android-arm64-1.2.4.tgz |  |
@@ -77,22 +81,22 @@ Unresolved license records: **0**
 | npm | @types/esrecurse | 4.3.1 | development | MIT | https://registry.npmjs.org/@types/esrecurse/-/esrecurse-4.3.1.tgz |  |
 | npm | @types/estree | 1.0.9 | development | MIT | https://registry.npmjs.org/@types/estree/-/estree-1.0.9.tgz |  |
 | npm | @types/json-schema | 7.0.15 | development | MIT | https://registry.npmjs.org/@types/json-schema/-/json-schema-7.0.15.tgz |  |
-| npm | @types/node | 26.4.0 | development | MIT | https://registry.npmjs.org/@types/node/-/node-26.4.0.tgz |  |
+| npm | @types/node | 26.4.1 | development | MIT | https://registry.npmjs.org/@types/node/-/node-26.4.1.tgz |  |
 | npm | @types/react | 19.2.18 | runtime | MIT | https://registry.npmjs.org/@types/react/-/react-19.2.18.tgz |  |
-| npm | @types/react-dom | 19.2.5 | development | MIT | https://registry.npmjs.org/@types/react-dom/-/react-dom-19.2.5.tgz |  |
+| npm | @types/react-dom | 19.2.7 | development | MIT | https://registry.npmjs.org/@types/react-dom/-/react-dom-19.2.7.tgz |  |
 | npm | @types/use-sync-external-store | 0.0.6 | runtime | MIT | https://registry.npmjs.org/@types/use-sync-external-store/-/use-sync-external-store-0.0.6.tgz |  |
-| npm | @typescript-eslint/eslint-plugin | 8.68.0 | development | MIT | https://registry.npmjs.org/@typescript-eslint/eslint-plugin/-/eslint-plugin-8.68.0.tgz |  |
-| npm | @typescript-eslint/eslint-plugin/node_modules/ignore | 7.0.6 | development | MIT | https://registry.npmjs.org/ignore/-/ignore-7.0.6.tgz |  |
-| npm | @typescript-eslint/parser | 8.68.0 | development | MIT | https://registry.npmjs.org/@typescript-eslint/parser/-/parser-8.68.0.tgz |  |
-| npm | @typescript-eslint/project-service | 8.68.0 | development | MIT | https://registry.npmjs.org/@typescript-eslint/project-service/-/project-service-8.68.0.tgz |  |
-| npm | @typescript-eslint/scope-manager | 8.68.0 | development | MIT | https://registry.npmjs.org/@typescript-eslint/scope-manager/-/scope-manager-8.68.0.tgz |  |
-| npm | @typescript-eslint/tsconfig-utils | 8.68.0 | development | MIT | https://registry.npmjs.org/@typescript-eslint/tsconfig-utils/-/tsconfig-utils-8.68.0.tgz |  |
-| npm | @typescript-eslint/type-utils | 8.68.0 | development | MIT | https://registry.npmjs.org/@typescript-eslint/type-utils/-/type-utils-8.68.0.tgz |  |
-| npm | @typescript-eslint/types | 8.68.0 | development | MIT | https://registry.npmjs.org/@typescript-eslint/types/-/types-8.68.0.tgz |  |
-| npm | @typescript-eslint/typescript-estree | 8.68.0 | development | MIT | https://registry.npmjs.org/@typescript-eslint/typescript-estree/-/typescript-estree-8.68.0.tgz |  |
+| npm | @typescript-eslint/eslint-plugin | 8.69.0 | development | MIT | https://registry.npmjs.org/@typescript-eslint/eslint-plugin/-/eslint-plugin-8.69.0.tgz |  |
+| npm | @typescript-eslint/eslint-plugin/node_modules/ignore | 7.0.8 | development | MIT | https://registry.npmjs.org/ignore/-/ignore-7.0.8.tgz |  |
+| npm | @typescript-eslint/parser | 8.69.0 | development | MIT | https://registry.npmjs.org/@typescript-eslint/parser/-/parser-8.69.0.tgz |  |
+| npm | @typescript-eslint/project-service | 8.69.0 | development | MIT | https://registry.npmjs.org/@typescript-eslint/project-service/-/project-service-8.69.0.tgz |  |
+| npm | @typescript-eslint/scope-manager | 8.69.0 | development | MIT | https://registry.npmjs.org/@typescript-eslint/scope-manager/-/scope-manager-8.69.0.tgz |  |
+| npm | @typescript-eslint/tsconfig-utils | 8.69.0 | development | MIT | https://registry.npmjs.org/@typescript-eslint/tsconfig-utils/-/tsconfig-utils-8.69.0.tgz |  |
+| npm | @typescript-eslint/type-utils | 8.69.0 | development | MIT | https://registry.npmjs.org/@typescript-eslint/type-utils/-/type-utils-8.69.0.tgz |  |
+| npm | @typescript-eslint/types | 8.69.0 | development | MIT | https://registry.npmjs.org/@typescript-eslint/types/-/types-8.69.0.tgz |  |
+| npm | @typescript-eslint/typescript-estree | 8.69.0 | development | MIT | https://registry.npmjs.org/@typescript-eslint/typescript-estree/-/typescript-estree-8.69.0.tgz |  |
 | npm | @typescript-eslint/typescript-estree/node_modules/semver | 7.8.5 | development | ISC | https://registry.npmjs.org/semver/-/semver-7.8.5.tgz |  |
-| npm | @typescript-eslint/utils | 8.68.0 | development | MIT | https://registry.npmjs.org/@typescript-eslint/utils/-/utils-8.68.0.tgz |  |
-| npm | @typescript-eslint/visitor-keys | 8.68.0 | development | MIT | https://registry.npmjs.org/@typescript-eslint/visitor-keys/-/visitor-keys-8.68.0.tgz |  |
+| npm | @typescript-eslint/utils | 8.69.0 | development | MIT | https://registry.npmjs.org/@typescript-eslint/utils/-/utils-8.69.0.tgz |  |
+| npm | @typescript-eslint/visitor-keys | 8.69.0 | development | MIT | https://registry.npmjs.org/@typescript-eslint/visitor-keys/-/visitor-keys-8.69.0.tgz |  |
 | npm | @vitejs/plugin-react | 6.1.1 | development | MIT | https://registry.npmjs.org/@vitejs/plugin-react/-/plugin-react-6.1.1.tgz |  |
 | npm | @vitest/coverage-v8 | 4.1.11 | development | MIT | https://registry.npmjs.org/@vitest/coverage-v8/-/coverage-v8-4.1.11.tgz |  |
 | npm | @vitest/expect | 4.1.11 | development | MIT | https://registry.npmjs.org/@vitest/expect/-/expect-4.1.11.tgz |  |
@@ -113,6 +117,7 @@ Unresolved license records: **0**
 | npm | baseline-browser-mapping | 2.10.40 | development | Apache-2.0 | https://registry.npmjs.org/baseline-browser-mapping/-/baseline-browser-mapping-2.10.40.tgz |  |
 | npm | brace-expansion | 5.0.9 | development | MIT | https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.9.tgz |  |
 | npm | browserslist | 4.28.4 | development | MIT | https://registry.npmjs.org/browserslist/-/browserslist-4.28.4.tgz |  |
+| npm | cacheable | 2.5.0 | development | MIT | https://registry.npmjs.org/cacheable/-/cacheable-2.5.0.tgz |  |
 | npm | caniuse-lite | 1.0.30001799 | development | CC-BY-4.0 | https://registry.npmjs.org/caniuse-lite/-/caniuse-lite-1.0.30001799.tgz |  |
 | npm | chai | 6.2.2 | development | MIT | https://registry.npmjs.org/chai/-/chai-6.2.2.tgz |  |
 | npm | clsx | 2.1.1 | runtime | MIT | https://registry.npmjs.org/clsx/-/clsx-2.1.1.tgz |  |
@@ -140,9 +145,9 @@ Unresolved license records: **0**
 | npm | es-toolkit | 1.49.0 | runtime | MIT | https://registry.npmjs.org/es-toolkit/-/es-toolkit-1.49.0.tgz |  |
 | npm | escalade | 3.2.0 | development | MIT | https://registry.npmjs.org/escalade/-/escalade-3.2.0.tgz |  |
 | npm | escape-string-regexp | 4.0.0 | development | MIT | https://registry.npmjs.org/escape-string-regexp/-/escape-string-regexp-4.0.0.tgz |  |
-| npm | eslint | 10.9.1 | development | MIT | https://registry.npmjs.org/eslint/-/eslint-10.9.1.tgz |  |
+| npm | eslint | 10.10.0 | development | MIT | https://registry.npmjs.org/eslint/-/eslint-10.10.0.tgz |  |
 | npm | eslint-plugin-react-hooks | 7.1.1 | development | MIT | https://registry.npmjs.org/eslint-plugin-react-hooks/-/eslint-plugin-react-hooks-7.1.1.tgz |  |
-| npm | eslint-plugin-react-refresh | 0.5.5 | development | MIT | https://registry.npmjs.org/eslint-plugin-react-refresh/-/eslint-plugin-react-refresh-0.5.5.tgz |  |
+| npm | eslint-plugin-react-refresh | 0.5.6 | development | MIT | https://registry.npmjs.org/eslint-plugin-react-refresh/-/eslint-plugin-react-refresh-0.5.6.tgz |  |
 | npm | eslint-scope | 9.1.2 | development | BSD-2-Clause | https://registry.npmjs.org/eslint-scope/-/eslint-scope-9.1.2.tgz |  |
 | npm | eslint-visitor-keys | 5.0.1 | development | Apache-2.0 | https://registry.npmjs.org/eslint-visitor-keys/-/eslint-visitor-keys-5.0.1.tgz |  |
 | npm | espree | 11.2.0 | development | BSD-2-Clause | https://registry.npmjs.org/espree/-/espree-11.2.0.tgz |  |
@@ -157,17 +162,19 @@ Unresolved license records: **0**
 | npm | fast-json-stable-stringify | 2.1.0 | development | MIT | https://registry.npmjs.org/fast-json-stable-stringify/-/fast-json-stable-stringify-2.1.0.tgz |  |
 | npm | fast-levenshtein | 2.0.6 | development | MIT | https://registry.npmjs.org/fast-levenshtein/-/fast-levenshtein-2.0.6.tgz |  |
 | npm | fdir | 6.5.0 | development | MIT | https://registry.npmjs.org/fdir/-/fdir-6.5.0.tgz |  |
-| npm | file-entry-cache | 8.0.0 | development | MIT | https://registry.npmjs.org/file-entry-cache/-/file-entry-cache-8.0.0.tgz |  |
+| npm | file-entry-cache | 11.1.5 | development | MIT | https://registry.npmjs.org/file-entry-cache/-/file-entry-cache-11.1.5.tgz |  |
 | npm | find-up | 5.0.0 | development | MIT | https://registry.npmjs.org/find-up/-/find-up-5.0.0.tgz |  |
-| npm | flat-cache | 4.0.1 | development | MIT | https://registry.npmjs.org/flat-cache/-/flat-cache-4.0.1.tgz |  |
-| npm | flatted | 3.4.2 | development | ISC | https://registry.npmjs.org/flatted/-/flatted-3.4.2.tgz |  |
+| npm | flat-cache | 6.1.23 | development | MIT | https://registry.npmjs.org/flat-cache/-/flat-cache-6.1.23.tgz |  |
+| npm | flatted | 3.4.4 | development | ISC | https://registry.npmjs.org/flatted/-/flatted-3.4.4.tgz |  |
 | npm | fsevents | 2.3.3 | development | MIT | https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz |  |
 | npm | gensync | 1.0.0-beta.2 | development | MIT | https://registry.npmjs.org/gensync/-/gensync-1.0.0-beta.2.tgz |  |
 | npm | glob-parent | 6.0.2 | development | ISC | https://registry.npmjs.org/glob-parent/-/glob-parent-6.0.2.tgz |  |
-| npm | globals | 17.11.0 | development | MIT | https://registry.npmjs.org/globals/-/globals-17.11.0.tgz |  |
+| npm | globals | 17.12.0 | development | MIT | https://registry.npmjs.org/globals/-/globals-17.12.0.tgz |  |
 | npm | has-flag | 4.0.0 | development | MIT | https://registry.npmjs.org/has-flag/-/has-flag-4.0.0.tgz |  |
+| npm | hashery | 1.5.1 | development | MIT | https://registry.npmjs.org/hashery/-/hashery-1.5.1.tgz |  |
 | npm | hermes-estree | 0.25.1 | development | MIT | https://registry.npmjs.org/hermes-estree/-/hermes-estree-0.25.1.tgz |  |
 | npm | hermes-parser | 0.25.1 | development | MIT | https://registry.npmjs.org/hermes-parser/-/hermes-parser-0.25.1.tgz |  |
+| npm | hookified | 1.15.1 | development | MIT | https://registry.npmjs.org/hookified/-/hookified-1.15.1.tgz |  |
 | npm | html-escaper | 2.0.2 | development | MIT | https://registry.npmjs.org/html-escaper/-/html-escaper-2.0.2.tgz |  |
 | npm | html2canvas | 1.4.1 | runtime | MIT | https://registry.npmjs.org/html2canvas/-/html2canvas-1.4.1.tgz |  |
 | npm | ignore | 5.3.2 | development | MIT | https://registry.npmjs.org/ignore/-/ignore-5.3.2.tgz |  |
@@ -182,11 +189,10 @@ Unresolved license records: **0**
 | npm | istanbul-reports | 3.2.0 | development | BSD-3-Clause | https://registry.npmjs.org/istanbul-reports/-/istanbul-reports-3.2.0.tgz |  |
 | npm | js-tokens | 4.0.0 | development | MIT | https://registry.npmjs.org/js-tokens/-/js-tokens-4.0.0.tgz |  |
 | npm | jsesc | 3.1.0 | development | MIT | https://registry.npmjs.org/jsesc/-/jsesc-3.1.0.tgz |  |
-| npm | json-buffer | 3.0.1 | development | MIT | https://registry.npmjs.org/json-buffer/-/json-buffer-3.0.1.tgz |  |
 | npm | json-schema-traverse | 0.4.1 | development | MIT | https://registry.npmjs.org/json-schema-traverse/-/json-schema-traverse-0.4.1.tgz |  |
 | npm | json-stable-stringify-without-jsonify | 1.0.1 | development | MIT | https://registry.npmjs.org/json-stable-stringify-without-jsonify/-/json-stable-stringify-without-jsonify-1.0.1.tgz |  |
 | npm | json5 | 2.2.3 | development | MIT | https://registry.npmjs.org/json5/-/json5-2.2.3.tgz |  |
-| npm | keyv | 4.5.4 | development | MIT | https://registry.npmjs.org/keyv/-/keyv-4.5.4.tgz |  |
+| npm | keyv | 5.6.0 | development | MIT | https://registry.npmjs.org/keyv/-/keyv-5.6.0.tgz |  |
 | npm | levn | 0.4.1 | development | MIT | https://registry.npmjs.org/levn/-/levn-0.4.1.tgz |  |
 | npm | lightningcss | 1.33.0 | development | MPL-2.0 | https://registry.npmjs.org/lightningcss/-/lightningcss-1.33.0.tgz |  |
 | npm | lightningcss-android-arm64 | 1.33.0 | development | MPL-2.0 | https://registry.npmjs.org/lightningcss-android-arm64/-/lightningcss-android-arm64-1.33.0.tgz |  |
@@ -223,6 +229,8 @@ Unresolved license records: **0**
 | npm | postcss | 8.5.26 | development | MIT | https://registry.npmjs.org/postcss/-/postcss-8.5.26.tgz |  |
 | npm | prelude-ls | 1.2.1 | development | MIT | https://registry.npmjs.org/prelude-ls/-/prelude-ls-1.2.1.tgz |  |
 | npm | punycode | 2.3.1 | development | MIT | https://registry.npmjs.org/punycode/-/punycode-2.3.1.tgz |  |
+| npm | qified | 0.10.1 | development | MIT | https://registry.npmjs.org/qified/-/qified-0.10.1.tgz |  |
+| npm | qified/node_modules/hookified | 2.2.0 | development | MIT | https://registry.npmjs.org/hookified/-/hookified-2.2.0.tgz |  |
 | npm | react | 19.2.8 | runtime | MIT | https://registry.npmjs.org/react/-/react-19.2.8.tgz |  |
 | npm | react-dom | 19.2.8 | runtime | MIT | https://registry.npmjs.org/react-dom/-/react-dom-19.2.8.tgz |  |
 | npm | react-is | 19.2.7 | runtime | MIT | https://registry.npmjs.org/react-is/-/react-is-19.2.7.tgz |  |
@@ -250,7 +258,7 @@ Unresolved license records: **0**
 | npm | ts-api-utils | 2.5.0 | development | MIT | https://registry.npmjs.org/ts-api-utils/-/ts-api-utils-2.5.0.tgz |  |
 | npm | type-check | 0.4.0 | development | MIT | https://registry.npmjs.org/type-check/-/type-check-0.4.0.tgz |  |
 | npm | typescript | 6.0.3 | development | Apache-2.0 | https://registry.npmjs.org/typescript/-/typescript-6.0.3.tgz |  |
-| npm | typescript-eslint | 8.68.0 | development | MIT | https://registry.npmjs.org/typescript-eslint/-/typescript-eslint-8.68.0.tgz |  |
+| npm | typescript-eslint | 8.69.0 | development | MIT | https://registry.npmjs.org/typescript-eslint/-/typescript-eslint-8.69.0.tgz |  |
 | npm | undici-types | 8.3.0 | development | MIT | https://registry.npmjs.org/undici-types/-/undici-types-8.3.0.tgz |  |
 | npm | update-browserslist-db | 1.2.3 | development | MIT | https://registry.npmjs.org/update-browserslist-db/-/update-browserslist-db-1.2.3.tgz |  |
 | npm | uri-js | 4.4.1 | development | BSD-2-Clause | https://registry.npmjs.org/uri-js/-/uri-js-4.4.1.tgz |  |
@@ -267,12 +275,12 @@ Unresolved license records: **0**
 | npm | zod | 4.4.3 | development | MIT | https://registry.npmjs.org/zod/-/zod-4.4.3.tgz |  |
 | npm | zod-validation-error | 4.0.2 | development | MIT | https://registry.npmjs.org/zod-validation-error/-/zod-validation-error-4.0.2.tgz |  |
 | pypi | gguf | 0.19.0 | runtime | MIT | https://pypi.org/project/gguf/0.19.0/ |  |
-| pypi | huggingface_hub | 1.24.0 | runtime | Apache-2.0 | https://pypi.org/project/huggingface-hub/1.24.0/ |  |
+| pypi | huggingface_hub | 1.30.0 | runtime | Apache-2.0 | https://pypi.org/project/huggingface-hub/1.30.0/ |  |
 | pypi | numpy | 2.4.6 | runtime | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 | https://pypi.org/project/numpy/2.4.6/ |  |
-| pypi | packaging | 26.2 | runtime | Apache-2.0 OR BSD-2-Clause | https://pypi.org/project/packaging/26.2/ |  |
+| pypi | packaging | 26.3 | runtime | Apache-2.0 OR BSD-2-Clause | https://pypi.org/project/packaging/26.3/ |  |
 | pypi | psutil | 7.2.2 | runtime | BSD-3-Clause | https://pypi.org/project/psutil/7.2.2/ |  |
 | pypi | py7zr | 1.1.3 | runtime | LGPL-2.1-or-later | https://pypi.org/project/py7zr/1.1.3/ | Preserve LGPL notices and satisfy source and modification obligations when distributed. |
 | pypi | pytest | 9.1.1 | development | MIT | https://pypi.org/project/pytest/9.1.1/ |  |
 | pypi | reportlab | 5.0.1 | runtime | BSD-3-Clause | https://pypi.org/project/reportlab/5.0.1/ |  |
 | pypi | requests | 2.34.2 | runtime | Apache-2.0 | https://pypi.org/project/requests/2.34.2/ |  |
-| pypi | tqdm | 4.69.0 | runtime | MPL-2.0 AND MIT | https://pypi.org/project/tqdm/4.69.0/ | Preserve notices; distributed modifications to MPL-covered files remain under MPL-2.0. |
+| pypi | tqdm | 4.70.0 | runtime | MPL-2.0 AND MIT | https://pypi.org/project/tqdm/4.70.0/ | Preserve notices; distributed modifications to MPL-covered files remain under MPL-2.0. |

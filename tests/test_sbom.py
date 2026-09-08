@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from scripts.release.sbom import generate_sbom, write_sbom
 
 
@@ -44,3 +46,25 @@ def test_sbom_uses_reviewed_license_only_for_exact_python_version(tmp_path):
     assert packages["requests"]["resolved"].endswith("/requests/2.34.2/")
     assert packages["py7zr"]["license"] == "LGPL-2.1-or-later"
     assert "LGPL" in packages["py7zr"]["review_note"]
+
+
+@pytest.mark.parametrize("name,version,license_id,url_name", [
+    ("huggingface_hub", "1.30.0", "Apache-2.0", "huggingface-hub"),
+    ("packaging", "26.3", "Apache-2.0 OR BSD-2-Clause", "packaging"),
+    ("tqdm", "4.70.0", "MPL-2.0 AND MIT", "tqdm"),
+])
+def test_updated_python_license_records_are_version_specific(
+    tmp_path, name, version, license_id, url_name,
+):
+    root = make_repo(tmp_path)
+    (root / "requirements.txt").write_text(f"{name}=={version}\n", encoding="utf-8")
+    package = next(p for p in generate_sbom(root)["packages"] if p["name"] == name)
+    assert package["license"] == license_id
+    assert package["resolved"] == f"https://pypi.org/project/{url_name}/{version}/"
+    if name == "tqdm":
+        assert "MPL-2.0" in package["review_note"]
+    (root / "requirements.txt").write_text(f"{name}==999.0.0\n", encoding="utf-8")
+    unknown = next(p for p in generate_sbom(root)["packages"] if p["name"] == name)
+    assert unknown["license"] == "NOASSERTION"
+    assert "resolved" not in unknown
+    assert "review_note" not in unknown
