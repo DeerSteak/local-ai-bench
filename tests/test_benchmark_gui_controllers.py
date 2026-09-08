@@ -493,20 +493,15 @@ def test_llamacpp_update_dispatches_platform_and_release(monkeypatch, tmp_path, 
         return updater
 
     monkeypatch.setattr(
-        "scripts.app.benchmark_gui_screens.engines.update_macos_llamacpp", capture("mac"),
-    )
-    monkeypatch.setattr(
-        "scripts.app.benchmark_gui_screens.engines.update_windows_llamacpp", capture("windows"),
-    )
-    monkeypatch.setattr(
-        "scripts.app.benchmark_gui_screens.engines.rebuild_managed_llamacpp", capture("linux"),
+        "scripts.app.benchmark_gui_screens.engines.install_managed_llamacpp",
+        capture({"Darwin": "mac", "Windows": "windows", "Linux": "linux"}[platform_name]),
     )
 
     result = actions.update_llamacpp_version(tag, SimpleNamespace(log=lambda _text: None))
 
     expected_platform = {"Darwin": "mac", "Windows": "windows", "Linux": "linux"}[platform_name]
     assert result.success is True
-    expected_xpu = False if platform_name == "Windows" else None
+    expected_xpu = None
     assert calls == [(
         expected_platform, "latest" if tag is None else f"tag:{tag}", expected_xpu,
     )]
@@ -538,12 +533,12 @@ def test_llamacpp_update_rebuilds_native_and_vulkan_from_one_release(monkeypatch
         lambda: releases.append("fetched") or {"tag_name": "b1234"},
     )
 
-    def rebuild(target, backend, *, release_fetcher, **_kwargs):
+    def rebuild(target, system, machine, backend, *, release_fetcher, **_kwargs):
         calls.append((target, backend, release_fetcher()))
         return RuntimeUpdateResult(True, f"updated {backend}", "b1234")
 
     monkeypatch.setattr(
-        "scripts.app.benchmark_gui_screens.engines.rebuild_managed_llamacpp", rebuild,
+        "scripts.app.benchmark_gui_screens.engines.install_managed_llamacpp", rebuild,
     )
 
     result = actions.update_llamacpp(SimpleNamespace(log=lambda _text: None))
@@ -586,7 +581,7 @@ def test_llamacpp_update_preserves_both_runtimes_when_later_staging_fails(monkey
         RuntimeUpdateResult(False, "Vulkan validation failed"),
     ])
     monkeypatch.setattr(
-        "scripts.app.benchmark_gui_screens.engines.rebuild_managed_llamacpp",
+        "scripts.app.benchmark_gui_screens.engines.install_managed_llamacpp",
         lambda *_args, **_kwargs: next(results),
     )
 
@@ -601,6 +596,8 @@ def test_llamacpp_update_preserves_both_runtimes_when_later_staging_fails(monkey
 def test_windows_intel_llamacpp_update_preserves_sycl_backend(monkeypatch, tmp_path):
     actions = EngineUpdateActions({}, "xpu")
     status = SimpleNamespace(engine="llamacpp", managed=True, backend="xpu")
+    monkeypatch.setattr("scripts.app.benchmark_gui_screens.engines.fetch_llamacpp_release",
+                        lambda: {"tag_name": "b10809"})
     calls = []
     runtime = tmp_path / "llama.cpp"
     runtime.mkdir()
@@ -616,8 +613,8 @@ def test_windows_intel_llamacpp_update_preserves_sycl_backend(monkeypatch, tmp_p
         "scripts.app.benchmark_gui_screens.engines.detect_nvidia_max_cuda_version", lambda: None,
     )
     monkeypatch.setattr(
-        "scripts.app.benchmark_gui_screens.engines.update_windows_llamacpp",
-        lambda *_args, **kwargs: calls.append(kwargs) or RuntimeUpdateResult(
+        "scripts.app.benchmark_gui_screens.engines.install_managed_llamacpp",
+        lambda *_args, **kwargs: calls.append(_args) or RuntimeUpdateResult(
             True, "updated", "version",
         ),
     )
@@ -625,7 +622,7 @@ def test_windows_intel_llamacpp_update_preserves_sycl_backend(monkeypatch, tmp_p
     assert actions.update_llamacpp_version(
         None, SimpleNamespace(log=lambda _text: None),
     ).success is True
-    assert calls[0]["intel_xpu"] is True
+    assert calls[0][3] == "xpu"
 
 
 def test_configuration_refresh_imported_models_updates_screen_state(monkeypatch):

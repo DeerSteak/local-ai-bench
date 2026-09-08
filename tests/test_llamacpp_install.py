@@ -70,20 +70,6 @@ def test_qualification_rejects_an_installed_runtime_that_does_not_expose_require
     ) is None
 
 
-def test_linux_install_requires_build_tools(monkeypatch, tmp_path):
-    failures = []
-    monkeypatch.setattr(llamacpp_install.shutil, "which", lambda _name: None)
-
-    result = llamacpp_install.install(
-        tmp_path / "runtime", tmp_path, "Linux", nvidia=False, rocm=False, intel_xpu=False,
-        compute_capability=None, max_cuda_version=None,
-        info=_log, warn=_log, fail=failures.append, ok=_log,
-    )
-
-    assert result is False
-    assert failures == ["git and cmake are required to build llama.cpp from source"]
-
-
 def test_unknown_platform_is_not_installed(tmp_path):
     assert not llamacpp_install.install(
         tmp_path / "runtime", tmp_path, "Haiku", nvidia=False, rocm=False, intel_xpu=False,
@@ -100,11 +86,11 @@ def test_macos_install_resolves_requested_release(monkeypatch, tmp_path):
         lambda tag: requested.append(tag) or {"tag_name": tag},
     )
 
-    def update(_runtime, _machine, *, release_fetcher):
+    def update(_runtime, _system, _machine, _backend, *, release_fetcher, **kwargs):
         assert release_fetcher()["tag_name"] == "b7000"
         return SimpleNamespace(success=True, detail="installed")
 
-    monkeypatch.setattr(llamacpp_install, "update_macos_llamacpp", update)
+    monkeypatch.setattr(llamacpp_install, "install_managed_llamacpp", update)
     assert llamacpp_install.install(
         tmp_path / "runtime", tmp_path, "Darwin", nvidia=False, rocm=False, intel_xpu=False,
         compute_capability=None, max_cuda_version=None, version="b7000",
@@ -124,21 +110,6 @@ def test_macos_rejects_managed_vulkan_runtime(tmp_path):
     assert failures == [
         "The managed Vulkan llama.cpp runtime is available only on Windows and Linux",
     ]
-
-
-def test_windows_intel_dispatch_requests_the_sycl_package(monkeypatch, tmp_path):
-    calls = []
-    monkeypatch.setattr(
-        llamacpp_install, "install_windows",
-        lambda *_args, **kwargs: calls.append(kwargs) or True,
-    )
-    assert llamacpp_install.install(
-        tmp_path / "runtime", tmp_path, "Windows",
-        nvidia=False, rocm=False, intel_xpu=True,
-        compute_capability=None, max_cuda_version=None,
-        info=_log, warn=_log, fail=_log, ok=_log,
-    )
-    assert calls[0]["intel_xpu"] is True
 
 
 def _windows_release(*assets):
@@ -341,176 +312,6 @@ def test_windows_install_requires_server_after_extraction(monkeypatch, tmp_path)
     assert "llama-server.exe wasn't found" in logs["fail"][0]
 
 
-def test_linux_nvidia_without_nvcc_builds_cpu_only_after_failed_pull(monkeypatch, tmp_path):
-    runtime = tmp_path / "runtime"
-    runtime.mkdir()
-    warnings, commands = [], []
-    monkeypatch.setattr(llamacpp_install.shutil, "which", lambda _name: "/usr/bin/tool")
-    monkeypatch.setattr(llamacpp_install, "find_nvcc", lambda: None)
-
-    def run(command, **_kwargs):
-        commands.append(command)
-        if command[:2] == ["git", "pull"]:
-            return SimpleNamespace(returncode=1)
-        if command[:2] == ["cmake", "--build"]:
-            build = runtime / "build"
-            build.mkdir()
-            (build / "llama-server").touch()
-        return SimpleNamespace(returncode=0)
-
-    monkeypatch.setattr(llamacpp_install.subprocess, "run", run)
-    result = llamacpp_install.install(
-        runtime, tmp_path, "Linux", nvidia=True, rocm=False, intel_xpu=False,
-        compute_capability="8.9", max_cuda_version=None,
-        info=_log, warn=warnings.append, fail=_log, ok=_log,
-    )
-    assert result is True
-    assert any("CUDA toolkit is missing" in message for message in warnings)
-    assert any("git pull failed" in message for message in warnings)
-    configure = next(command for command in commands if command[:2] == ["cmake", "-B"])
-    assert not any("GGML_CUDA" in argument for argument in configure)
-
-
-def test_linux_cuda_unknown_architecture_warns_and_omits_arch_flag(monkeypatch, tmp_path):
-    runtime = tmp_path / "runtime"
-    runtime.mkdir()
-    warnings, commands = [], []
-    monkeypatch.setattr(llamacpp_install.shutil, "which", lambda _name: "/usr/bin/tool")
-    monkeypatch.setattr(llamacpp_install, "find_nvcc", lambda: "/cuda/nvcc")
-    monkeypatch.setattr(llamacpp_install, "cuda_architecture", lambda _capability: None)
-
-    def run(command, **_kwargs):
-        commands.append(command)
-        if command[:2] == ["cmake", "--build"]:
-            build = runtime / "build"
-            build.mkdir()
-            (build / "llama-server").touch()
-        return SimpleNamespace(returncode=0)
-
-    monkeypatch.setattr(llamacpp_install.subprocess, "run", run)
-    assert llamacpp_install.install(
-        runtime, tmp_path, "Linux", nvidia=True, rocm=False, intel_xpu=False,
-        compute_capability=None, max_cuda_version=None,
-        info=_log, warn=warnings.append, fail=_log, ok=_log,
-    )
-    assert warnings[0] == "Could not read this GPU's compute capability"
-    configure = next(command for command in commands if command[:2] == ["cmake", "-B"])
-    assert "-DGGML_CUDA=ON" in configure
-    assert not any("CMAKE_CUDA_ARCHITECTURES" in argument for argument in configure)
-
-
-def test_linux_explicit_vulkan_build_ignores_native_gpu_backends(monkeypatch, tmp_path):
-    runtime = tmp_path / "runtime"
-    runtime.mkdir()
-    commands = []
-    monkeypatch.setattr(llamacpp_install.shutil, "which", lambda _name: "/usr/bin/tool")
-
-    def run(command, **_kwargs):
-        commands.append(command)
-        if command[:2] == ["cmake", "--build"]:
-            build = runtime / "build"
-            build.mkdir()
-            (build / "llama-server").touch()
-        return SimpleNamespace(returncode=0)
-
-    monkeypatch.setattr(llamacpp_install.subprocess, "run", run)
-    assert llamacpp_install.install(
-        runtime, tmp_path, "Linux", nvidia=True, rocm=True, intel_xpu=True,
-        compute_capability="8.9", max_cuda_version="12.8", vulkan=True,
-        info=_log, warn=_log, fail=_log, ok=_log,
-    )
-    configure = next(command for command in commands if command[:2] == ["cmake", "-B"])
-    assert "-DGGML_VULKAN=ON" in configure
-    assert not any("GGML_CUDA" in argument or "GGML_HIP" in argument
-                   or "GGML_SYCL" in argument for argument in configure)
-
-
-def test_linux_intel_build_sources_oneapi_and_enables_sycl(monkeypatch, tmp_path):
-    runtime = tmp_path / "runtime"
-    runtime.mkdir()
-    commands = []
-    build_env = {"PATH": "/opt/intel/oneapi/compiler/latest/bin"}
-    monkeypatch.setattr(llamacpp_install.shutil, "which", lambda _name: "/usr/bin/tool")
-    monkeypatch.setattr(llamacpp_install, "oneapi_environment", lambda: build_env)
-    monkeypatch.setattr(
-        llamacpp_install, "llamacpp_build_parallel_args",
-        lambda _backend: ["--parallel", "4"],
-    )
-
-    def run(command, **kwargs):
-        commands.append((command, kwargs))
-        if command[:2] == ["cmake", "--build"]:
-            build = runtime / "build"
-            build.mkdir()
-            (build / "llama-server").touch()
-        return SimpleNamespace(returncode=0)
-
-    monkeypatch.setattr(llamacpp_install.subprocess, "run", run)
-    assert llamacpp_install.install(
-        runtime, tmp_path, "Linux", nvidia=False, rocm=False, intel_xpu=True,
-        compute_capability=None, max_cuda_version=None,
-        info=_log, warn=_log, fail=_log, ok=_log,
-    )
-    configure = next(entry for entry in commands if entry[0][:2] == ["cmake", "-B"])
-    assert "-DGGML_SYCL=ON" in configure[0]
-    assert "-DCMAKE_C_COMPILER=icx" in configure[0]
-    assert "-DCMAKE_CXX_COMPILER=icpx" in configure[0]
-    assert configure[1]["env"] == build_env
-    build = next(entry for entry in commands if entry[0][:2] == ["cmake", "--build"])
-    assert build[1]["env"] == build_env
-    assert build[0][-2:] == ["--parallel", "4"]
-
-
-def test_linux_source_install_falls_back_to_official_git_tags(monkeypatch, tmp_path):
-    runtime = tmp_path / "runtime"
-    commands, warnings = [], []
-    monkeypatch.setattr(llamacpp_install.shutil, "which", lambda _name: "/usr/bin/tool")
-    monkeypatch.setattr(
-        llamacpp_install, "fetch_llamacpp_release",
-        lambda: (_ for _ in ()).throw(ValueError("GitHub returned no releases")),
-    )
-    monkeypatch.setattr(
-        llamacpp_install, "fetch_latest_llamacpp_source_tag", lambda: "b10499",
-    )
-
-    def run(command, **_kwargs):
-        commands.append(command)
-        if command[:2] == ["git", "clone"]:
-            runtime.mkdir()
-        if command[:2] == ["cmake", "--build"]:
-            build = runtime / "build"
-            build.mkdir()
-            (build / "llama-server").touch()
-        return SimpleNamespace(returncode=0)
-
-    monkeypatch.setattr(llamacpp_install.subprocess, "run", run)
-    assert llamacpp_install.install(
-        runtime, tmp_path, "Linux", nvidia=False, rocm=False, intel_xpu=False,
-        compute_capability=None, max_cuda_version=None,
-        info=_log, warn=warnings.append, fail=_log, ok=_log,
-    )
-    clone = next(command for command in commands if command[:2] == ["git", "clone"])
-    configure = next(command for command in commands if command[:2] == ["cmake", "-B"])
-    assert clone[2:4] == ["--branch", "b10499"]
-    assert "-DLLAMA_BUILD_NUMBER=10499" in configure
-    assert any("GitHub releases" in message for message in warnings)
-
-
-def test_linux_intel_build_fails_without_oneapi(monkeypatch, tmp_path):
-    failures = []
-    monkeypatch.setattr(llamacpp_install.shutil, "which", lambda _name: "/usr/bin/tool")
-    monkeypatch.setattr(llamacpp_install, "oneapi_environment", lambda: None)
-    assert not llamacpp_install.install(
-        tmp_path / "runtime", tmp_path, "Linux",
-        nvidia=False, rocm=False, intel_xpu=True,
-        compute_capability=None, max_cuda_version=None,
-        info=_log, warn=_log, fail=failures.append, ok=_log,
-    )
-    assert failures == [
-        "Intel oneAPI environment is unavailable; SYCL llama.cpp cannot be built",
-    ]
-
-
 def test_installed_toolset_error_rejects_missing_managed_tools():
     assert "incomplete" in (llamacpp_install.installed_toolset_error(None, "cuda") or "")
 
@@ -543,3 +344,26 @@ def test_install_refuses_to_modify_a_symlinked_runtime(tmp_path, symlink_or_skip
     assert "Remove the symlink" in failures[0]
     assert marker.read_text() == "existing runtime"
     assert runtime.is_symlink()
+
+
+@pytest.mark.parametrize('system,nvidia,rocm,xpu,vulkan,backend', [
+    ('Linux', True, False, False, False, 'cuda'),
+    ('Linux', False, True, False, False, 'rocm'),
+    ('Linux', False, False, True, False, 'xpu'),
+    ('Linux', False, False, False, False, 'cpu'),
+    ('Linux', True, True, True, True, 'vulkan'),
+    ('Windows', False, False, True, False, 'xpu'),
+    ('Windows', True, False, False, False, 'cuda'),
+    ('Darwin', False, False, False, False, 'metal'),
+])
+def test_setup_uses_shared_release_installer(monkeypatch, tmp_path, system, nvidia, rocm, xpu, vulkan, backend):
+    calls = []
+    monkeypatch.setattr(llamacpp_install, 'rocm_version', lambda: (10, 0))
+    monkeypatch.setattr(llamacpp_install, 'install_managed_llamacpp', lambda *a, **k:
+                        calls.append((a, k)) or SimpleNamespace(success=True, detail='installed'))
+    assert llamacpp_install.install(tmp_path/'runtime', tmp_path, system, nvidia=nvidia,
+        rocm=rocm, intel_xpu=xpu, compute_capability=None, max_cuda_version='13.0', vulkan=vulkan,
+        info=_log, warn=_log, fail=_log, ok=_log)
+    assert calls[0][0][1] == system
+    assert calls[0][0][3] == backend
+    assert calls[0][1]['max_cuda_version'] == '13.0'

@@ -13,9 +13,10 @@ from scripts.runtime.llamacpp_tools import find_llamacpp_tool
 from scripts.setup.model_compatibility import ModelCompatibility, probe_llamacpp_load
 from scripts.setup.runtime_update import (
     RuntimeUpdateResult, detect_nvidia_max_cuda_version, fetch_llamacpp_release,
-    fetch_llamacpp_release_tag, rebuild_managed_llamacpp, update_macos_llamacpp,
-    update_managed_vllm, update_windows_llamacpp,
+    fetch_llamacpp_release_tag, update_managed_vllm,
 )
+from scripts.setup.managed_llamacpp import install_managed_llamacpp
+from scripts.setup.setup_discovery import rocm_version
 from scripts.setup.directory_transaction import (
     DirectorySwapError, DirectorySwapSpec, swap_staged_directories,
 )
@@ -66,23 +67,12 @@ class EngineUpdateActions:
                 candidate = target.with_name(f".{target.name}-family-stage-{token}")
                 candidate.mkdir(parents=True)
                 staged_runtimes.append((status, target, candidate))
-                if platform.system() == "Darwin":
-                    result = update_macos_llamacpp(
-                        candidate, platform.machine(), control=control,
-                        release_fetcher=selected_release,
-                    )
-                elif platform.system() == "Windows":
-                    result = update_windows_llamacpp(
-                        candidate, detect_nvidia_max_cuda_version(), control=control,
-                        release_fetcher=selected_release,
-                        intel_xpu=status.engine == "llamacpp" and self.hardware_backend == "xpu",
-                        vulkan=status.engine == "llamacpp-vulkan",
-                    )
-                else:
-                    result = rebuild_managed_llamacpp(
-                        candidate, status.backend, control=control, log=control.log,
-                        release_fetcher=selected_release,
-                    )
+                result = install_managed_llamacpp(
+                    candidate, platform.system(), platform.machine(), status.backend,
+                    control=control, log=control.log, release_fetcher=selected_release,
+                    max_cuda_version=detect_nvidia_max_cuda_version() if status.backend == "cuda" else None,
+                    rocm_version=rocm_version() if status.backend == "rocm" else None,
+                )
                 if not result.success:
                     return RuntimeUpdateResult(
                         False, f"{status.engine} staging failed; no runtime was replaced: "

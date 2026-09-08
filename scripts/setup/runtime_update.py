@@ -242,6 +242,8 @@ def llamacpp_cmake_flags(backend: str, *, nvcc: str | None = None,
         if architecture:
             flags.append(f"-DCMAKE_CUDA_ARCHITECTURES={architecture}")
         return flags
+    if backend == "metal":
+        return ["-DGGML_METAL=ON"]
     if backend == "rocm":
         return ["-DGGML_HIP=ON"]
     if backend == "xpu":
@@ -271,14 +273,15 @@ def validate_llamacpp_build(source_dir: Path, *, required_backend: str | None = 
                             env=None, run=subprocess.run) -> RuntimeUpdateResult:
     tools = {}
     for name in LLAMACPP_TARGETS:
-        matches = [path for path in source_dir.rglob(name) if path.is_file()]
+        matches = [path for suffix in (name, f"{name}.exe")
+                   for path in source_dir.rglob(suffix) if path.is_file()]
         if not matches:
             return RuntimeUpdateResult(False, f"Staged llama.cpp build is missing {name}.")
         tools[name] = matches[0]
     try:
         result = run(
             [str(tools["llama-server"]), "--version"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=30, env=env,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return RuntimeUpdateResult(False, f"Staged llama.cpp validation failed: {exc}")
@@ -601,8 +604,6 @@ def rebuild_managed_llamacpp(target: Path, backend: str, *, log=print,
     target = Path(target)
     if not target.is_dir():
         return RuntimeUpdateResult(False, f"Managed llama.cpp checkout does not exist: {target}")
-    if os_name == "nt":
-        return RuntimeUpdateResult(False, "Managed Windows release updates are not available yet.")
     nvcc = find_nvcc() if backend == "cuda" else None
     if backend == "cuda" and nvcc is None:
         return RuntimeUpdateResult(False, "CUDA rebuild requires nvcc; the current runtime was preserved.")

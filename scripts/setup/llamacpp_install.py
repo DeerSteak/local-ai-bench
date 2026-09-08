@@ -2,20 +2,19 @@
 
 import platform
 import shutil
-import subprocess
 from pathlib import Path
 
 from scripts.runtime.llamacpp_tools import (
-    cuda_architecture, find_llamacpp_tool, find_nvcc, llamacpp_backend_error,
+    find_llamacpp_tool, llamacpp_backend_error,
     llamacpp_backend_mismatch, managed_llamacpp_tools,
 )
 from scripts.setup.archive_safety import safe_extract_zip
-from scripts.setup.intel_xpu_install import oneapi_environment
 from scripts.setup.resumable_download import download_file
+from scripts.setup.managed_llamacpp import install_managed_llamacpp
+from scripts.setup.setup_discovery import rocm_version
 from scripts.setup.runtime_update import (
-    fetch_latest_llamacpp_source_tag, fetch_llamacpp_release, fetch_llamacpp_release_tag,
-    llamacpp_build_parallel_args, llamacpp_clone_command, llamacpp_source_release,
-    select_windows_llamacpp_release, update_macos_llamacpp, update_windows_llamacpp,
+    fetch_llamacpp_release, fetch_llamacpp_release_tag,
+    select_windows_llamacpp_release, update_windows_llamacpp,
 )
 
 
@@ -124,118 +123,19 @@ def install(runtime_dir: Path, download_dir: Path, platform_name: str, *,
         fail(f"Managed runtime directory is an external symlink: {runtime_dir}. "
              "Remove the symlink and rerun Setup to install a project-owned copy.")
         return False
-    release_fetcher = (lambda: fetch_llamacpp_release_tag(version)) if version else None
-    if platform_name == "Darwin":
-        if vulkan:
-            fail("The managed Vulkan llama.cpp runtime is available only on Windows and Linux")
-            return False
-        label = version or "latest"
-        info(f"Downloading the {label} official llama.cpp macOS release ...")
-        if release_fetcher:
-            result = update_macos_llamacpp(
-                runtime_dir, platform.machine(), release_fetcher=release_fetcher,
-            )
-        else:
-            result = update_macos_llamacpp(runtime_dir, platform.machine())
-        if not result.success:
-            fail(result.detail)
-        return result.success
-    if platform_name == "Windows":
-        return install_windows(
-            runtime_dir, download_dir, max_cuda_version,
-            intel_xpu=intel_xpu, vulkan=vulkan,
-            info=info, warn=warn, fail=fail, ok=ok, release_fetcher=release_fetcher,
-        )
-    if platform_name != "Linux":
+    if platform_name not in {"Darwin", "Windows", "Linux"}:
         return False
-    if not shutil.which("git") or not shutil.which("cmake"):
-        fail("git and cmake are required to build llama.cpp from source")
+    if vulkan and platform_name == "Darwin":
+        fail("The managed Vulkan llama.cpp runtime is available only on Windows and Linux")
         return False
-    flags = []
-    build_env = None
-    backend = "cpu"
-    if vulkan:
-        backend = "vulkan"
-        info("Building with Vulkan support ...")
-        flags.append("-DGGML_VULKAN=ON")
-    elif nvidia:
-        backend = "cuda"
-        nvcc = find_nvcc()
-        if nvcc:
-            info(f"Building with CUDA support ({nvcc}) ...")
-            flags += ["-DGGML_CUDA=ON", f"-DCMAKE_CUDA_COMPILER={nvcc}"]
-            architecture = cuda_architecture(compute_capability)
-            if architecture:
-                flags.append(f"-DCMAKE_CUDA_ARCHITECTURES={architecture}")
-            else:
-                warn("Could not read this GPU's compute capability")
-        else:
-            warn("NVIDIA GPU detected but the CUDA toolkit is missing; building CPU-only")
-    elif rocm:
-        backend = "rocm"
-        info("Building with ROCm/HIP support ...")
-        flags.append("-DGGML_HIP=ON")
-    elif intel_xpu:
-        backend = "xpu"
-        build_env = oneapi_environment()
-        if build_env is None:
-            fail("Intel oneAPI environment is unavailable; SYCL llama.cpp cannot be built")
-            return False
-        info("Building with Intel oneAPI/SYCL support ...")
-        flags += [
-            "-DGGML_SYCL=ON", "-DCMAKE_C_COMPILER=icx", "-DCMAKE_CXX_COMPILER=icpx",
-        ]
-    else:
-        info("No GPU backend detected — building CPU-only ...")
-    if runtime_dir.exists():
-        info("Updating existing llama.cpp checkout ...")
-        if subprocess.run(["git", "pull"], cwd=str(runtime_dir)).returncode != 0:
-            warn("git pull failed — building from the existing checkout as-is")
-    else:
-        info("Cloning llama.cpp ...")
-        try:
-            release = release_fetcher() if release_fetcher else fetch_llamacpp_release()
-            tag, build_number = llamacpp_source_release(release)
-        except Exception as exc:
-            if release_fetcher:
-                fail(f"Could not resolve the requested llama.cpp source release: {exc}")
-                return False
-            warn(f"Could not resolve llama.cpp through GitHub releases: {exc}")
-            info("Falling back to the latest official llama.cpp Git tag ...")
-            try:
-                tag = fetch_latest_llamacpp_source_tag()
-                build_number = tag[1:]
-            except Exception as tag_exc:
-                fail(f"Could not resolve the latest llama.cpp source tag: {tag_exc}")
-                return False
-        if subprocess.run(llamacpp_clone_command(runtime_dir, tag)).returncode != 0:
-            fail("git clone failed")
-            return False
-        flags.append(f"-DLLAMA_BUILD_NUMBER={build_number}")
-    build_dir = runtime_dir / "build"
-    info(f"Configuring build ({' '.join(flags) or 'CPU-only'}) ...")
-    if subprocess.run(
-            ["cmake", "-B", str(build_dir), "-S", str(runtime_dir), *flags],
-            env=build_env).returncode:
-        fail("cmake configure failed")
-        return False
-    info("Building llama-server, llama-bench, and llama-batched-bench ...")
-    parallel_args = llamacpp_build_parallel_args(backend)
-    if backend == "xpu":
-        info(f"Intel SYCL build parallelism: {parallel_args[-1]} job(s)")
-    command = [
-        "cmake", "--build", str(build_dir), "--target", "llama-server",
-        "--target", "llama-bench", "--target", "llama-batched-bench",
-        "--config", "Release", *parallel_args,
-    ]
-    if subprocess.run(command, env=build_env).returncode:
-        fail("Build failed")
-        return False
-    if not any(build_dir.rglob("llama-server")):
-        fail(f"Build finished but llama-server wasn't found under {build_dir}")
-        return False
-    if not any(build_dir.rglob("llama-bench")):
-        warn(f"Build finished but llama-bench wasn't found under {build_dir}")
-    if not any(build_dir.rglob("llama-batched-bench")):
-        warn(f"Build finished but llama-batched-bench wasn't found under {build_dir}")
-    return True
+    backend = ("vulkan" if vulkan else "metal" if platform_name == "Darwin"
+               else "cuda" if nvidia else "rocm" if rocm else "xpu" if intel_xpu
+               else "vulkan" if platform_name == "Windows" else "cpu")
+    release_fetcher = (lambda: fetch_llamacpp_release_tag(version)) if version else fetch_llamacpp_release
+    result = install_managed_llamacpp(
+        runtime_dir, platform_name, platform.machine(), backend,
+        release_fetcher=release_fetcher, max_cuda_version=max_cuda_version,
+        rocm_version=rocm_version() if rocm else None, log=info, warn=warn,
+    )
+    (ok if result.success else fail)(result.detail)
+    return result.success

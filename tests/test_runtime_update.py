@@ -704,3 +704,28 @@ def test_rebuild_managed_llamacpp_rolls_back_when_final_path_validation_fails(tm
     assert "prior checkout was preserved" in result.detail
     assert marker.exists()
     assert not (target / "build" / "bin" / "llama-server").exists()
+
+
+def test_windows_source_fallback_builds_and_validates_executables(tmp_path):
+    target = tmp_path / 'runtime'
+    target.mkdir()
+    commands = []
+    def run(command, **kwargs):
+        commands.append(command)
+        if command[:2] == ['git', 'clone']:
+            root = Path(command[-1])
+            root.mkdir()
+            for name in ('llama-server', 'llama-bench', 'llama-batched-bench'):
+                (root / f'{name}.exe').touch()
+        output = 'version: 0.4.0 (build 10809, commit 5266f24)' if '--version' in command else ''
+        return SimpleNamespace(returncode=0, stdout=output, stderr='')
+    result = rebuild_managed_llamacpp(target, 'cpu', run=run, os_name='nt',
+                                      release_fetcher=lambda: {'tag_name':'b10809'}, log=lambda _:None)
+    assert result.success
+    assert result.version == '10809'
+    assert (target/'llama-server.exe').exists()
+    assert any('-DLLAMA_BUILD_NUMBER=10809' in command for command in commands)
+
+
+def test_metal_source_build_explicitly_enables_metal():
+    assert llamacpp_cmake_flags('metal') == ['-DGGML_METAL=ON']
