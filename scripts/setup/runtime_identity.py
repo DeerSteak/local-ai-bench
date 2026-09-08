@@ -42,6 +42,7 @@ def runtime_ownership(location: str | Path | None, managed_root: Path) -> str:
 def parse_runtime_version(output: str | None) -> str | None:
     text = (output or "").strip()
     patterns = (
+        r"(?im)^version\s*:\s*\S+\s+\(build\s+(\d+),\s*commit\s+[0-9a-f]{7,40}\)",
         r"(?im)^vllm\s+([0-9]+(?:\.[0-9A-Za-z+-]+)+)\s*$",
         r"(?im)^version\s*:\s*([^\s]+)",
         r"(?i)\bversion\s+v?([0-9]+(?:\.[0-9A-Za-z+-]+)+)",
@@ -55,7 +56,8 @@ def parse_runtime_version(output: str | None) -> str | None:
 
 
 def parse_llamacpp_commit(output: str | None) -> str | None:
-    match = re.search(r"\(([0-9a-f]{7,40})\)", output or "", re.IGNORECASE)
+    match = re.search(r"\((?:build\s+\d+,\s*commit\s+)?([0-9a-f]{7,40})\)",
+                      output or "", re.IGNORECASE)
     return match.group(1).lower() if match else None
 
 
@@ -77,6 +79,11 @@ def managed_distribution_version(managed_root: Path, distribution: str) -> str |
 def source_commit_version(identity: RuntimeIdentity, managed_root: Path, *,
                           run=subprocess.run) -> str | None:
     """Prefer a sortable commit identity for a managed llama.cpp source build."""
+    if re.search(r"\(build\s+\d+,\s*commit\s+[0-9a-f]{7,40}\)",
+                 identity.version_output, re.IGNORECASE):
+        version = parse_runtime_version(identity.version_output)
+        if version and version.isdigit() and int(version) > 1:
+            return version
     if not identity.managed or not (Path(managed_root) / ".git").exists():
         return identity.version
     try:

@@ -174,3 +174,14 @@ def test_external_vllm_status_uses_health_when_version_is_unavailable(tmp_path):
     assert ready.health == "ready" and ready.version is None
     assert offline.health == "unavailable"
     assert any("/health" in warning for warning in offline.warnings)
+
+
+def test_modern_llamacpp_status_uses_embedded_build_number(tmp_path):
+    status = build_llamacpp_status(
+        tmp_path / 'llama-server', tmp_path, 'rocm',
+        run=lambda *a, **k: SimpleNamespace(returncode=0, stdout='',
+            stderr='version: 0.4.0-dev (build 10840, commit 73ab759)'),
+    )
+    assert status.version == '10840'
+    assert status.components['build_number'] == '10840'
+    assert status.health == 'ready'
