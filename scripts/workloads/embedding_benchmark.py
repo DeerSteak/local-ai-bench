@@ -92,6 +92,7 @@ class EmbeddingBenchmark:
                 if journal and attempt_number is None:
                     results = journal.export()
                     continue
+                Shared.verify_resume_model(journal, model, engine)
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
                     Shared.warn("Download it with: python setup_check.py")

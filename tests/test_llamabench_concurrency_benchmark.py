@@ -437,6 +437,8 @@ def test_run_records_entries_and_sweep_shape_on_success(fake_engine, monkeypatch
 def test_run_uses_only_journal_pending_cells_on_resume(fake_engine, monkeypatch):
     captured = []
 
+    monkeypatch.setattr(Shared, "verify_resume_model", lambda *_args: None)
+
     class Journal:
         def __init__(self): self.entries = []
         def export(self):

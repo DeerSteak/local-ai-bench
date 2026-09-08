@@ -36,6 +36,12 @@ FORK_METADATA_KEYS = {
 }
 
 
+def _log_identity_progress(path, completed, total):
+    gib = 1024 ** 3
+    percent = completed * 100 / total if total else 100
+    Shared.log(f"Verifying {path.name}: {completed / gib:.2f}/{total / gib:.2f} GiB ({percent:.0f}%)")
+
+
 def _finish_result(store, data, status, reason=None):
     apply_pause_evidence(data["run"])
     store.finish(status, reason)
@@ -86,11 +92,14 @@ def resume_journal_run(result_path, *, identity_builder=None,
             "saved plan contains stages without durable recovery: " + ", ".join(unsupported)
         )
     journal_path = event_store_path(result_path)
-    identity = (current_resume_identity_for_result(result_path, plan)
+    Shared.log("Checking recovery plan, runtimes, and inputs; model weights will be verified before each model runs.")
+    identity = (current_resume_identity_for_result(result_path, plan, progress=_log_identity_progress)
                 if identity_builder is None else identity_builder(plan))
+    Shared.log("Runtime and input checks complete; checking journal eligibility ...")
     inspection = inspect_recovery(result_path, lambda _plan: identity)
     if not inspection["can_resume"]:
         raise ValueError("fork required: " + "; ".join(inspection["reasons"]))
+    Shared.ok("Recovery identity verified; resuming unfinished stages")
     journal = EventStore(journal_path)
     try:
         journal.resume_job(plan.job_id)
@@ -151,8 +160,10 @@ def retry_selected_cases(result_path, case_ids, *, identity_builder=None,
         raise ValueError("select at least one retry-eligible case")
     plan = load_run_plan(result_path)
     journal_path = event_store_path(result_path)
-    identity = (current_resume_identity_for_result(result_path, plan)
+    Shared.log("Checking recovery plan, runtimes, and inputs; model weights will be verified before each model runs.")
+    identity = (current_resume_identity_for_result(result_path, plan, progress=_log_identity_progress)
                 if identity_builder is None else identity_builder(plan))
+    Shared.log("Runtime and input checks complete; checking journal eligibility ...")
     inspection = inspect_recovery(result_path, lambda _plan: identity)
     if not inspection["can_resume"]:
         raise ValueError("fork required: " + "; ".join(inspection["reasons"]))
@@ -226,7 +237,8 @@ def fork_journal_run(source_path, output_path, *, identity_builder=None,
         effective_config=source_plan.effective_config,
     )
     source_journal = event_store_path(source_path)
-    identity = (current_resume_identity(source_plan, event_path=source_journal)
+    Shared.log("Preparing fork identity: discovering runtimes and hashing model files; no inference yet.")
+    identity = (current_resume_identity(source_plan, event_path=source_journal, progress=_log_identity_progress)
                 if identity_builder is None else identity_builder(plan))
     if "img" in plan.stage_order:
         source_context = load_local_execution_context(source_journal, source_plan.job_id)

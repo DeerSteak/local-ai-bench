@@ -426,6 +426,7 @@ class ImageBenchmark:
             telemetry_active = False
             segment_work = 0
             try:
+                Shared.verify_resume_model(journal, model)
                 ckpt_path = image_checkpoint_path(model, config.COMFYUI_MODELS_DIR)
                 if not ckpt_path.exists():
                     Shared.warn(f"{label}: checkpoint not found at {ckpt_path} — skipping")

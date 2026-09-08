@@ -36,6 +36,8 @@ def format_recovery_inspection(report: dict) -> str:
         f"Decision: {report['action'].upper()}", f"Plan: {report['plan_id']}",
         f"Interrupted attempts: {report['interrupted_attempts']}", "", "Stages:",
     ]
+    if report.get("model_verification") == "before_load":
+        lines.insert(2, "Model weights: verified before each model runs, not during this inspection.")
     lines += [f"  {stage}: {state}" for stage, state in report["stage_states"].items()]
     lines += ["", "Cases:"]
     lines += [f"  {state}: {count}" for state, count in report["case_counts"].items()]

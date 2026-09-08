@@ -114,6 +114,7 @@ class LLMPrefillBenchmark:
                     if attempt_number is None:
                         Shared.log(f"Context {label_ctx} already complete — preserving it")
                         continue
+                    Shared.verify_resume_model(journal, model, engine)
                     server_ctx = LLMPrefillBenchmark.prefill_server_ctx(
                         ctx_len, model_max, engine.generation_prompt_headroom(),
                     )

@@ -62,6 +62,7 @@ def test_run_attaches_case_telemetry_after_measured_embedding(monkeypatch):
         def ensure_running(self): return True
         def reachable_or_abort(self): return True
         def model_pulled(self, _tag): return True
+        def resume_artifact_paths(self, _tag): return ()
         def embed(self, _tag, chunks): return EmbeddingMeasurement([[1.0]] * len(chunks), 0.5)
         def is_connection_crash(self, _exc): return False
 
@@ -126,6 +127,7 @@ def test_journal_resume_reruns_only_unfinished_embedding_models(
         def ensure_running(self): return True
         def reachable_or_abort(self): return True
         def model_pulled(self, _tag): return True
+        def resume_artifact_paths(self, _tag): return ()
         def is_connection_crash(self, _exc): return False
 
         def embed(self, tag, _chunks):

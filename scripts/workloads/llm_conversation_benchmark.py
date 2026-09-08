@@ -151,6 +151,9 @@ class LLMConversationBenchmark:
                 Shared.log(f"{label}: model supports {model_max} ctx — num_ctx={num_ctx}, "
                            f"sampling up to {top_checkpoint} ({len(checkpoints)} checkpoints)")
 
+                if journal and all(journal.next_context_attempt(model, target) is None for target in checkpoints):
+                    continue
+                Shared.verify_resume_model(journal, model, engine)
                 if journal:
                     journal.begin_model_load()
                 if not engine.warmup(tag, label, num_ctx, warmup_runs,

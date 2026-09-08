@@ -289,3 +289,49 @@ def test_installing_a_model_later_changes_the_identity(tmp_path):
     before = build_engine_resume_identity(plan, Engine(False), model_families=["llm"])
     after = build_engine_resume_identity(plan, Engine(True), model_families=["llm"])
     assert before["artifacts"] != after["artifacts"]
+
+
+@pytest.mark.parametrize("content", [b"", b"small", b"x" * (3 * 1024 * 1024)])
+def test_hash_progress_preserves_digest_and_reports_bytes(tmp_path, monkeypatch, content):
+    from scripts.results import resume_policy
+
+    path = tmp_path / "model.gguf"
+    path.write_bytes(content)
+    expected = file_identity(path)
+    events = []
+    ticks = iter(range(0, 100, 6))
+    monkeypatch.setattr(resume_policy.time, "monotonic", lambda: next(ticks))
+    assert file_identity(path, lambda *event: events.append(event)) == expected
+    assert events[0] == (path, 0, len(content))
+    assert events[-1] == (path, len(content), len(content))
+    assert [event[1] for event in events] == sorted(event[1] for event in events)
+    if len(content) > 1024 * 1024:
+        assert any(0 < event[1] < len(content) for event in events)
+
+
+def test_hash_progress_is_throttled_and_propagated_to_artifacts_and_runtimes(tmp_path, monkeypatch):
+    from scripts.results import resume_policy
+
+    path = tmp_path / "model.gguf"
+    path.write_bytes(b"x" * (3 * 1024 * 1024))
+    monkeypatch.setattr(resume_policy.time, "monotonic", lambda: 0)
+    events = []
+    build_resume_identity(make_plan(), artifacts={"model": path}, runtimes={"runtime": path},
+                          methodology={}, progress=lambda *event: events.append(event))
+    assert [event[1] for event in events] == [0, path.stat().st_size, 0, path.stat().st_size]
+
+
+def test_deferred_models_preserve_saved_hashes_without_reading_weights(tmp_path):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    runtime = tmp_path / "server"
+    runtime.write_bytes(b"runtime")
+    engine = SimpleNamespace(model_pulled=Mock(side_effect=AssertionError("model discovery")),
+                             resume_runtime_paths=lambda: {"server": runtime})
+    saved = {"model:model:4b:part1": {"sha256": "saved", "size": 999},
+             "image:img:checkpoint": {"sha256": "image", "size": 888}}
+    identity = build_engine_resume_identity(make_plan(), engine, model_families=["llm"],
+                                            deferred_artifacts=saved, use_digest_cache=False)
+    assert identity["artifacts"] == saved
+    assert identity["runtimes"]["server"] == file_identity(runtime)

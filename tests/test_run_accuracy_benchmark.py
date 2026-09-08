@@ -21,6 +21,9 @@ class FakeEngine(InferenceEngine):
 
     name = "fake"
 
+    def resume_artifact_paths(self, tag):
+        return ()
+
     def __init__(self, behaviors: dict[str, tuple[str, str]],
                  tool_behaviors: dict[str, tuple] | None = None):
         # marker -> (kind, text): kind in {"ok","timeout","loop","crash"}

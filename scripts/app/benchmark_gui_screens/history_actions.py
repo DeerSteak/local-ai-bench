@@ -232,7 +232,7 @@ class HistoryActions:
         except ValueError as exc:
             self.messagebox.showerror("Recovery selection", str(exc), parent=self.root)
             return
-        self.screen.message.set(f"Verifying recovery identity for {result_path.name}…")
+        self.screen.message.set(f"Checking recovery plan and runtimes for {result_path.name}…")
 
         def worker():
             try:

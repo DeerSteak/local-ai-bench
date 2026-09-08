@@ -527,6 +527,8 @@ def test_run_preserves_rows_streamed_before_same_sweep_times_out(
 
 def test_run_journal_commits_each_row_before_same_sweep_timeout(
         fake_engine, monkeypatch, small_matrix):
+    monkeypatch.setattr(Shared, "verify_resume_model", lambda *_args: None)
+
     class Journal:
         def __init__(self):
             self.entries = []

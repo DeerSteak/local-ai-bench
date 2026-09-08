@@ -271,6 +271,7 @@ class LlamaBenchConcurrencyBenchmark:
 
                 try:
                     for sweep_tg, sweep_npl in sweeps:
+                        Shared.verify_resume_model(journal, model, engine)
                         wait_if_paused()
                         if journal:
                             journal.begin_measured("measured:native-sweep-includes-load")

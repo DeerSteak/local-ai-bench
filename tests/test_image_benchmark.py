@@ -253,6 +253,7 @@ def test_run_attaches_model_memory_with_resolution_subwindows(monkeypatch, tmp_p
     checkpoint_dir = tmp_path / "checkpoints"
     checkpoint_dir.mkdir()
     (checkpoint_dir / "model.safetensors").write_bytes(b"model")
+
     monkeypatch.setattr(config, "COMFYUI_MODELS_DIR", tmp_path)
     monkeypatch.setattr(config, "N_RUNS", 1)
     monkeypatch.setattr(ImageBenchmark, "comfyui_submit", staticmethod(lambda *_a, **_k: (1.0, [])))
@@ -381,6 +382,9 @@ def test_journal_resume_reruns_only_unfinished_image_resolutions(
     checkpoint_dir = tmp_path / "checkpoints"
     checkpoint_dir.mkdir()
     (checkpoint_dir / "model.safetensors").write_bytes(b"model")
+
+    from scripts.results.resume_policy import file_identity
+    identity["artifacts"] = {"image:image:checkpoint": file_identity(checkpoint_dir / "model.safetensors")}
     monkeypatch.setattr(config, "COMFYUI_MODELS_DIR", tmp_path)
     monkeypatch.setattr(config, "N_RUNS", 1)
     monkeypatch.setattr(ImageBenchmark, "comfyui_free_models", staticmethod(lambda: None))
@@ -447,6 +451,7 @@ def test_journal_commits_content_addressed_png_after_visible_save(monkeypatch, t
     checkpoint_dir = tmp_path / "checkpoints"
     checkpoint_dir.mkdir()
     (checkpoint_dir / "model.safetensors").write_bytes(b"model")
+
     monkeypatch.setattr(config, "COMFYUI_MODELS_DIR", tmp_path)
     monkeypatch.setattr(config, "N_RUNS", 1)
     monkeypatch.setattr(
@@ -477,3 +482,61 @@ def test_journal_commits_content_addressed_png_after_visible_save(monkeypatch, t
     digest = case["artifact"]["sha256"]
     assert (images_dir / ".artifacts" / digest[:2] / digest[2:]).is_file()
     stage.close()
+
+
+def test_resume_does_not_hash_or_load_completed_image_model(monkeypatch, tmp_path):
+    from scripts.results.resume_policy import file_identity
+
+    models = [{"label": name, "short": name, "checkpoint": f"{name}.safetensors",
+               "workflow": "sdxl", "steps": 1, "cfg": 1.0, "sampler": "euler",
+               "scheduler": "normal", "resolutions": [(64, 64)]} for name in ("done", "pending")]
+    plan = RunPlan.create(
+        application_version="6.0", engine_name="fake", tests=["img"], stage_order=["img"],
+        models={"llm": [], "embeddings": [], "concurrency": [],
+                "images": [{"short": m["short"]} for m in models]},
+        effective_config={"runs": 1, "warmup_runs": 0, "cpu_only": False, "force_all": False},
+    )
+    (tmp_path / "checkpoints").mkdir()
+    artifacts = {}
+    for model in models:
+        checkpoint = tmp_path / "checkpoints" / model["checkpoint"]
+        checkpoint.write_bytes(b"original")
+        artifacts[f"image:{model['short']}:checkpoint"] = file_identity(checkpoint)
+    identity = {"plan_id": plan.plan_id, "artifacts": artifacts, "runtimes": {}, "methodology": {}}
+    monkeypatch.setattr(config, "COMFYUI_MODELS_DIR", tmp_path)
+    monkeypatch.setattr(config, "N_RUNS", 1)
+    monkeypatch.setattr(ImageBenchmark, "comfyui_free_models", lambda: None)
+    monkeypatch.setattr("scripts.workloads.image_benchmark.wait_if_paused", lambda: None)
+    calls = []
+
+    def submit(workflow, **kwargs):
+        prefix = next(n["inputs"]["filename_prefix"] for n in workflow.values() if n["class_type"] == "SaveImage")
+        calls.append(prefix)
+        if prefix.startswith("pending"):
+            raise KeyboardInterrupt
+        return 1.0, []
+
+    monkeypatch.setattr(ImageBenchmark, "comfyui_submit", submit)
+    path = tmp_path / "events.sqlite3"
+    first = ImageEventStage(path, plan, lambda _: None, resume_identity=identity)
+    with pytest.raises(KeyboardInterrupt):
+        ImageBenchmark().run(models, [(64, 64)], 1, "prompt", tmp_path, journal=first)
+    first.close()
+    (tmp_path / "checkpoints" / "done.safetensors").write_bytes(b"changed completed model")
+    calls.clear()
+    monkeypatch.setattr(ImageBenchmark, "comfyui_submit", lambda wf, **kw: (1.0, []))
+    checked = []
+    real_hash = file_identity
+
+    def tracking_hash(path, progress=None):
+        checked.append(path.name)
+        return real_hash(path, progress=progress)
+
+    monkeypatch.setattr("scripts.results.model_verification.file_identity", tracking_hash)
+    resumed = ImageEventStage(path, plan, lambda _: None, resume_identity=identity, resume=True)
+    try:
+        result = ImageBenchmark().run(models, [(64, 64)], 1, "prompt", tmp_path, journal=resumed)
+        assert set(result) == {"done", "pending"}
+        assert checked == ["pending.safetensors"]
+    finally:
+        resumed.close()

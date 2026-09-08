@@ -160,6 +160,7 @@ class ConcurrencyBenchmark:
                     Shared.log(f"{label}: preparing {level}-way concurrency at "
                                f"{per_request_context} tokens/slot ...")
 
+                    Shared.verify_resume_model(journal, model, engine)
                     if journal:
                         journal.begin_model_load()
                     if not engine.prepare_concurrency(

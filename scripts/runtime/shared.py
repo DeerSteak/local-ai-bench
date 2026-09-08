@@ -329,6 +329,16 @@ class Shared:
         return Shared._tail_log(Shared._comfyui_log_path, "ComfyUI", n_lines)
 
     @staticmethod
+    def verify_resume_model(journal, model, engine=None):
+        from scripts.results.model_verification import verify_resume_model
+
+        def progress(path, completed, total):
+            percent = completed * 100 / total if total else 100
+            Shared.log(f"Verifying {path.name}: {completed / 1024**3:.2f}/{total / 1024**3:.2f} GiB ({percent:.0f}%)")
+
+        verify_resume_model(journal, model, engine, progress=progress)
+
+    @staticmethod
     def find_comfyui_python(comfyui_dir: Path) -> str:
         """Return the selected installation's Python environment."""
         return find_comfyui_python(comfyui_dir)
@@ -847,6 +857,7 @@ class Shared:
                     results = journal.export_results()
                     answers_out = journal.export_answers()
                     continue
+                Shared.verify_resume_model(journal, model, engine)
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not downloaded — skipping")
                     Shared.warn("Download it with: python setup_check.py")

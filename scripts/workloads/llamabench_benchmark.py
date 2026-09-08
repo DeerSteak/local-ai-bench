@@ -285,6 +285,7 @@ class LlamaBenchBenchmark:
                     ("decode", model_pp, config.LLAMABENCH_TG),
                 ])
                 for sweep, pending_pp, pending_tg in sweeps:
+                    Shared.verify_resume_model(journal, model, engine)
                     wait_if_paused()
                     command = (
                         self.build_prefill_command(

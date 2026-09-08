@@ -273,3 +273,12 @@ def test_retryable_case_records_are_ordered_and_exclude_completed_cases(tmp_path
         {"case_id": "case_llm", "stage": "llm", "state": "invalid",
          "model": "model", "label": "model · 8K"},
     ]
+
+
+def test_inspection_explains_deferred_model_verification(tmp_path):
+    from scripts.app.recovery_actions import format_recovery_inspection
+
+    result, _, identity = make_result(tmp_path)
+    report = inspect_recovery(result, lambda _plan: identity)
+    assert report["model_verification"] == "before_load"
+    assert "not during this inspection" in format_recovery_inspection(report)

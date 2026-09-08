@@ -282,6 +282,7 @@ class VllmBenchBenchmark:
                         ) if journal else 1
                         if attempt_number is None:
                             continue
+                        Shared.verify_resume_model(journal, model, engine)
                         entry = None
                         case_memory = None
                         case_power = None

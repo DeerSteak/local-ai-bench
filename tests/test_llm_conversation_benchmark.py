@@ -213,3 +213,27 @@ def test_ctx_plan_cap_below_first_nonzero_checkpoint_keeps_opening_checkpoint():
     assert target_ctx == 512
     assert checkpoints == [0]
     assert num_ctx == 512 + Conv.CONV_CTX_HEADROOM
+
+
+def test_completed_conversation_model_is_not_verified_or_loaded(monkeypatch):
+    from unittest.mock import Mock
+    from scripts.runtime.shared import Shared
+
+    model = {"tag": "m", "short": "m", "label": "Model"}
+    monkeypatch.setattr("scripts.workloads.llm_conversation_benchmark.load_crash_cache", lambda _: {})
+    monkeypatch.setattr("scripts.workloads.llm_conversation_benchmark.check_crash_cache", lambda *a, **k: None)
+    check = Mock()
+    monkeypatch.setattr(Shared, "verify_resume_model", check)
+    for pending in (False, True):
+        engine = Mock(name="engine")
+        engine.name = "fake"
+        engine.max_context_length.return_value = 8192
+        engine.warmup.return_value = False
+        journal = Mock()
+        journal.export.return_value = {"m": {"preserved": True}}
+        journal.next_context_attempt.return_value = 1 if pending else None
+        check.reset_mock()
+        Conv().run(engine, [model], 0, journal=journal)
+        assert check.call_count == int(pending)
+        assert engine.warmup.call_count == int(pending)
+        journal.record_model_state.assert_not_called()

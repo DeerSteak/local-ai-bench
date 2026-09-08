@@ -145,6 +145,7 @@ class SustainedBenchmark:
             case_started = False
             telemetry_finished = False
             try:
+                Shared.verify_resume_model(journal, model, engine)
                 if not engine.model_pulled(tag):
                     Shared.warn(f"{tag} not pulled — skipping")
                     continue
