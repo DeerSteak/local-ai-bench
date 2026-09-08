@@ -540,3 +540,28 @@ def test_resume_does_not_hash_or_load_completed_image_model(monkeypatch, tmp_pat
         assert checked == ["pending.safetensors"]
     finally:
         resumed.close()
+
+
+@pytest.mark.parametrize("managed,basis,expected", [
+    (False, "process_rss_gb", "unknown"),
+    (True, "process_rss_gb", "comfortable"),
+    (False, "accelerator_memory_used_gb", "comfortable"),
+])
+def test_external_image_process_cannot_claim_process_based_headroom(managed, basis, expected):
+    from scripts.workloads.image_benchmark import image_memory_evidence
+
+    memory = {"headroom": {"basis_channel": basis, "absolute_gb": 100,
+                           "fraction": .9, "state": "comfortable"},
+              "summary": {"process_rss_gb": {"peak_gb": .1}}}
+    result = image_memory_evidence(memory, managed)
+    assert result["headroom"]["state"] == expected
+    assert result["summary"] == memory["summary"]
+    if expected == "unknown":
+        assert result["headroom"]["absolute_gb"] is None
+        assert result["headroom"]["fraction"] is None
+    assert memory["headroom"]["state"] == "comfortable"
+
+
+def test_image_memory_without_headroom_remains_compatible():
+    from scripts.workloads.image_benchmark import image_memory_evidence
+    assert image_memory_evidence({}, False) == {}

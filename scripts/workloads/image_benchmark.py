@@ -15,6 +15,14 @@ from scripts.runtime.telemetry import add_power_efficiency
 from scripts.workloads.models import image_checkpoint_folder, image_checkpoint_path
 
 
+def image_memory_evidence(memory: dict, process_managed: bool) -> dict:
+    headroom = memory.get("headroom", {})
+    if not process_managed and headroom.get("basis_channel") == "process_rss_gb":
+        return {**memory, "headroom": {**headroom, "absolute_gb": None,
+                                       "fraction": None, "state": "unknown"}}
+    return memory
+
+
 def image_resume_artifacts(models: list[dict]) -> dict[str, Path]:
     """Return existing selected image inputs under path-free logical names."""
     artifacts = {}
@@ -553,7 +561,10 @@ class ImageBenchmark:
 
             finally:
                 if telemetry_active and telemetry:
-                    memory = telemetry.finish_case()
+                    process = Shared._comfyui_process
+                    memory = image_memory_evidence(
+                        telemetry.finish_case(), process is not None and process.poll() is None,
+                    )
                     if journal:
                         power = getattr(telemetry, "last_power", None)
                         journal.record_model_evidence(

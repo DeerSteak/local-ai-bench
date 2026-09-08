@@ -179,6 +179,8 @@ Measured generation results record requested, completed, and valid sample counts
 
 ## Image Generation
 
+When ComfyUI runs outside the benchmark process tree and accelerator memory is unavailable, process-based memory headroom is reported as unknown; observed client RSS and host memory remain available.
+
 Five models are tested at 1024×1024 and 1536×1536 — except Stable Diffusion 1.5, which uses 512×512 and 768×768 instead (see below). Any model whose primary weights are absent from its managed `models/comfyui/` subdirectory is skipped automatically; setup downloads every selected pipeline asset and configures the resolved ComfyUI installation to search that managed path.
 
 Each measured run (`--runs`, default 3) uses a different seed, starting at 42 — an identical seed and workflow would let ComfyUI cache every node and return a cached result almost instantly instead of actually re-running generation. Every image model also gets exactly one warmup at its first resolution with seed 41; image generation does not use `--warmup`. Each generation gets twice `--timeout` (600 seconds by default).

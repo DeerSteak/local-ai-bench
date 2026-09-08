@@ -154,6 +154,7 @@ def split_token_budget(token_budget: int, first_pass_fraction: float) -> tuple[i
 class Shared:
     # Both the inference engine's server and ComfyUI register here so shutdown_managed() can clean up everything at once.
     _managed_procs: list[subprocess.Popen] = []
+    _comfyui_process: subprocess.Popen | None = None
 
     # Set once by benchmark.py so shutdown_managed() can reach the engine without every caller threading it through.
     _active_engine: "InferenceEngine | None" = None
@@ -457,6 +458,7 @@ class Shared:
             )
             log_fh.close()
             Shared._managed_procs.append(proc)
+            Shared._comfyui_process = proc
         except Exception as e:
             Shared.err(f"Failed to start ComfyUI: {e}")
             return False
