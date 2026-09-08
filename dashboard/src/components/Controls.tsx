@@ -48,7 +48,6 @@ export default function Controls({
   const cleanSuffix = sanitizeForFilename(filenameSuffix);
   const isConcurrency = section === "concurrency_tool" || section === "concurrency_chat";
   const isLlamaBench = section === "llamabench";
-  // Line-only, no tier split — same treatment as the concurrency sections.
   const isLlamaBenchConc = section === "llamabenchconc";
   const isSustained = section === "sustained";
   const isCacheComparison = section === "llm_cache_comparison";
@@ -94,7 +93,7 @@ export default function Controls({
         </div>
       )}
 
-      {section !== "accuracy" && !isConcurrency && !isLlamaBenchConc && !isSustained && !isCacheComparison && (
+      {section !== "accuracy" && !isConcurrency && !isSustained && !isCacheComparison && (
         <div className={styles.dividerGroup}>
           <div className={styles.controlLabel}>Group By</div>
           <div style={{ display: "flex", gap: 6 }}>
@@ -108,7 +107,7 @@ export default function Controls({
         </div>
       )}
 
-      {groupBy === "system" && (["llm", "llm_cached", "llm_conversation", "llamabench"].includes(section)) && (
+      {groupBy === "system" && (["llm", "llm_cached", "llm_conversation", "llamabench", "llamabenchconc"].includes(section)) && (
         <div className={styles.dividerGroup}>
           <div className={styles.controlLabel}>Model Sizes</div>
           <div style={{ display: "flex", gap: 6 }}>

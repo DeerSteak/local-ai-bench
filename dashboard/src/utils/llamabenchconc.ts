@@ -1,6 +1,7 @@
 // llama-batched-bench: aggregate decode throughput (speed_tg) vs. parallel-sequence count (pl).
 // Levels come from each entry's own pl, not a constants list — fit_npl drops levels per-model.
-import { entriesOf } from "./shared";
+import { SIZE_TIER_ORDER } from "../constants";
+import { getModelColor, getModelSizeTier, modelLabel, isNotNull, entriesOf } from "./shared";
 import { memoryFields } from "./memory";
 import { powerFields } from "./power";
 import type { JsonRecord } from "./shared";
@@ -71,4 +72,47 @@ export function llamaBenchConcSortValue(row: ChartRow, key: string): JsonRecord[
   if (key !== "level") return row[key] ?? "";
   const n = Number(row.level);
   return Number.isNaN(n) ? Infinity : n;
+}
+
+export function buildLlamaBenchConcSystemGroups(files: ResultsFile[], models: string[], isSplit: boolean) {
+  const specs = isSplit
+    ? SIZE_TIER_ORDER.map(tier => ({ tier, models: models.filter(m => getModelSizeTier(m) === tier) }))
+    : [{ tier: null, models }];
+  return files.map(file => {
+    const groups = specs.map(({ tier, models: groupModels }) => {
+      const tgValues = [...new Set(groupModels.flatMap(m => llamaBenchConcTgValues([file], m)))].sort((a, b) => a - b);
+      const metrics = tgValues.map(tg => {
+        const levels = [...new Set(groupModels.flatMap(m => llamaBenchConcLevels([file], m, tg)))].sort((a, b) => a - b);
+        const lineData = levels.map(level => {
+          const row: ChartRow = { levelLabel: `${level}-way` };
+          groupModels.forEach((model, i) => {
+            const entry = (file.data.llamabenchconc?.[model]?.entries || [])
+              .find((e: JsonRecord[string]) => (e.tg ?? 0) === tg && e.pl === level);
+            if (entry?.speed_tg != null) row[`m${i}`] = entry.speed_tg;
+          });
+          return row;
+        });
+        const lineConfigs = groupModels.map((model, i) => {
+          const depth = llamaBenchConcPromptDepth(file, model);
+          return {
+            dataKey: `m${i}`, stroke: getModelColor(model),
+            name: `${modelLabel(model)}${depth != null ? ` — pp${depth}` : ""}`,
+          };
+        }).filter(config => lineData.some(row => row[config.dataKey] != null));
+        if (!lineConfigs.length) return null;
+        return {
+          key: `tg${tg}`, title: `Aggregate Tokens/sec — tg${tg}`,
+          yLabel: "Tokens/sec", unit: "tps", direction: "higher",
+          xKey: "levelLabel", xLabel: "Concurrency Level", chartName: `llamabenchconc_tg${tg}`,
+          lineData, lineConfigs,
+        };
+      }).filter(isNotNull);
+      return metrics.length ? { tier, metrics } : null;
+    }).filter(isNotNull);
+    const skipEntries = models.flatMap(model => {
+      const error = file.data.llamabenchconc?.[model]?.error;
+      return error ? [{ key: model, label: `${modelLabel(model)}: ${error}` }] : [];
+    });
+    return groups.length || skipEntries.length ? { file, groups, skipEntries } : null;
+  }).filter(isNotNull);
 }

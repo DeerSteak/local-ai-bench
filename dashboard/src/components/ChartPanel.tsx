@@ -84,7 +84,7 @@ export default function ChartPanel({
 
   if (section === "llamabenchconc") {
     return (
-      <LlamaBenchConcPanel
+      <LlamaBenchConcPanel isBySystem={isBySystem} isSplit={isSplit}
         containerRef={containerRef} files={files} enabledModels={enabledModels}
         chartWidth={chartWidth} logoSrc={logoSrc} isMultiFile={isMultiFile}
       />
