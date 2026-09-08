@@ -44,7 +44,7 @@ from scripts.workloads.math_benchmark import MathBenchmark
 from scripts.workloads.methodology_profile import resolve_methodology_profile
 from scripts.runtime.network_policy import apply_offline_mode
 from scripts.runtime.telemetry import (
-    CaseTelemetry, derive_run_memory_summary, derive_run_power_summary,
+    CaseTelemetry,
     discover_power_source, discover_temperature_source, power_availability_dict,
     temperature_availability_dict,
 )
@@ -1513,26 +1513,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
 
         store = ResultStore(Path(out_path), results)
 
-        def update_telemetry_summaries():
-            sections = {
-                key: results.get(key) for key in (
-                    "llm", "llm_cached", "llm_conversation", "embeddings", "images", "mcq", "math",
-                    "reasoning", "code", "tool", "concurrency_tool", "concurrency_chat",
-                    "llamabench", "llamabenchconc", "vllmbench",
-                    "sustained",
-                )
-            }
-            memory_summary = derive_run_memory_summary({
-                key: value for key, value in sections.items()
-            })
-            if memory_summary is not None:
-                results["run"]["memory_summary"] = memory_summary
-            power_summary = derive_run_power_summary(sections)
-            if power_summary is not None:
-                results["run"]["power_summary"] = power_summary
-
         def _checkpoint(label=""):
-            update_telemetry_summaries()
             apply_pause_evidence(results["run"])
             store.checkpoint()
             if label:
@@ -1541,7 +1522,6 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         def make_save(key, stage_key=None):
             def _save(partial):
                 store.update_section(key, partial, stage_key or key)
-                update_telemetry_summaries()
                 store.checkpoint()
             return _save
 

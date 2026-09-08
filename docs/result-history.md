@@ -43,3 +43,5 @@ Select exactly two results and choose **Export Diagnostic** to create a separate
 History remains filesystem-owned and intentionally simple: there is no watcher, background indexer, duplicate cache, account, or sync service. Projects may reference a local baseline path, while the history tab always reads the current result file before dashboard launch, diagnostic export, or evaluation.
 
 [← Benchmark Projects](projects.md) · [Back to README](../README.md) · [Dashboard →](dashboard.md)
+
+Every result checkpoint rebuilds run-level memory and power summaries from the current workload sections, including checkpoints during resume, retry, and fork. Removed evidence clears its obsolete summary instead of retaining totals from before recovery.
