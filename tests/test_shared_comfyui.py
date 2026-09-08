@@ -204,3 +204,12 @@ def test_cleanup_stops_only_owned_instance(monkeypatch, installation):
     proc.terminate.assert_called_once()
     proc.wait.assert_called_once_with(timeout=10)
     assert Shared._managed_procs == []
+
+
+@pytest.mark.parametrize("ready", [False, True])
+def test_rex_service_result_never_falls_back_to_host_python(monkeypatch, installation, ready):
+    comfyui, _, launch, _ = installation
+    monkeypatch.setattr("scripts.runtime.shared.prepare_rex_comfyui", lambda *a, **k: ready)
+    monkeypatch.setattr(Shared, "comfyui_available", Mock(side_effect=AssertionError("host fallback")))
+    assert Shared.ensure_comfyui(comfyui) is ready
+    launch.assert_not_called()

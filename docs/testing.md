@@ -119,6 +119,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Crash caches and bank versions | [test_shared_crash_cache.py](../tests/test_shared_crash_cache.py), [test_shared_bank_versioning.py](../tests/test_shared_bank_versioning.py) |
 | Statistics, prompts, scoring, and loop detection | [test_shared_stats.py](../tests/test_shared_stats.py), [test_accuracy_scoring.py](../tests/test_accuracy_scoring.py), [test_shared_looks_like_loop.py](../tests/test_shared_looks_like_loop.py) |
 | ComfyUI existing-server compatibility, isolated startup, and restart routing | [test_shared_comfyui.py](../tests/test_shared_comfyui.py) |
+| Rex ComfyUI service detection, model mount, idle checks, and rollback | [test_rex_comfyui.py](../tests/test_rex_comfyui.py) |
 | ComfyUI Python discovery | [test_shared_find_comfyui_python.py](../tests/test_shared_find_comfyui_python.py) |
 | ComfyUI installation and managed-model path resolution | [test_comfyui_installation.py](../tests/test_comfyui_installation.py) |
 | ComfyUI setup services and directory transactions | [test_comfyui_assets.py](../tests/test_comfyui_assets.py), [test_comfyui_install.py](../tests/test_comfyui_install.py), [test_comfyui_runtime.py](../tests/test_comfyui_runtime.py), [test_directory_transaction.py](../tests/test_directory_transaction.py) |

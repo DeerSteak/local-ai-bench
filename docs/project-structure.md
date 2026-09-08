@@ -198,6 +198,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `workloads/llamabench_concurrency_benchmark.py` | Opt-in `llamabenchconc` test — llama.cpp's own `llama-batched-bench` decode-throughput-vs-concurrency sweep, bypassing the HTTP engine (see [Workloads](workloads.md#llama-bench-concurrency)) |
 | `workloads/models.py` | Model definitions (tags, checkpoints, tiers, sizes) |
 | `runtime/comfyui_installation.py` | ComfyUI program discovery, Python selection, saved path, and managed extra-model configuration |
+| `runtime/rex_comfyui.py` | Rex OS detection and idle-safe configuration of its standard ComfyUI Quadlet model mount |
 | `setup/setup_check.py` | Import-safe setup entrypoint and explicit orchestration across focused setup services |
 | `setup/setup_console.py` | Terminal status formatting, hyperlinks, and confirmation prompts |
 | `setup/setup_discovery.py` | Read-only host identity and memory discovery for setup |

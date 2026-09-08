@@ -29,6 +29,7 @@ from scripts.runtime.comfyui_installation import (
     write_extra_model_paths,
 )
 from scripts.runtime import hardware
+from scripts.runtime.rex_comfyui import prepare_rex_comfyui
 from scripts.runtime.log_redaction import redact_log_text
 from scripts.workloads.models import (
     IMAGE_MODELS, image_checkpoint_groups, image_checkpoint_path,
@@ -375,6 +376,12 @@ class Shared:
     @staticmethod
     def ensure_comfyui(comfyui_dir: Path) -> bool:  # pragma: no cover — spawns a real subprocess and polls a live server
         """Reuse a compatible server or start a benchmark-owned instance."""
+        rex_ready = prepare_rex_comfyui(
+            config.COMFYUI_MODELS_DIR, config.COMFYUI_URL,
+            visible=Shared.running_comfyui_models_visible, log=Shared.log, warn=Shared.warn,
+        )
+        if rex_ready is not None:
+            return rex_ready
         isolate = Shared.comfyui_available()
         if isolate:
             if Shared.running_comfyui_models_visible():
