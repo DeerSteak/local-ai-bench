@@ -556,7 +556,7 @@ export default function Dashboard() {
       />
 
       <RunSummaryCards
-        files={effectiveFiles} containerRef={summaryRef} logoSrc={logoSrc} chartWidth={chartWidth}
+        files={effectiveFiles} section={section} containerRef={summaryRef} logoSrc={logoSrc} chartWidth={chartWidth}
       />
 
       <div ref={chartRef}>

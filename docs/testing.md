@@ -225,3 +225,5 @@ Recovery model verification tests in [test_model_verification.py](../tests/test_
 Managed llama.cpp installer tests in `test_managed_llamacpp.py` cover the platform/backend/architecture matrix, Ubuntu derivative detection, ROCm version compatibility, same-release source fallback, cancellation, and rollback. Setup and Engine Management tests exercise the shared dispatch and multi-runtime transaction; Windows source builds use mocked compiler commands and executable validation. No installer or compiler is launched by these tests.
 
 Result History rename coverage verifies multiline system names, preservation of measurements, malformed input rejection, atomic-write failures, cancellation, selection requirements, and active-process guards.
+
+`nativeRunCard.test.ts` checks tab-specific native leaders at matching case dimensions, deterministic case selection, legacy combined entries, malformed and duplicate evidence, and scoped memory/energy summaries with partial and mixed-scope telemetry.
