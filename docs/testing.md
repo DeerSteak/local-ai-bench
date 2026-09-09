@@ -57,6 +57,8 @@ Live orchestration functions are marked `# pragma: no cover`. The excluded funct
 
 HTTP and process boundaries are mocked where there is a clean seam. Tests may run generated Python in an isolated subprocess for the code grader, but they do not contact a live inference server or ComfyUI instance.
 
+`test_workspace_server.py` exercises HTTP responses with an in-memory connection and a failed terminal stream, covering ownership discovery, static files, and error responses after terminal disconnection. Mocked bind failures cover reuse after a launch race, an unresponsive or unrelated listener, and preservation of other operating-system errors.
+
 The immutable complete and interrupted 4.1 result fixtures are shared by pytest and Vitest. They enforce the [4.1 result compatibility contract](result-compatibility-v4.1.md) across producer state/count semantics and dashboard chart/reliability behavior before the commercial execution-kernel migration. A later producer adds a new fixture for a schema or methodology boundary rather than editing the 4.1 files in place.
 
 The retained-behavior characterization gate is covered explicitly: immutable result fixtures freeze complete and interrupted/partial exports; `test_mcq_benchmark.py`, `test_math_benchmark.py`, `test_reasoning_benchmark.py`, `test_code_benchmark.py`, and `test_tool_benchmark.py` freeze parsers and scoring; engine/shared tests freeze measurement validators and aggregates; `test_run_accuracy_benchmark.py` freezes partial-response scoring and interruption flushing; and journal/result-store tests freeze partial-output recovery. A behavior in this set changes only with a reviewed methodology or compatibility boundary and a new fixture, never by editing the old expectation.
