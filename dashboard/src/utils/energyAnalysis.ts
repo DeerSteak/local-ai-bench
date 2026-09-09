@@ -44,7 +44,7 @@ function energyCases(section: string, data: JsonRecord[string]): EnergyCase[] {
 }
 
 export function buildEnergyAnalysis(
-  files: ResultsFile[], section: string, enabled: Set<string>, bySystem = false,
+  files: ResultsFile[], section: string, enabled: Set<string>, bySystem = false, combineSystems = false,
 ): { groups: EnergyChartGroup[], notices: string[] } {
   const groups = new Map<string, EnergyChartGroup>();
   const notices = new Set<string>();
@@ -78,11 +78,12 @@ export function buildEnergyAnalysis(
         const basis = names.some(name => name.startsWith("measured:") && (name.includes("includes-load") || name.startsWith("measured:native-sweep")))
           ? "Full case, including model load"
           : names.some(name => name.startsWith("measured:")) ? "Measured work, excluding model load" : "Measurement window not recorded";
-        const id = JSON.stringify([bySystem ? fi : null, model, entry.phase, power.scope, basis]);
+        const separateSystem = bySystem && !combineSystems;
+        const id = JSON.stringify([separateSystem ? fi : null, model, entry.phase, combineSystems ? null : power.scope, basis]);
         let group = groups.get(id);
         if (!group) {
-          group = { id, model: bySystem ? identity : label,
-            description: `${entry.phase} · ${powerScopeLabel(power.scope)} · ${basis}`,
+          group = { id, model: separateSystem ? identity : label,
+            description: `${entry.phase} · ${combineSystems ? "Power scope shown per series" : powerScopeLabel(power.scope)} · ${basis}`,
             unit: ENERGY_COST_UNITS[expectedUnit].label, data: [], configs: [] };
           groups.set(id, group);
         }
@@ -91,8 +92,8 @@ export function buildEnergyAnalysis(
           row = { caseLabel: entry.label, order: entry.order };
           group.data.push(row);
         }
-        const key = `f${fi}`;
-        const caseId = JSON.stringify([id, fi, entry.label]);
+        const key = combineSystems ? `f${fi}_${power.scope}` : `f${fi}`;
+        const caseId = JSON.stringify([id, key, entry.label]);
         if (seenCases.has(caseId)) {
           notices.add(`${identity}: duplicate energy case ${entry.label}; ambiguous case omitted.`);
           row[`${key}_energy`] = null;
@@ -115,7 +116,7 @@ export function buildEnergyAnalysis(
           notices.add(`${identity}: valid ${ENERGY_COST_UNITS[expectedUnit].label} not recorded.`);
         }
         if (!group.configs.some(config => config.dataKey === key)) group.configs.push({
-          dataKey: key, name: file.hostname || "Unknown system", stroke: FILE_COLORS[fi % FILE_COLORS.length],
+          dataKey: key, name: combineSystems ? `${file.hostname || "Unknown system"}\n${powerScopeLabel(power.scope)}` : file.hostname || "Unknown system", stroke: FILE_COLORS[fi % FILE_COLORS.length],
         });
       }
     }

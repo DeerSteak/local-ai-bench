@@ -141,3 +141,22 @@ it.each([true, false])("rejects duplicates even when one copy is unavailable (fi
   expect(result.groups).toEqual([]);
   expect(result.notices.join()).toContain("duplicate energy case");
 });
+
+it.each([false, true])("combines systems across scopes independently of System grouping (%s)", bySystem => {
+  const result = buildEnergyAnalysis([file("GPU"), file("Mac", "processor_package")], "llamabench", enabled, bySystem, true);
+  expect(result.groups).toHaveLength(1);
+  expect(result.groups[0].configs.map(config => config.name)).toEqual(["GPU\nAccelerator", "Mac\nProcessor package"]);
+  expect(energyChartSeries(result.groups[0])).toHaveLength(2);
+  expect(energyChartSeries(result.groups[0], true)).toHaveLength(2);
+  expect(result.groups[0].data[0]).toMatchObject({ f0_accelerator: 500, f1_processor_package: 500 });
+});
+
+it("keeps incompatible workloads and measurement windows separate when combining", () => {
+  const a = file();
+  const b = file("Mac", "processor_package");
+  b.data.llamabench.m.prefill_entries[0].power.windows = [{ name: "measured:request" }];
+  expect(buildEnergyAnalysis([a, b], "llamabench", enabled, false, true).groups).toHaveLength(2);
+  b.data.llamabench.m.prefill_entries[0].power.windows = a.data.llamabench.m.prefill_entries[0].power.windows;
+  b.data.llamabench.m.prefill_entries[0].completed_reps = 1;
+  expect(buildEnergyAnalysis([a, b], "llamabench", enabled, false, true).groups).toHaveLength(2);
+});

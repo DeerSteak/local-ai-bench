@@ -43,6 +43,7 @@ export default function Dashboard() {
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "model", dir: 1 });
   const [chartStyle, setChartStyle] = useState("bar");
   const [groupBy, setGroupBy] = useState("model");
+  const [combineEnergySystems, setCombineEnergySystems] = useState(true);
   const [sizeSplit, setSizeSplit] = useState("tiers");
   const [chartWidth, setChartWidth] = useState(708);
   const [hostnameOverrides, setHostnameOverrides] = useState<Record<string, string>>({});
@@ -579,6 +580,7 @@ export default function Dashboard() {
           />
         </DeltaModeContext.Provider>
         <EnergyAnalysisPanel files={effectiveFiles} section={section}
+          combineSystems={combineEnergySystems} setCombineSystems={setCombineEnergySystems}
           enabledModels={section === "images" ? enabledImageModels : section === "embeddings" ? enabledEmbedModels : enabledModels}
           bySystem={groupBy === "system"} chartWidth={chartWidth} logoSrc={logoSrc} />
       </div>

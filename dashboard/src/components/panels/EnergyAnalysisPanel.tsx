@@ -3,16 +3,20 @@ import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
 import { ChartGrid } from "./shared";
 import type { ResultsFile } from "../../types";
 
-export default function EnergyAnalysisPanel({ files, section, enabledModels, bySystem, chartWidth, logoSrc }: {
+export default function EnergyAnalysisPanel({ files, section, enabledModels, bySystem, combineSystems, setCombineSystems, chartWidth, logoSrc }: {
   files: ResultsFile[], section: string, enabledModels: Set<string>, bySystem: boolean,
+  combineSystems: boolean, setCombineSystems: (value: boolean) => void,
   chartWidth: number, logoSrc?: string | null,
 }) {
   if (!ENERGY_SECTIONS.includes(section) || !files.length) return null;
-  const { groups, notices } = buildEnergyAnalysis(files, section, enabledModels, bySystem);
+  const { groups, notices } = buildEnergyAnalysis(files, section, enabledModels, bySystem, combineSystems);
   return <ChartGrid style={{ width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth }}>
     <div className="card">
       <h2 id="energy-analysis">Energy analysis</h2>
-      <p>Energy per unit of work and measured joules. Figures use absolute units; different power scopes and measurement windows stay separate.</p>
+      <label><input type="checkbox" checked={combineSystems}
+        onChange={event => setCombineSystems(event.target.checked)} /> Combine systems across energy charts</label>
+      <p>This setting applies to all energy-analysis sections. Figures use absolute units; different workloads and measurement windows stay separate.</p>
+      {combineSystems && <p>Each series identifies its power scope. Processor-package and accelerator energy cover different hardware, so their values are not equivalent whole-system measurements.</p>}
       {section === "images" && <p>Image energy is recorded per model across its measured resolutions, so these figures describe the combined workload.</p>}
       {!groups.length && <p>No usable energy measurements in the selected results.</p>}
       {notices.length > 0 && <details open={!groups.length}>
