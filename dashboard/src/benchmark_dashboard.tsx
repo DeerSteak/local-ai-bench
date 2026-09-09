@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import html2canvas from "html2canvas";
-import { readNamedJSONSource, sanitizeForFilename, filesForSection, getRunReliabilityWarning, getLlamaBenchMethodologyWarning, getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning, getNoRepackMethodologyWarning, getCrossEngineWeightsWarning, getMemoryTelemetryMethodologyWarning } from "./utils/shared";
+import { dashboardEngineVersion, readNamedJSONSource, sanitizeForFilename, filesForSection, getRunReliabilityWarning, getLlamaBenchMethodologyWarning, getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning, getNoRepackMethodologyWarning, getCrossEngineWeightsWarning, getMemoryTelemetryMethodologyWarning } from "./utils/shared";
 import { isTrialSetArtifact, trialArtifactLoadMode } from "./utils/trials";
 import { isRecommendationArtifact, recommendationArtifactLoadMode } from "./utils/recommendations";
 import { isVariantComparisonArtifact, variantArtifactLoadMode } from "./utils/variants";
@@ -147,7 +147,7 @@ export default function Dashboard() {
       sourceText: file.sourceText as string,
       hostname: baseHostname,
       engine:   data.engine || null,
-      engineVersion: data.engine_version || null,
+      engineVersion: dashboardEngineVersion(data),
       engineVersionRecorded: Object.prototype.hasOwnProperty.call(data, "engine_version"),
       backend:  p.backend  || "cpu",
       os:       p.os       || "",

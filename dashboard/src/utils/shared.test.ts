@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  parseJSON, parseResultsJSON, readNamedJSONSource, getRunReliabilityWarning,
+  dashboardEngineVersion, parseJSON, parseResultsJSON, readNamedJSONSource, getRunReliabilityWarning,
   getLlamaBenchMethodologyWarning,
   getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning,
   getNoRepackMethodologyWarning,
@@ -723,5 +723,32 @@ describe("formatAxisTick", () => {
     expect(formatAxisTick(null, "energy")).toBe("—");
     expect(formatAxisTick(7500, "pct")).toBe("7500.0%");
     expect(fmt(7500, "energy")).toBe("7500.00");
+  });
+});
+
+describe("dashboardEngineVersion", () => {
+  const result = (builds: unknown[], engine = "llamacpp") => ({ engine, engine_version: "0.4.0-dev",
+    llamabench: { m: { prefill_entries: builds.map(build_number => ({ build_number })) } } });
+  it.each(["llamacpp", "llamacpp-vulkan"])("prefers consistent recorded builds for %s", engine => {
+    expect(dashboardEngineVersion(result([10840, "10840"], engine))).toBe("10840");
+  });
+  it("supports legacy combined entries and decode-only results", () => {
+    for (const field of ["entries", "decode_entries"]) {
+      expect(dashboardEngineVersion({ engine: "llamacpp", llamabench: {
+        m: { [field]: [{ build_number: 10840 }] },
+      } })).toBe("10840");
+    }
+  });
+  it("preserves numeric runtime versions and other engines", () => {
+    expect(dashboardEngineVersion({ ...result([10840]), engine_version: "10841" })).toBe("10841");
+    expect(dashboardEngineVersion(result([10840], "vllm"))).toBe("0.4.0-dev");
+  });
+  it("falls back for conflicting, invalid, and missing build evidence", () => {
+    expect(dashboardEngineVersion(result([10840, 10841]))).toBe("0.4.0-dev");
+    expect(dashboardEngineVersion(result([null, 0, 1, -1, 2.5, "dev", NaN, Infinity]))).toBe("0.4.0-dev");
+    expect(dashboardEngineVersion({ engine: "llamacpp", engine_version: "0.4.0-dev", llamabench: {
+      m: null, n: { entries: "bad", prefill_entries: [null] },
+    } })).toBe("0.4.0-dev");
+    expect(dashboardEngineVersion({})).toBeNull();
   });
 });

@@ -220,3 +220,5 @@ Open the URL Vite prints (typically `http://localhost:5173`).
 Energy chart axes abbreviate values of 1,000 or more with `k` (for example, `7.5k` joules); tooltips retain the full values. Token energy axes use the compact label `Joules / 1k tok`.
 
 **Combine systems across energy charts** is enabled by default and applies across the energy-analysis sections, independently of the main Group By control. It overlays systems with matching workloads and measurement windows and labels each series with its power scope. Processor-package and accelerator readings cover different hardware and are not equivalent whole-system measurements. Disable it to restore scope separation and the main Group By behavior.
+
+For llama.cpp runtime labels, the dashboard prefers a recorded numeric build such as `10840`. When the top-level version is a generic development version, a consistent build number in native llama-bench entries supplies the label instead. Missing or conflicting build evidence retains the recorded version; other engines keep their own version strings.

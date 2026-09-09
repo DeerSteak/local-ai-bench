@@ -180,6 +180,26 @@ export function engineFamily(engine: string | null | undefined): string {
   return key === "llamacpp-vulkan" ? "llamacpp" : key;
 }
 
+export function dashboardEngineVersion(data: JsonRecord): string | null {
+  const version = typeof data.engine_version === "string" && data.engine_version.trim()
+    ? data.engine_version.trim() : null;
+  if (engineFamily(data.engine) !== "llamacpp" || (version && /^\d+$/.test(version))) return version;
+  const builds = new Set<string>();
+  for (const [, model] of entriesOf(data.llamabench)) {
+    for (const field of ["prefill_entries", "decode_entries", "entries"]) {
+      if (!Array.isArray(model?.[field])) continue;
+      for (const entry of model[field]) {
+        const build = entry?.build_number;
+        if ((typeof build === "number" && Number.isSafeInteger(build) && build > 1)
+            || (typeof build === "string" && /^\d+$/.test(build) && Number.isSafeInteger(Number(build)) && Number(build) > 1)) {
+          builds.add(String(Number(build)));
+        }
+      }
+    }
+  }
+  return builds.size === 1 ? [...builds][0] : version;
+}
+
 export function engineRunLabel(file: ResultsFile, section?: string): string {
   const displayEngine = engineLabel(file.engine);
   const labels = [displayEngine];
