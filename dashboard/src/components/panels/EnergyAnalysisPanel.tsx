@@ -12,7 +12,7 @@ export default function EnergyAnalysisPanel({ files, section, enabledModels, byS
   return <ChartGrid style={{ width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth }}>
     <div className="card">
       <h2 id="energy-analysis">Energy analysis</h2>
-      <p>Recorded efficiency and measured joules. Figures use absolute units; different power scopes and measurement windows stay separate.</p>
+      <p>Energy per unit of work and measured joules. Figures use absolute units; different power scopes and measurement windows stay separate.</p>
       {section === "images" && <p>Image energy is recorded per model across its measured resolutions, so these figures describe the combined workload.</p>}
       {!groups.length && <p>No usable energy measurements in the selected results.</p>}
       {notices.length > 0 && <details open={!groups.length}>
@@ -23,11 +23,11 @@ export default function EnergyAnalysisPanel({ files, section, enabledModels, byS
     {groups.flatMap((group, groupIndex) => [false, true].map(energy => {
       const configs = energyChartSeries(group, energy);
       if (!configs.length) return null;
-      const title = energy ? "Measured Energy" : "Energy Efficiency";
-      const unit = energy ? "energy" : "efficiency";
+      const title = energy ? "Measured Energy" : "Energy per Work";
+      const unit = "energy";
       const yLabel = energy ? "Joules" : group.unit;
-      const chartName = `${section}_${energy ? "energy_joules" : "efficiency"}`;
-      const direction = energy ? "lower" : "higher";
+      const chartName = `${section}_${energy ? "energy_joules" : "energy_per_work"}`;
+      const direction = "lower";
       const identity = `${group.model}_${groupIndex + 1}`;
       return group.data.length === 1 ? <GroupedBarCard
         key={`${group.id}_${energy}`} title={title} modelName={group.model} caption={group.description}

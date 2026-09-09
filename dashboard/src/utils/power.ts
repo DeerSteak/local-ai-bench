@@ -11,6 +11,20 @@ export const powerEnergy = (sample: JsonRecord[string]): number | null =>
 export const powerEfficiency = (sample: JsonRecord[string]): number | null =>
   finiteNumber(sample?.power?.efficiency?.per_joule);
 
+export const ENERGY_COST_UNITS = {
+  tokens_per_joule: { scale: 1000, label: "Joules / 1,000 tokens" },
+  images_per_joule: { scale: 1, label: "Joules / image" },
+  embeddings_per_joule: { scale: 1000, label: "Joules / 1,000 embeddings" },
+};
+
+export function powerEnergyCost(sample: JsonRecord[string], unit: keyof typeof ENERGY_COST_UNITS): number | null {
+  const efficiency = powerEfficiency(sample);
+  if (sample?.power?.status === "unavailable" || sample?.power?.efficiency?.unit !== unit
+      || efficiency == null || efficiency <= 0) return null;
+  const cost = ENERGY_COST_UNITS[unit].scale / efficiency;
+  return Number.isFinite(cost) && cost > 0 ? cost : null;
+}
+
 export const powerScope = (sample: JsonRecord[string]): string | null =>
   typeof sample?.power?.scope === "string" ? sample.power.scope : null;
 
@@ -24,7 +38,7 @@ export const powerFields = (sample: JsonRecord[string]): ChartRow => sample?.pow
   power_reason: typeof sample.power.reason === "string" ? sample.power.reason : null,
 }) : ({});
 
-export function buildPowerEfficiencyDataForModel(
+export function buildPowerEnergyCostDataForModel(
   files: ResultsFile[], model: string, section = "llm",
 ): ChartRow[] {
   const scopes = new Set<string>();
@@ -38,7 +52,7 @@ export function buildPowerEfficiencyDataForModel(
   return CTX_ORDER.map(ctx => {
     const row: ChartRow = { ctxLabel: ctx };
     files.forEach((file, index) => {
-      const value = powerEfficiency(file.data[section]?.[model]?.[ctx]);
+      const value = powerEnergyCost(file.data[section]?.[model]?.[ctx], "tokens_per_joule");
       if (value != null) row[`f${index}`] = value;
     });
     return row;

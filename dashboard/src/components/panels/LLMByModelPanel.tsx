@@ -8,7 +8,7 @@ import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
 import type { ResultsFile } from "../../types";
 import { buildProcessMemoryDataForModel } from "../../utils/memory";
-import { buildPowerEfficiencyDataForModel, hasMixedPowerScopes } from "../../utils/power";
+import { buildPowerEnergyCostDataForModel, hasMixedPowerScopes } from "../../utils/power";
 import styles from "../ChartPanel.module.css";
 
 // Group By: Model, LLM / LLM Conversation section — one card group per model,
@@ -35,7 +35,7 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
     const prefillData = buildLLMDataForModel(files, model, "prefill", section);
     const memoryData = buildProcessMemoryDataForModel(files, model, section);
     const memoryLineConfigs = lineConfigs.filter(lc => memoryData.some(r => r[lc.dataKey] != null));
-    const efficiencyData = buildPowerEfficiencyDataForModel(files, model, section);
+    const efficiencyData = buildPowerEnergyCostDataForModel(files, model, section);
     const efficiencyLineConfigs = lineConfigs.filter(
       lc => efficiencyData.some(r => r[lc.dataKey] != null),
     );
@@ -169,13 +169,13 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
           )}
           {efficiencyLineConfigs.length > 0 && !hasMixedPowerScopes(files, [model], section) && (
             <ChartCard
-              title={`Energy Efficiency${titleSuffix}`}
+              title={`Energy per 1,000 Tokens${titleSuffix}`}
               modelName={modelLabel(model)}
               data={efficiencyData} lineConfigs={efficiencyLineConfigs}
-              xKey="ctxLabel" xLabel="Context Length" yLabel="Tokens / Joule"
-              unit="efficiency" isMultiFile={isMultiFile}
-              chartName={`${chartNamePrefix}tokens_per_joule`} chartModel={model}
-              logoSrc={logoSrc} direction="higher"
+              xKey="ctxLabel" xLabel="Context Length" yLabel="Joules / 1,000 tokens"
+              unit="energy" isMultiFile={isMultiFile}
+              chartName={`${chartNamePrefix}joules_per_1000_tokens`} chartModel={model}
+              logoSrc={logoSrc} direction="lower"
             />
           )}
         </div>

@@ -182,7 +182,7 @@ Telemetry tests cover empty and failed channels, retained lifecycle sub-windows,
 
 ## Dashboard tests
 
-`energyAnalysis.test.ts` covers native prefill/decode and concurrency efficiency, image/embedding aggregates, scope and measurement-window separation, System grouping, model filters, invalid or missing measurements, sparse gaps, malformed dimensions, and duplicate-case rejection. Formatting tests ensure small efficiency values remain visible. Rendered checks use recorded GB10 and Mac results to verify scope captions and unavailable reasons.
+`energyAnalysis.test.ts` covers native prefill/decode and concurrency efficiency, image/embedding aggregates, scope and measurement-window separation, System grouping, model filters, invalid or missing measurements, sparse gaps, malformed dimensions, and duplicate-case rejection. Power chart tests verify reciprocal conversion and scaling for all three work units, preserve raw efficiency fields, and reject zero, negative, unavailable, wrong-unit, and overflowing conversions. Formatting tests ensure small efficiency values remain visible. Rendered checks use recorded GB10 and Mac results to verify scope captions and unavailable reasons.
 
 The dashboard is TypeScript (see [Dashboard](dashboard.md)) and uses Vitest, ESLint, and `tsc` from its own `node_modules`:
 

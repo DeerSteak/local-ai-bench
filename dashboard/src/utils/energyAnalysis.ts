@@ -1,15 +1,11 @@
 import { FILE_COLORS } from "../constants";
 import { entriesOf, modelLabel, imageModelLabel, embedModelLabel } from "./shared";
 import type { JsonRecord } from "./shared";
-import { powerScopeLabel } from "./power";
+import { powerScopeLabel, powerEnergyCost, ENERGY_COST_UNITS } from "./power";
 import { llamaBenchPrefillEntries, llamaBenchDecodeEntries, llamaBenchPromptLabel } from "./llamabench";
 import type { ChartRow, LineConfig, ResultsFile } from "../types";
 
 export const ENERGY_SECTIONS = ["llamabench", "llamabenchconc", "images", "embeddings"];
-const UNITS: Record<string, string> = {
-  tokens_per_joule: "Tokens / Joule", images_per_joule: "Images / Joule",
-  embeddings_per_joule: "Embeddings / Joule",
-};
 const SCOPES = new Set(["processor_package", "accelerator", "cpu_package", "whole_system"]);
 const positive = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value) && value > 0;
@@ -87,7 +83,7 @@ export function buildEnergyAnalysis(
         if (!group) {
           group = { id, model: bySystem ? identity : label,
             description: `${entry.phase} · ${powerScopeLabel(power.scope)} · ${basis}`,
-            unit: UNITS[expectedUnit], data: [], configs: [] };
+            unit: ENERGY_COST_UNITS[expectedUnit].label, data: [], configs: [] };
           groups.set(id, group);
         }
         let row = group.data.find(row => row.caseLabel === entry.label);
@@ -112,10 +108,11 @@ export function buildEnergyAnalysis(
         }
         row[`${key}_energy`] = power.energy_joules;
         const efficiency = power.efficiency;
-        if (efficiency?.unit === expectedUnit && positive(efficiency.per_joule) && positive(efficiency.work_count)) {
-          row[key] = efficiency.per_joule;
+        const cost = powerEnergyCost(entry.sample, expectedUnit);
+        if (cost != null && positive(efficiency?.work_count)) {
+          row[key] = cost;
         } else {
-          notices.add(`${identity}: valid ${UNITS[expectedUnit]} not recorded.`);
+          notices.add(`${identity}: valid ${ENERGY_COST_UNITS[expectedUnit].label} not recorded.`);
         }
         if (!group.configs.some(config => config.dataKey === key)) group.configs.push({
           dataKey: key, name: file.hostname || "Unknown system", stroke: FILE_COLORS[fi % FILE_COLORS.length],

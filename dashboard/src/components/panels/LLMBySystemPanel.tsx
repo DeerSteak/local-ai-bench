@@ -75,7 +75,7 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
       const efficiencyBarConfigs = mixedPowerScopes ? [] : buildLLMBarConfigsByModel(f, models, section)
         .filter(bc => rawEfficiencyBarData.some(row => row[bc.dataKey] != null));
       const efficiencyBarData = sortBarData(
-        rawEfficiencyBarData, efficiencyBarConfigs.map(bc => bc.dataKey), "desc",
+        rawEfficiencyBarData, efficiencyBarConfigs.map(bc => bc.dataKey), "asc",
       );
       const efficiencyLineData = buildLLMLineDataByCtx(f, models, "efficiency", section);
       const efficiencyLineConfigs = mixedPowerScopes
@@ -116,9 +116,9 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
         lineData: memoryLineData, lineConfigs: memoryLineConfigs,
       });
       if (hasEfficiency) metrics.push({
-        key: "efficiency", title: `Energy Efficiency${titleSuffix}`,
-        yLabel: "Tokens / Joule", unit: "efficiency", direction: "higher",
-        xKey: "ctxLabel", xLabel: "Context Length", chartName: `${chartNamePrefix}tokens_per_joule`,
+        key: "efficiency", title: `Energy per 1,000 Tokens${titleSuffix}`,
+        yLabel: "Joules / 1,000 tokens", unit: "energy", direction: "lower",
+        xKey: "ctxLabel", xLabel: "Context Length", chartName: `${chartNamePrefix}joules_per_1000_tokens`,
         barData: efficiencyBarData, barConfigs: efficiencyBarConfigs,
         lineData: efficiencyLineData, lineConfigs: efficiencyLineConfigs,
       });

@@ -17,9 +17,9 @@ describe("workload energy analysis", () => {
     const { groups, notices } = buildEnergyAnalysis([file()], "llamabench", enabled);
     expect(notices).toEqual([]);
     expect(groups).toHaveLength(1);
-    expect(groups[0].unit).toBe("Tokens / Joule");
+    expect(groups[0].unit).toBe("Joules / 1,000 tokens");
     expect(groups[0].description).toContain("Accelerator · Full case, including model load");
-    expect(groups[0].data).toEqual([{ caseLabel: "8K", order: 8192, f0: 2, f0_energy: 100 }]);
+    expect(groups[0].data).toEqual([{ caseLabel: "8K", order: 8192, f0: 500, f0_energy: 100 }]);
     expect(energyChartSeries(groups[0], true)[0].dataKey).toBe("f0_energy");
   });
 
@@ -69,7 +69,7 @@ describe("workload energy analysis", () => {
     const result = buildEnergyAnalysis([f], "llamabench", enabled);
     expect(energyChartSeries(result.groups[0])).toEqual([]);
     expect(energyChartSeries(result.groups[0], true)).toHaveLength(1);
-    expect(result.notices.join()).toContain("Tokens / Joule not recorded");
+    expect(result.notices.join()).toContain("Joules / 1,000 tokens not recorded");
   });
 
   it("ignores filtered models and handles legacy/missing/null power", () => {
@@ -94,13 +94,16 @@ describe("workload energy analysis", () => {
     const b = { data: { images: { m: { ...a.data.images.m, resolutions: { "768x768": {} } } } } };
     const result = buildEnergyAnalysis([a, b], "images", enabled);
     expect(result.groups).toHaveLength(2);
-    expect(result.groups[0].unit).toBe("Images / Joule");
+    expect(result.groups[0].unit).toBe("Joules / image");
+    expect(result.groups[0].data[0].f0).toBe(0.5);
     expect(result.groups[0].description).toContain("All measured resolutions: 512x512 · 20 steps");
   });
 
   it("exposes embeddings per joule", () => {
     const f = { data: { embeddings: { m: { power: power("accelerator", "embeddings_per_joule") } } } };
-    expect(buildEnergyAnalysis([f], "embeddings", enabled).groups[0].unit).toBe("Embeddings / Joule");
+    const group = buildEnergyAnalysis([f], "embeddings", enabled).groups[0];
+    expect(group.unit).toBe("Joules / 1,000 embeddings");
+    expect(group.data[0].f0).toBe(500);
   });
 
   it("omits ambiguous duplicate cases rather than replacing their measurements", () => {
