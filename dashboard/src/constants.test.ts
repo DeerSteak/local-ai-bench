@@ -3,7 +3,7 @@ import {
   LLM_MODEL_ORDER, LEGACY_LLM_MODEL_ORDER, LLM_DISPLAY_ORDER,
   LLM_MODEL_LABELS, MODEL_COLORS, MODEL_SIZE_TIER,
   IMAGE_MODEL_ORDER, LEGACY_IMAGE_MODEL_ORDER, IMAGE_DISPLAY_ORDER,
-  IMAGE_MODEL_LABELS, IMAGE_MODEL_COLORS,
+  IMAGE_MODEL_LABELS, IMAGE_MODEL_COLORS, IMAGE_MODEL_RESOLUTIONS,
   EMBED_MODEL_ORDER, EMBED_MODEL_LABELS, EMBED_MODEL_COLORS,
   SIZE_TIER_ORDER, RES_ORDER, RES_COLORS, FALLBACK_COLORS,
   FILE_COLORS, CATEGORY_COLORS, CTX_COLORS, IMAGE_BAR_COLORS,
@@ -163,6 +163,20 @@ describe("dashboard color contrast", () => {
     for (const color of colors) {
       expect(contrastAgainstWhite(color), `${color} has insufficient contrast`)
         .toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});
+
+
+describe("image workload resolution registry", () => {
+  it("covers current and legacy models using recognized resolutions", () => {
+    for (const model of IMAGE_DISPLAY_ORDER) {
+      expect(IMAGE_MODEL_RESOLUTIONS[model].length).toBeGreaterThan(0);
+      for (const resolution of IMAGE_MODEL_RESOLUTIONS[model]) expect(RES_ORDER).toContain(resolution);
+    }
+    expect(IMAGE_MODEL_RESOLUTIONS.sd15).toEqual(["512x512", "768x768"]);
+    for (const model of IMAGE_DISPLAY_ORDER.filter(model => model !== "sd15")) {
+      expect(IMAGE_MODEL_RESOLUTIONS[model]).toEqual(["1024x1024", "1536x1536"]);
     }
   });
 });

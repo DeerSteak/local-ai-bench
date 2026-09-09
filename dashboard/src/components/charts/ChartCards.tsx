@@ -182,10 +182,10 @@ function computeRightMargin(rows: ChartRow[], barConfigs: BarConfig[]): number {
   return Math.min(220, Math.max(60, maxChars * 7 + 20));
 }
 
-export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey, yLabel, unit, chartName, chartModel = null, logoSrc, direction, orderedSeries = false }: {
+export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey, yLabel, unit, chartName, chartModel = null, logoSrc, direction, orderedSeries = false, colorSingleSeriesByCategory = true }: {
   title: string, modelName?: string | null, data: ChartRow[], barConfigs: BarConfig[], xKey: string,
   yLabel: string, unit: string, chartName: string, chartModel?: string | null, logoSrc?: string | null,
-  direction?: string, orderedSeries?: boolean,
+  direction?: string, orderedSeries?: boolean, colorSingleSeriesByCategory?: boolean,
 }) {
   const yAxisWidth = useCategoryAxisWidth(data, xKey);
   const deltaMode = useContext(DeltaModeContext);
@@ -243,7 +243,7 @@ export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey
             width={yAxisWidth}
           />
           <Tooltip content={<CustomTooltip unit={effectiveUnit} xPrefix="System" orderedBarConfigs={orderedSeries ? barConfigs : undefined} />} />
-          {barConfigs.length > 1 && (
+          {(barConfigs.length > 1 || !colorSingleSeriesByCategory) && (
             <Legend content={(props) => <CustomLegend {...props} payload={orderedSeries ? legendPayload : props.payload} isMultiFile={false} sortOrder={barConfigs.map(bc => bc.name)} />} />
           )}
           {orderedSeries ? (
@@ -254,7 +254,7 @@ export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey
             />
           ) : barConfigs.map(bc => (
             <Bar key={bc.dataKey} dataKey={bc.dataKey} name={bc.name} fill={bc.fill} maxBarSize={32} minPointSize={1} radius={[0, 3, 3, 0]} isAnimationActive={false}>
-              {barConfigs.length === 1 && processedData.map((_, i) => (
+              {colorSingleSeriesByCategory && barConfigs.length === 1 && processedData.map((_, i) => (
                 <Cell key={i} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} />
               ))}
               <LabelList dataKey={bc.dataKey} content={(props: BarRenderProps) => (

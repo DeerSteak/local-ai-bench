@@ -1,11 +1,10 @@
 import type { RefObject } from "react";
 import {
-  getAllImageModels,
+  getAllImageModels, getImageResolutions,
   buildImagesGroupedBarDataForResolution, buildImagesGroupedBarConfigs,
   buildImagesData, buildImagesLineConfigs,
 } from "../../utils/images";
 import { sortBarData, findMostStrenuousKey } from "../../utils/shared";
-import { RES_ORDER } from "../../constants";
 import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
 import type { ResultsFile } from "../../types";
@@ -19,27 +18,20 @@ export default function ImagesPanel({ containerRef, files, enabledImageModels, c
   const containerStyle = { width: chartWidth, minWidth: chartWidth, maxWidth: chartWidth };
   const allModels = getAllImageModels(files).filter(m => enabledImageModels.has(m));
 
-  const resSet = new Set<string>();
-  for (const f of files)
-    for (const model of allModels) {
-      for (const res of Object.keys(f.data.images?.[model]?.resolutions || {})) resSet.add(res);
-      const timedOutRes = f.data.images?.[model]?.timed_out;
-      if (timedOutRes) resSet.add(timedOutRes);
-    }
-  const resolutions = RES_ORDER.filter(r => resSet.has(r));
+  const resolutions = getImageResolutions(files, allModels);
 
   if (!resolutions.length || !allModels.length) {
     return <EmptyState style={containerStyle}>No Images data in the loaded file(s)</EmptyState>;
   }
 
-  const groupedBarConfigs = buildImagesGroupedBarConfigs(files, enabledImageModels);
-  const modelKeys = groupedBarConfigs.map(bc => bc.dataKey);
   const lineData = buildImagesData(files, enabledImageModels);
   const lineConfigs = buildImagesLineConfigs(files, lineData, enabledImageModels);
 
   return (
     <ChartGrid containerRef={containerRef} style={containerStyle}>
       {isBar ? resolutions.map(res => {
+        const groupedBarConfigs = buildImagesGroupedBarConfigs(files, res, enabledImageModels);
+        const modelKeys = groupedBarConfigs.map(bc => bc.dataKey);
         const raw = buildImagesGroupedBarDataForResolution(files, res, enabledImageModels);
         if (!raw.length) return null;
         const strenuousKey = findMostStrenuousKey(raw, modelKeys);
@@ -51,6 +43,7 @@ export default function ImagesPanel({ containerRef, files, enabledImageModels, c
             modelName="Image Generation"
             data={data}
             barConfigs={groupedBarConfigs}
+            colorSingleSeriesByCategory={false}
             xKey="systemLabel" yLabel="Sec / image" unit="sec"
             chartName="images" chartModel={res}
             logoSrc={logoSrc} direction="lower"

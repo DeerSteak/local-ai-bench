@@ -1,6 +1,6 @@
 import type { RefObject } from "react";
 import {
-  buildImagesBarDataByModel, buildImagesBarConfigsByModel,
+  buildImagesGroupedBarDataForResolution, buildImagesGroupedBarConfigs, getImageResolutions,
   buildImagesLineDataByRes, buildImagesLineConfigsByRes,
   getAllImageModels,
 } from "../../utils/images";
@@ -8,11 +8,10 @@ import { sortBarData, findMostStrenuousKey, isNotNull } from "../../utils/shared
 import { SECTION_LABELS } from "../../constants";
 import { ChartCard, GroupedBarCard } from "../charts/ChartCards";
 import { EmptyState, ChartGrid } from "./shared";
-import type { ResultsFile, ChartRow } from "../../types";
+import type { ResultsFile } from "../../types";
 import styles from "../ChartPanel.module.css";
 
-// Group By: System, Images section — one card per system, models as
-// bars/lines within it.
+// Keep each system's bar comparisons within one resolution.
 export default function ImagesBySystemPanel({ containerRef, files, enabledImageModels, chartWidth, logoSrc, isBar }: {
   containerRef?: RefObject<HTMLDivElement | null>, files: ResultsFile[], enabledImageModels: Set<string>,
   chartWidth: number, logoSrc?: string | null, isBar: boolean,
@@ -21,16 +20,18 @@ export default function ImagesBySystemPanel({ containerRef, files, enabledImageM
   const allModels = getAllImageModels(files).filter(m => enabledImageModels.has(m));
 
   const systemGroups = files.map(f => {
-    const rawBarData = buildImagesBarDataByModel(f, allModels);
-    const barConfigs = buildImagesBarConfigsByModel(f, allModels);
+    const resolutionCharts = getImageResolutions([f], allModels).map(resolution => {
+      const barConfigs = buildImagesGroupedBarConfigs([f], resolution, enabledImageModels);
+      const raw = buildImagesGroupedBarDataForResolution([f], resolution, enabledImageModels);
+      const strenuousKey = findMostStrenuousKey(raw, barConfigs.map(bc => bc.dataKey));
+      return { resolution, barConfigs, barData: strenuousKey ? sortBarData(raw, [strenuousKey], "asc") : raw };
+    }).filter(chart => chart.barData.length > 0 && chart.barConfigs.length > 0);
     const lineData = buildImagesLineDataByRes(f, allModels);
     const lineConfigs = buildImagesLineConfigsByRes(f, allModels, lineData);
-    const hasBar = rawBarData.length > 0 && barConfigs.length > 0;
+    const hasBar = resolutionCharts.length > 0;
     const hasLine = lineConfigs.length > 0;
     if (isBar ? !hasBar : !hasLine) return null;
-    const strenuousKey = findMostStrenuousKey(rawBarData, barConfigs.map(bc => bc.dataKey));
-    const barData = strenuousKey ? sortBarData(rawBarData, [strenuousKey], "asc") : rawBarData;
-    return { file: f, barData, barConfigs, lineData, lineConfigs };
+    return { file: f, resolutionCharts, lineData, lineConfigs };
   }).filter(isNotNull);
 
   if (!systemGroups.length) {
@@ -39,23 +40,22 @@ export default function ImagesBySystemPanel({ containerRef, files, enabledImageM
 
   return (
     <ChartGrid containerRef={containerRef} style={containerStyle}>
-      {systemGroups.map(({ file: f, barData, barConfigs, lineData, lineConfigs }: {
-        file: ResultsFile, barData: ChartRow[], barConfigs: { dataKey: string, name: string, fill: string }[],
-        lineData: ChartRow[], lineConfigs: { dataKey: string, name: string, stroke?: string }[],
-      }) => (
+      {systemGroups.map(({ file: f, resolutionCharts, lineData, lineConfigs }) => (
         <div key={f.id} className={styles.modelGroup}>
           <div className={styles.modelGroupTitle}>{f.hostname}</div>
-          {isBar ? (
+          {isBar ? resolutionCharts.map(({ resolution, barData, barConfigs }) => (
             <GroupedBarCard
-              title="Image Generation"
+              key={resolution}
+              title={resolution}
               modelName={f.hostname}
               data={barData}
               barConfigs={barConfigs}
-              xKey="modelLabel" yLabel="Sec / image" unit="sec"
-              chartName="images_by_system" chartModel={f.hostname}
+              colorSingleSeriesByCategory={false}
+              xKey="systemLabel" yLabel="Sec / image" unit="sec"
+              chartName="images_by_system" chartModel={`${f.hostname}_${resolution}`}
               logoSrc={logoSrc} direction="lower"
             />
-          ) : (
+          )) : (
             <ChartCard
               title="Image Generation"
               modelName={f.hostname}

@@ -58,7 +58,7 @@ A recommendation artifact produced by `python -m scripts.results.recommendation_
 | Concurrency (Chat) | The same three charts at 1 / 2 / 4 / 8 / 16 / 24 / 32 simultaneous long-context requests. See [Concurrency](workloads.md#concurrency) for how the two workloads differ |
 | Accuracy | A **Test** sub-picker for MCQ / Math / Reasoning / Code / Tool Use (mirrors `ACCURACY_TESTS` in `dashboard/src/constants.ts`). Per test: one Overall accuracy-per-model chart, one Accuracy-by-Category breakdown chart per model, and — when provided by the bank — an Accuracy-by-Difficulty chart. An Accuracy Incidents chart appears for timeouts, likely loops, or exhausted token budgets. See [Accuracy](workloads.md#accuracy) |
 | Embeddings | Chunks per second embedding one real document in a single call |
-| Images | One grouped bar chart per resolution — all image models side by side per host |
+| Images | One grouped bar chart per resolution — only applicable image models side by side per host |
 | llama-bench | Opt-in — two line charts per model: Decode Throughput across prefilled prompt depths, with one line per tg size and system; and Prompt Processing Throughput across pp sizes, with one line per system. See [Workloads](workloads.md#llama-bench) |
 | llama-bench Concurrency | Opt-in — aggregate decode throughput from `llama-batched-bench`, charted across parallel sequence counts with one chart per model or system and tg size. See [Workloads](workloads.md#llama-bench-concurrency) |
 
@@ -123,6 +123,8 @@ The backend badge identifies the inference backend actually exposed by the selec
 **Embeddings → Chunks/sec.** Throughput embedding one real document's chunks in a single call. Higher is better.
 
 **Images → Sec/image.** Wall-clock time to generate one image at a given resolution, per model. Lower is better.
+
+Image bar charts include a model at a resolution only when a loaded result records that case or an applicable timeout/skip. SD 1.5 uses 512×512 and 768×768; SDXL, Z-Image Turbo, and Flux use 1024×1024 and 1536×1536. Recorded non-default resolutions in older or custom results remain visible. Timeout-derived skips stay within each known model's resolution range. **Group By → Model** compares systems within each resolution; **Group By → System** gives each system separate resolution cards. In both bar views, colors and legends identify models consistently, including cards with only one model, without empty series for unsupported model/resolution combinations.
 
 ## Stats table
 

@@ -36,9 +36,9 @@ describe("getImageBarStatusLabel", () => {
     expect(getImageBarStatusLabel(timedOut, "sd15", "768x768")).toBe("768x768 - Timed Out");
   });
 
-  it("labels every larger resolution as Skipped, since none was attempted", () => {
-    expect(getImageBarStatusLabel(timedOut, "sd15", "1024x1024")).toBe("1024x1024 - Skipped");
-    expect(getImageBarStatusLabel(timedOut, "sd15", "1536x1536")).toBe("1536x1536 - Skipped");
+  it("does not label resolutions outside the model workload as skipped", () => {
+    expect(getImageBarStatusLabel(timedOut, "sd15", "1024x1024")).toBeNull();
+    expect(getImageBarStatusLabel(timedOut, "sd15", "1536x1536")).toBeNull();
   });
 
   it("leaves smaller resolutions unlabelled, because they completed before the timeout", () => {
@@ -270,7 +270,7 @@ describe("buildImagesGroupedBarConfigs", () => {
       sdxl: { resolutions: { "512x512": res(6) } },
       sd15: { resolutions: { "512x512": res(3) } },
     })];
-    expect(buildImagesGroupedBarConfigs(files, ALL)).toEqual([
+    expect(buildImagesGroupedBarConfigs(files, "512x512", ALL)).toEqual([
       { dataKey: "sd15", name: "Stable Diffusion 1.5", fill: IMAGE_BAR_COLORS.sd15 },
       { dataKey: "sdxl", name: "SDXL", fill: IMAGE_BAR_COLORS.sdxl },
     ]);
@@ -278,7 +278,7 @@ describe("buildImagesGroupedBarConfigs", () => {
 
   it("gives an unknown model a fallback color", () => {
     const files = [file("a", { "my-model": { resolutions: { "512x512": res(3) } } })];
-    expect(buildImagesGroupedBarConfigs(files, new Set(["my-model"]))[0].fill)
+    expect(buildImagesGroupedBarConfigs(files, "512x512", new Set(["my-model"]))[0].fill)
       .toMatch(/^#[0-9a-f]{6}$/i);
   });
 });
@@ -294,7 +294,7 @@ describe("buildImagesBarDataByModel", () => {
     ]);
   });
 
-  it("annotates the timed-out resolution and the larger ones it prevented", () => {
+  it("annotates timeouts without inventing unsupported larger resolutions", () => {
     const single = file("alpha", {
       sd15: { timed_out: "768x768", resolutions: { "512x512": res(3) } },
     });
@@ -302,7 +302,7 @@ describe("buildImagesBarDataByModel", () => {
     expect(row["512x512"]).toBe(3);
     expect(row._status_512x512).toBeUndefined();
     expect(row["_status_768x768"]).toBe("768x768 - Timed Out");
-    expect(row["_status_1024x1024"]).toBe("1024x1024 - Skipped");
+    expect(row["_status_1024x1024"]).toBeUndefined();
   });
 
   it("drops a model with neither data nor status rather than rendering an empty row", () => {

@@ -4,6 +4,8 @@
 
 The repository has two independent automated suites: pytest for the Python benchmark and Vitest for the React dashboard. Neither suite starts a real inference server, downloads models, or runs the benchmark.
 
+Image chart tests cover per-resolution model selection for both grouping modes, model filters, mixed-system and legacy results, missing/null entries, and timeout-only cases without unsupported-resolution skips. Registry tests cover the known image workload ranges; browser checks verify per-system resolution cards and stable model colors, including single-model charts.
+
 **Contents**
 - [Python tests](#python-tests)
 - [Coverage and safety boundaries](#coverage-and-safety-boundaries)

@@ -1,6 +1,6 @@
 import {
   RES_ORDER, FALLBACK_COLORS, FILE_COLORS, MODEL_DASH_PATTERNS,
-  IMAGE_DISPLAY_ORDER, IMAGE_BAR_COLORS, RES_COLORS,
+  IMAGE_DISPLAY_ORDER, IMAGE_BAR_COLORS, RES_COLORS, IMAGE_MODEL_RESOLUTIONS,
 } from "../constants";
 import { getImageModelColor, imageModelLabel, entriesOf, valuesOf, lookup } from "./shared";
 import { memoryFields } from "./memory";
@@ -10,18 +10,16 @@ import type { BarConfig, ChartRow, LineConfig, ResultsFile } from "../types";
 const isKnownRes = (res: unknown): res is string =>
   typeof res === "string" && RES_ORDER.includes(res);
 
-// Bar-chart status label for one (file, model, resolution) cell in the
-// Images charts, mirroring llm.js's getBarStatusLabel: "{res} - Timed Out" for
-// the resolution at which benchmark.py's image generation run itself timed
-// out, "{res} - Skipped" for every larger resolution consequently never
-// attempted. Returns null for cells with real data.
+// Only infer skipped resolutions within the model's workload range.
 export function getImageBarStatusLabel(file: ResultsFile, model: string, res: string): string | null {
+  if (file.data.images?.[model]?.resolutions?.[res]?.sec_per_image_mean != null) return null;
   const timedOutRes = file.data.images?.[model]?.timed_out;
   if (isKnownRes(timedOutRes)) {
     const timedOutIdx = RES_ORDER.indexOf(timedOutRes);
     const resIdx = RES_ORDER.indexOf(res);
     if (resIdx === timedOutIdx) return `${res} - Timed Out`;
-    if (resIdx > timedOutIdx) return `${res} - Skipped`;
+    if (resIdx > timedOutIdx && (IMAGE_MODEL_RESOLUTIONS[model] ?? RES_ORDER).includes(res))
+      return `${res} - Skipped`;
   }
   return null;
 }
@@ -142,13 +140,21 @@ export function buildImagesGroupedBarDataForResolution(files: ResultsFile[], res
     .filter(row => allModels.some(m => row[m] != null || row[`_status_${m}`] != null));
 }
 
-export function buildImagesGroupedBarConfigs(files: ResultsFile[], enabledImageModels: Set<string>): BarConfig[] {
+export function buildImagesGroupedBarConfigs(files: ResultsFile[], resolution: string, enabledImageModels: Set<string>): BarConfig[] {
   const allModels = getAllImageModels(files).filter(m => enabledImageModels.has(m));
-  return allModels.map((m, i) => ({
+  return allModels.map(m => ({
     dataKey: m,
     name: getImageLabel(files, m),
-    fill: lookup(IMAGE_BAR_COLORS, m) || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
-  }));
+    fill: lookup(IMAGE_BAR_COLORS, m) || getImageModelColor(m),
+  })).filter(config => files.some(file =>
+    file.data.images?.[config.dataKey]?.resolutions?.[resolution] != null
+    || getImageBarStatusLabel(file, config.dataKey, resolution) != null));
+}
+
+export function getImageResolutions(files: ResultsFile[], models: string[]): string[] {
+  return RES_ORDER.filter(res => files.some(file => models.some(model =>
+    file.data.images?.[model]?.resolutions?.[res] != null
+    || getImageBarStatusLabel(file, model, res) != null)));
 }
 
 // Images bar chart by system: rows = models, cols = resolutions, for one file
