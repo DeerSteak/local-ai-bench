@@ -31,10 +31,10 @@ function DirectionHint({ direction }: { direction?: string }) {
   );
 }
 
-export function ChartCard({ title, modelName = null, data, lineConfigs, xKey, xLabel, yLabel, unit, isMultiFile, chartName, chartModel = null, logoSrc, direction }: {
+export function ChartCard({ title, modelName = null, data, lineConfigs, xKey, xLabel, yLabel, unit, isMultiFile, chartName, chartModel = null, logoSrc, direction, connectNulls = true, caption }: {
   title: string, modelName?: string | null, data: ChartRow[], lineConfigs: LineConfig[], xKey: string,
   xLabel: string, yLabel: string, unit: string, isMultiFile: boolean, chartName: string,
-  chartModel?: string | null, logoSrc?: string | null, direction?: string,
+  chartModel?: string | null, logoSrc?: string | null, direction?: string, connectNulls?: boolean, caption?: string,
 }) {
   const deltaMode = useContext(DeltaModeContext);
   const effectiveUnit = deltaMode ? "pct" : unit;
@@ -49,6 +49,7 @@ export function ChartCard({ title, modelName = null, data, lineConfigs, xKey, xL
           <DirectionHint direction={direction} />
         </div>
       </div>
+      {caption && <p style={{ margin: "0 16px 12px", color: "#57606a", fontSize: 13 }}>{caption}</p>}
       <ResponsiveContainer width="100%" height={320}>
         <LineChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
           <CartesianGrid stroke="#e0e4e8" strokeDasharray="3 3" />
@@ -78,7 +79,7 @@ export function ChartCard({ title, modelName = null, data, lineConfigs, xKey, xL
               strokeWidth={2}
               dot={{ r: 4, fill: lc.stroke }}
               strokeDasharray={lc.strokeDasharray}
-              connectNulls
+              connectNulls={connectNulls}
               activeDot={{ r: 6 }}
               isAnimationActive={false}
             />
@@ -182,10 +183,10 @@ function computeRightMargin(rows: ChartRow[], barConfigs: BarConfig[]): number {
   return Math.min(220, Math.max(60, maxChars * 7 + 20));
 }
 
-export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey, yLabel, unit, chartName, chartModel = null, logoSrc, direction, orderedSeries = false, colorSingleSeriesByCategory = true }: {
+export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey, yLabel, unit, chartName, chartModel = null, logoSrc, direction, orderedSeries = false, colorSingleSeriesByCategory = true, caption }: {
   title: string, modelName?: string | null, data: ChartRow[], barConfigs: BarConfig[], xKey: string,
   yLabel: string, unit: string, chartName: string, chartModel?: string | null, logoSrc?: string | null,
-  direction?: string, orderedSeries?: boolean, colorSingleSeriesByCategory?: boolean,
+  direction?: string, orderedSeries?: boolean, colorSingleSeriesByCategory?: boolean, caption?: string,
 }) {
   const yAxisWidth = useCategoryAxisWidth(data, xKey);
   const deltaMode = useContext(DeltaModeContext);
@@ -221,6 +222,7 @@ export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey
           <DirectionHint direction={direction} />
         </div>
       </div>
+      {caption && <p style={{ margin: "0 16px 12px", color: "#57606a", fontSize: 13 }}>{caption}</p>}
       <ResponsiveContainer width="100%" height={chartHeight}>
         {/* Fixed pixel gap, not recharts' default 10%-of-band — with many bars per category
             (e.g. llama-bench's up to 20 checkpoints) the per-category band is tall enough that

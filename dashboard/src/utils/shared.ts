@@ -251,6 +251,8 @@ export function fmt(v: number | null | undefined, unit: string): string {
       return `${v.toFixed(1)}%`;
     case "count":
       return `${Math.round(v)}`;
+    case "efficiency":
+      return v !== 0 && Math.abs(v) < 1 ? Number(v.toPrecision(3)).toString() : v.toFixed(2);
     default:
       return v.toFixed(2);
   }

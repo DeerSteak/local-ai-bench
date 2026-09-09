@@ -2,6 +2,8 @@
 
 # Project Structure
 
+The dashboard's `src/utils/energyAnalysis.ts` prepares recorded efficiency and joule series for native benchmarks, images, and embeddings. `src/components/panels/EnergyAnalysisPanel.tsx` renders scope-separated energy figures and availability messages alongside those workloads; `src/utils/energyAnalysis.test.ts` covers its data contract.
+
 **Contents**
 - [`scripts/` in detail](#scripts-in-detail)
 - [`results/` in detail](#results-in-detail)

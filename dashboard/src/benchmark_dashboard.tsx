@@ -16,6 +16,8 @@ import type { NamedTextSource, ParsedNamedSource } from "./utils/shared";
 import Header from "./components/Header";
 import Controls from "./components/Controls";
 import ChartPanel from "./components/ChartPanel";
+import EnergyAnalysisPanel from "./components/panels/EnergyAnalysisPanel";
+import { ENERGY_SECTIONS } from "./utils/energyAnalysis";
 import StatsTable from "./components/StatsTable";
 import ValidityInspector from "./components/ValidityInspector";
 import "./dashboard.css";
@@ -556,23 +558,30 @@ export default function Dashboard() {
         files={effectiveFiles} containerRef={summaryRef} logoSrc={logoSrc} chartWidth={chartWidth}
       />
 
-      <DeltaModeContext.Provider value={baselineId != null && section !== "sustained"}>
-        <ChartPanel
-          containerRef={chartRef}
-          files={section === "sustained" ? effectiveFiles : chartFiles}
-          absoluteFiles={effectiveFiles}
-          section={section}
-          accuracyTest={accuracyTest}
-          enabledModels={enabledModels}
-          enabledImageModels={enabledImageModels}
-          enabledEmbedModels={enabledEmbedModels}
-          chartWidth={chartWidth}
-          logoSrc={logoSrc}
-          chartStyle={chartStyle}
-          groupBy={groupBy}
-          sizeSplit={sizeSplit}
-        />
-      </DeltaModeContext.Provider>
+      <div ref={chartRef}>
+        {ENERGY_SECTIONS.includes(section) && effectiveFiles.length > 0 && (
+          <p><a href="#energy-analysis">View energy analysis ↓</a></p>
+        )}
+        <DeltaModeContext.Provider value={baselineId != null && section !== "sustained"}>
+          <ChartPanel
+            files={section === "sustained" ? effectiveFiles : chartFiles}
+            absoluteFiles={effectiveFiles}
+            section={section}
+            accuracyTest={accuracyTest}
+            enabledModels={enabledModels}
+            enabledImageModels={enabledImageModels}
+            enabledEmbedModels={enabledEmbedModels}
+            chartWidth={chartWidth}
+            logoSrc={logoSrc}
+            chartStyle={chartStyle}
+            groupBy={groupBy}
+            sizeSplit={sizeSplit}
+          />
+        </DeltaModeContext.Provider>
+        <EnergyAnalysisPanel files={effectiveFiles} section={section}
+          enabledModels={section === "images" ? enabledImageModels : section === "embeddings" ? enabledEmbedModels : enabledModels}
+          bySystem={groupBy === "system"} chartWidth={chartWidth} logoSrc={logoSrc} />
+      </div>
 
       <StatsTable
         files={effectiveFiles}

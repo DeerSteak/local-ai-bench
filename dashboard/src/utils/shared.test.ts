@@ -703,3 +703,10 @@ describe("getCrossEngineWeightsWarning", () => {
     expect(getCrossEngineWeightsWarning([file("vllm"), { id: "old", data: {} }])).toBe("");
   });
 });
+
+it("keeps small efficiency values visible instead of rounding them to zero", () => {
+  expect(fmt(0.006223757, "efficiency")).toBe("0.00622");
+  expect(fmt(0.000012345, "efficiency")).toBe("0.0000123");
+  expect(fmt(25.188, "efficiency")).toBe("25.19");
+  expect(fmt(0, "efficiency")).toBe("0.00");
+});
