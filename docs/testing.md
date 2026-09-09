@@ -223,3 +223,5 @@ The llama-bench sparse-depth tests cover exact 128K selection, non-power-of-two 
 Recovery model verification tests in [test_model_verification.py](../tests/test_model_verification.py) cover deferred weight checks, per-stage reuse, changed/missing/sharded artifacts, image support assets, and replacement of a later model. Resume-policy tests verify byte progress and that lightweight inspection does not read deferred weights; workload recovery tests retain completed cases.
 
 Managed llama.cpp installer tests in `test_managed_llamacpp.py` cover the platform/backend/architecture matrix, Ubuntu derivative detection, ROCm version compatibility, same-release source fallback, cancellation, and rollback. Setup and Engine Management tests exercise the shared dispatch and multi-runtime transaction; Windows source builds use mocked compiler commands and executable validation. No installer or compiler is launched by these tests.
+
+Result History rename coverage verifies multiline system names, preservation of measurements, malformed input rejection, atomic-write failures, cancellation, selection requirements, and active-process guards.

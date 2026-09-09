@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from scripts.results.local_execution_context import local_execution_path
-from scripts.results.result_store import as_dict, validate_json_data
+from scripts.results.result_store import as_dict, atomic_write_json, validate_json_data
 from scripts.results.significance import compare_metric, metric_evidence
 from scripts.stage_registry import ACCURACY_TESTS
 
@@ -276,6 +276,20 @@ def load_result(path: Path) -> dict:
         raise ValueError("result must be a JSON object")
     validate_json_data(result)
     return result
+
+
+def rename_result_system(path: Path, name: str) -> None:
+    """Persist the display hostname without changing the run or its measurements."""
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("Enter a system name.")
+    name = name.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if any(ord(char) < 32 and char != "\n" for char in name):
+        raise ValueError("System names may contain text and new lines only.")
+    result = load_result(path)
+    if not isinstance(result.get("profile"), dict):
+        raise ValueError("Not a benchmark result: missing system profile.")
+    result["profile"]["hostname"] = name
+    atomic_write_json(Path(path), result)
 
 
 def extract_comparable_metrics(result: dict) -> dict[str, dict]:

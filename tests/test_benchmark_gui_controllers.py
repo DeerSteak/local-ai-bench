@@ -765,3 +765,119 @@ def test_run_log_open_folder_detaches_desktop_process(monkeypatch, tmp_path):
         "stderr": subprocess.DEVNULL,
         "start_new_session": True,
     })]
+
+
+def test_history_rename_saves_multiline_name_and_refreshes(tmp_path):
+    import json
+    controller, messages, refreshes = build_history_delete_controller()
+    path = tmp_path / "result.json"
+    path.write_text(json.dumps({"profile": {"hostname": "Old\nName"}}))
+    controller.screen.tree.selected = ("one",)
+    controller.item_paths["one"] = path
+    prompts = []
+    controller.prompt_system_name = lambda current: prompts.append(current) or "New\nName"
+    controller.rename_system()
+    assert prompts == ["Old\nName"]
+    assert json.loads(path.read_text())["profile"]["hostname"] == "New\nName"
+    assert refreshes == [True]
+    assert not messages.errors
+
+
+def test_history_rename_cancel_does_not_write(tmp_path):
+    controller, messages, refreshes = build_history_delete_controller()
+    path = tmp_path / "result.json"
+    original = '{"profile":{"hostname":"Old"}}'
+    path.write_text(original)
+    controller.screen.tree.selected = ("one",)
+    controller.item_paths["one"] = path
+    controller.prompt_system_name = lambda current: None
+    controller.rename_system()
+    assert path.read_text() == original
+    assert not refreshes
+    assert not messages.errors
+
+
+def test_history_rename_blocks_active_process_and_multiple_selection():
+    for active in (True, False):
+        controller, messages, refreshes = build_history_delete_controller(active=active)
+        controller.rename_system()
+        assert messages.errors
+        assert not refreshes
+
+
+def test_history_rename_reports_write_failure(tmp_path, monkeypatch):
+    controller, messages, refreshes = build_history_delete_controller()
+    path = tmp_path / "result.json"
+    path.write_text('{"profile":{"hostname":"Old"}}')
+    controller.screen.tree.selected = ("one",)
+    controller.item_paths["one"] = path
+    controller.prompt_system_name = lambda current: "New"
+
+    def fail(*_args):
+        raise OSError("read-only result")
+
+    monkeypatch.setattr("scripts.app.benchmark_gui_screens.history_actions.rename_result_system", fail)
+    controller.rename_system()
+    assert messages.errors
+    assert not refreshes
+
+
+def test_history_rename_rechecks_active_process_after_dialog(tmp_path):
+    controller, messages, refreshes = build_history_delete_controller()
+    path = tmp_path / "result.json"
+    original = '{"profile":{"hostname":"Old"}}'
+    path.write_text(original)
+    controller.screen.tree.selected = ("one",)
+    controller.item_paths["one"] = path
+    active = iter([False, True])
+    controller.process_active = lambda: next(active)
+    controller.prompt_system_name = lambda current: "New"
+    controller.rename_system()
+    assert messages.errors
+    assert not refreshes
+    assert path.read_text() == original
+
+
+def test_history_rename_dialog_uses_multiline_text_and_explicit_save():
+    controller, messages, _ = build_history_delete_controller()
+    widgets = []
+    commands = {}
+    bindings = {}
+
+    class Widget:
+        def __init__(self, *args, **kwargs):
+            self.text = ""
+            widgets.append(self)
+            if "command" in kwargs:
+                commands[kwargs["text"]] = kwargs["command"]
+
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: None
+
+        def insert(self, start, value):
+            self.text = value
+
+        def get(self, start, end):
+            assert (start, end) == ("1.0", "end-1c")
+            return self.text
+
+        def bind(self, key, command):
+            bindings[key] = command
+
+    controller.tk = SimpleNamespace(Toplevel=Widget, Text=Widget)
+    controller.ttk = SimpleNamespace(Frame=Widget, Label=Widget, Button=Widget)
+
+    def interact(dialog):
+        editor = next(widget for widget in widgets if widget.text)
+        assert editor.text == "Old\nName"
+        editor.text = " \n "
+        commands["Save"]()
+        assert messages.errors
+        editor.text = "New\nSystem\n48 GB"
+        commands["Save"]()
+
+    controller.root = SimpleNamespace(wait_window=interact)
+    assert controller.prompt_system_name("Old\nName") == "New\nSystem\n48 GB"
+    assert "<Return>" not in bindings
+    assert "Cancel" in commands
+    assert "<Escape>" in bindings

@@ -4,6 +4,8 @@ The benchmark GUI's **Result History** tab discovers benchmark JSON files in the
 
 Malformed JSON and unrelated JSON files are ignored and counted in the status message. Refresh rescans the directory, so files copied in or removed outside the application remain authoritative.
 
+Select one result and choose **Rename system** to edit its saved system name. Enter adds a new line; **Save** atomically updates `profile.hostname` in that result JSON, so reopening it in the dashboard uses the new name and line breaks. Result History shows the lines separated by slashes to fit its rows. Cancel leaves the file unchanged. Renaming is disabled while a benchmark process is active; it changes neither the filename nor the measurements and does not rename the operating-system host or future runs.
+
 ## Dashboard comparison
 
 Select one to six results with the platform's normal multi-selection keys, then choose **Open in Dashboard**. The GUI starts the local dashboard and loads those files directly in their table order, where its charts, raw tables, validity inspection, and model filters provide the comparison. Only the selected files are copied temporarily into the dashboard build directory. A normal server stop removes them, and every subsequent dashboard build clears any copies left by a forcibly closed terminal.
