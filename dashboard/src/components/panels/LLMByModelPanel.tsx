@@ -172,7 +172,7 @@ export default function LLMByModelPanel({ containerRef, files, section, enabledM
               title={`Energy per 1,000 Tokens${titleSuffix}`}
               modelName={modelLabel(model)}
               data={efficiencyData} lineConfigs={efficiencyLineConfigs}
-              xKey="ctxLabel" xLabel="Context Length" yLabel="Joules / 1,000 tokens"
+              xKey="ctxLabel" xLabel="Context Length" yLabel="Joules / 1k tok"
               unit="energy" isMultiFile={isMultiFile}
               chartName={`${chartNamePrefix}joules_per_1000_tokens`} chartModel={model}
               logoSrc={logoSrc} direction="lower"

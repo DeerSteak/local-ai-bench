@@ -17,7 +17,7 @@ describe("workload energy analysis", () => {
     const { groups, notices } = buildEnergyAnalysis([file()], "llamabench", enabled);
     expect(notices).toEqual([]);
     expect(groups).toHaveLength(1);
-    expect(groups[0].unit).toBe("Joules / 1,000 tokens");
+    expect(groups[0].unit).toBe("Joules / 1k tok");
     expect(groups[0].description).toContain("Accelerator · Full case, including model load");
     expect(groups[0].data).toEqual([{ caseLabel: "8K", order: 8192, f0: 500, f0_energy: 100 }]);
     expect(energyChartSeries(groups[0], true)[0].dataKey).toBe("f0_energy");
@@ -69,7 +69,7 @@ describe("workload energy analysis", () => {
     const result = buildEnergyAnalysis([f], "llamabench", enabled);
     expect(energyChartSeries(result.groups[0])).toEqual([]);
     expect(energyChartSeries(result.groups[0], true)).toHaveLength(1);
-    expect(result.notices.join()).toContain("Joules / 1,000 tokens not recorded");
+    expect(result.notices.join()).toContain("Joules / 1k tok not recorded");
   });
 
   it("ignores filtered models and handles legacy/missing/null power", () => {

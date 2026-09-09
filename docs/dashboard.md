@@ -216,3 +216,5 @@ Open the URL Vite prints (typically `http://localhost:5173`).
 ---
 
 [← CLI Reference](cli-reference.md) · [Back to README](../README.md) · [How It Works →](how-it-works.md)
+
+Energy chart axes abbreviate values of 1,000 or more with `k` (for example, `7.5k` joules); tooltips retain the full values. Token energy axes use the compact label `Joules / 1k tok`.

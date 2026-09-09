@@ -12,7 +12,7 @@ export const powerEfficiency = (sample: JsonRecord[string]): number | null =>
   finiteNumber(sample?.power?.efficiency?.per_joule);
 
 export const ENERGY_COST_UNITS = {
-  tokens_per_joule: { scale: 1000, label: "Joules / 1,000 tokens" },
+  tokens_per_joule: { scale: 1000, label: "Joules / 1k tok" },
   images_per_joule: { scale: 1, label: "Joules / image" },
   embeddings_per_joule: { scale: 1000, label: "Joules / 1,000 embeddings" },
 };

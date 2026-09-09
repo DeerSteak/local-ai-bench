@@ -117,7 +117,7 @@ export default function LLMBySystemPanel({ containerRef, files, section, enabled
       });
       if (hasEfficiency) metrics.push({
         key: "efficiency", title: `Energy per 1,000 Tokens${titleSuffix}`,
-        yLabel: "Joules / 1,000 tokens", unit: "energy", direction: "lower",
+        yLabel: "Joules / 1k tok", unit: "energy", direction: "lower",
         xKey: "ctxLabel", xLabel: "Context Length", chartName: `${chartNamePrefix}joules_per_1000_tokens`,
         barData: efficiencyBarData, barConfigs: efficiencyBarConfigs,
         lineData: efficiencyLineData, lineConfigs: efficiencyLineConfigs,

@@ -415,3 +415,10 @@ export function sortRows<T extends ChartRow>(
     return (av < bv ? -1 : av > bv ? 1 : 0) * sortConfig.dir;
   });
 }
+
+export function formatAxisTick(v: number | null | undefined, unit: string): string {
+  if (unit === "energy" && v != null && Number.isFinite(v) && Math.abs(v) >= 1000) {
+    return `${Number((v / 1000).toFixed(1))}k`;
+  }
+  return fmt(v, unit);
+}

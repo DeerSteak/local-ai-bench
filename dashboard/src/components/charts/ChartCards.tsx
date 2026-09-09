@@ -1,6 +1,6 @@
 import { LineChart, Line, BarChart, Bar, Cell, LabelList, Rectangle, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { useContext, useEffect, useState } from "react";
-import { measuredCategoryAxisWidth, prepareOrderedBarGroupData, fmt } from "../../utils/shared";
+import { measuredCategoryAxisWidth, prepareOrderedBarGroupData, fmt, formatAxisTick } from "../../utils/shared";
 import type { JsonRecord } from "../../utils/shared";
 import { CATEGORY_COLORS } from "../../constants";
 import type { ChartRow } from "../../types";
@@ -39,7 +39,7 @@ export function ChartCard({ title, modelName = null, data, lineConfigs, xKey, xL
   const deltaMode = useContext(DeltaModeContext);
   const effectiveUnit = deltaMode ? "pct" : unit;
   const effectiveYLabel = deltaMode ? "Baseline-relative performance (%)" : yLabel;
-  const yTickFormatter = (v: number) => fmt(v, effectiveUnit);
+  const yTickFormatter = (v: number) => formatAxisTick(v, effectiveUnit);
   return (
     <div className="card chart-card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
       <div className={styles.chartHeader}>
@@ -232,7 +232,7 @@ export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey
           <XAxis
             type="number"
             tick={{ fill: "#57606a", fontSize: 15 }}
-            tickFormatter={valFormatter}
+            tickFormatter={(v: number) => formatAxisTick(v, effectiveUnit)}
             label={{ value: effectiveYLabel, position: "insideBottom", offset: -6, fill: "#8c959f", fontSize: 15 }}
             height={56}
           />

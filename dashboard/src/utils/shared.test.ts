@@ -5,7 +5,7 @@ import {
   getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning,
   getNoRepackMethodologyWarning,
   getMemoryTelemetryMethodologyWarning,
-  sanitizeForFilename, applyEngineLabels, backendLabel, engineFamily, engineLabel, filesForSection, fmt, getCrossEngineWeightsWarning,
+  sanitizeForFilename, applyEngineLabels, backendLabel, engineFamily, engineLabel, filesForSection, fmt, formatAxisTick, getCrossEngineWeightsWarning,
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier, getSkipInfo, prepareOrderedBarGroupData,
   sortBarData, sortRows, deriveTtftUnit, hasValueOrStatus, configsWithValues,
@@ -709,4 +709,19 @@ it("keeps small efficiency values visible instead of rounding them to zero", () 
   expect(fmt(0.000012345, "efficiency")).toBe("0.0000123");
   expect(fmt(25.188, "efficiency")).toBe("25.19");
   expect(fmt(0, "efficiency")).toBe("0.00");
+});
+
+describe("formatAxisTick", () => {
+  it.each([[1000, "1k"], [7500, "7.5k"], [12500, "12.5k"], [100000, "100k"], [-7500, "-7.5k"]])(
+    "abbreviates energy tick %s as %s", (value, expected) => {
+      expect(formatAxisTick(value as number, "energy")).toBe(expected);
+    },
+  );
+  it("preserves small ticks, missing values, other units, and tooltip precision", () => {
+    expect(formatAxisTick(999, "energy")).toBe("999.00");
+    expect(formatAxisTick(0, "energy")).toBe("0.00");
+    expect(formatAxisTick(null, "energy")).toBe("—");
+    expect(formatAxisTick(7500, "pct")).toBe("7500.0%");
+    expect(fmt(7500, "energy")).toBe("7500.00");
+  });
 });
