@@ -160,3 +160,15 @@ it("keeps incompatible workloads and measurement windows separate when combining
   b.data.llamabench.m.prefill_entries[0].completed_reps = 1;
   expect(buildEnergyAnalysis([a, b], "llamabench", enabled, false, true).groups).toHaveLength(2);
 });
+
+it("exposes prominent prefill and decode labels without mixing phases", () => {
+  const f = { data: { llamabench: { m: {
+    prefill_entries: [sample()],
+    decode_entries: [{ n_prompt: 0, n_depth: 8192, n_gen: 512, completed_reps: 3, power: power() }],
+  } } } };
+  const groups = buildEnergyAnalysis([f], "llamabench", enabled, false, true).groups;
+  expect(groups.map(group => group.phaseLabel)).toEqual(["Prefill", "Decode"]);
+  expect(groups[1].description).toContain("512 generated tokens");
+  const images = { data: { images: { m: { power: power("accelerator", "images_per_joule") } } } };
+  expect(buildEnergyAnalysis([images], "images", enabled).groups[0].phaseLabel).toBeUndefined();
+});

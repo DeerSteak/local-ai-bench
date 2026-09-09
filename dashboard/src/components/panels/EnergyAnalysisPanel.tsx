@@ -27,7 +27,8 @@ export default function EnergyAnalysisPanel({ files, section, enabledModels, byS
     {groups.flatMap((group, groupIndex) => [false, true].map(energy => {
       const configs = energyChartSeries(group, energy);
       if (!configs.length) return null;
-      const title = energy ? "Measured Energy" : "Energy per Work";
+      const metricTitle = energy ? "Measured Energy" : "Energy per Work";
+      const title = group.phaseLabel ? `${group.phaseLabel} — ${metricTitle}` : metricTitle;
       const unit = "energy";
       const yLabel = energy ? "Joules" : group.unit;
       const chartName = `${section}_${energy ? "energy_joules" : "energy_per_work"}`;

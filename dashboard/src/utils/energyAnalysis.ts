@@ -11,10 +11,10 @@ const positive = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value) && value > 0;
 
 interface EnergyCase {
-  sample: JsonRecord[string]; phase: string; label: string; order: number;
+  sample: JsonRecord[string]; phase: string; phaseLabel?: string; label: string; order: number;
 }
 export interface EnergyChartGroup {
-  id: string; model: string; description: string; unit: string;
+  id: string; model: string; description: string; unit: string; phaseLabel?: string;
   data: ChartRow[]; configs: LineConfig[];
 }
 
@@ -22,11 +22,11 @@ function energyCases(section: string, data: JsonRecord[string]): EnergyCase[] {
   if (section === "llamabench") {
     return [
       ...llamaBenchPrefillEntries(data).filter(sample => sample && typeof sample === "object").map(sample => ({
-        sample, phase: `Prefill · ${sample.completed_reps ?? "unknown"} repetitions`,
+        sample, phaseLabel: "Prefill", phase: `Prefill · ${sample.completed_reps ?? "unknown"} repetitions`,
         label: llamaBenchPromptLabel(sample.n_prompt), order: sample.n_prompt,
       })),
       ...llamaBenchDecodeEntries(data).filter(sample => sample && typeof sample === "object").map(sample => ({
-        sample, phase: `Decode · ${sample.n_gen} generated tokens · ${sample.completed_reps ?? "unknown"} repetitions`,
+        sample, phaseLabel: "Decode", phase: `Decode · ${sample.n_gen} generated tokens · ${sample.completed_reps ?? "unknown"} repetitions`,
         label: llamaBenchPromptLabel(sample.n_depth), order: sample.n_depth,
       })),
     ];
@@ -84,7 +84,7 @@ export function buildEnergyAnalysis(
         if (!group) {
           group = { id, model: separateSystem ? identity : label,
             description: `${entry.phase} · ${combineSystems ? "Power scope shown per series" : powerScopeLabel(power.scope)} · ${basis}`,
-            unit: ENERGY_COST_UNITS[expectedUnit].label, data: [], configs: [] };
+            unit: ENERGY_COST_UNITS[expectedUnit].label, phaseLabel: entry.phaseLabel, data: [], configs: [] };
           groups.set(id, group);
         }
         let row = group.data.find(row => row.caseLabel === entry.label);
