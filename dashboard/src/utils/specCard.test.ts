@@ -42,13 +42,23 @@ describe("buildSpecCardSummary", () => {
 describe("buildRunCardFilename", () => {
   it("uses the export suffix and disambiguates repeated hostnames", () => {
     const names = ["My Host", "My Host"];
-    expect(buildRunCardFilename(names, 0, "before upgrade")).toBe(
-      "My-Host_before-upgrade_run-card.png",
+    expect(buildRunCardFilename(names, 0, "before upgrade", "llamabench")).toBe(
+      "My-Host_before-upgrade_llamabench_run-card.png",
     );
-    expect(buildRunCardFilename(names, 1, "after upgrade")).toBe(
-      "My-Host_2_after-upgrade_run-card.png",
+    expect(buildRunCardFilename(names, 1, "after upgrade", "llamabenchconc")).toBe(
+      "My-Host_2_after-upgrade_llamabenchconc_run-card.png",
     );
   });
+});
+
+it("gives every tab and accuracy subtab distinct safe run-card names", () => {
+  const tabs = ["llm", "llm_cached", "llm_conversation", "llm_cache_comparison", "llamabench",
+    "llamabenchconc", "images", "embeddings", "accuracy-mcq", "accuracy-math", "concurrency_tool",
+    "concurrency_chat", "sustained"];
+  const names = tabs.map(tab => buildRunCardFilename(["Host"], 0, "", tab));
+  expect(new Set(names).size).toBe(tabs.length);
+  expect(names).toContain("Host_llamabench_run-card.png");
+  expect(buildRunCardFilename(["Host"], 0, "", "custom/tab")).toBe("Host_custom-tab_run-card.png");
 });
 
 describe("runCardGpuLabels", () => {

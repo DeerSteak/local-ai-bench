@@ -278,7 +278,7 @@ export default function Dashboard() {
           backgroundColor: "#ffffff", scale: 2, useCORS: true, logging: false,
         });
         const link = document.createElement("a");
-        link.download = buildRunCardFilename(runCardNames, index, filenameSuffix);
+        link.download = buildRunCardFilename(runCardNames, index, filenameSuffix, section === "accuracy" ? `accuracy-${accuracyTest}` : section);
         link.href = canvas.toDataURL("image/png");
         link.click();
         exported++;
@@ -304,7 +304,7 @@ export default function Dashboard() {
     } finally {
       setSaving(false);
     }
-  }, [saving, filenameSuffix]);
+  }, [saving, filenameSuffix, section, accuracyTest]);
 
   const saveSpecCards = useCallback(async () => {
     if (!summaryRef.current || savingSpecCard) return;
@@ -320,7 +320,7 @@ export default function Dashboard() {
           backgroundColor: "#ffffff", scale: 2, useCORS: true, logging: false,
         });
         const link = document.createElement("a");
-        link.download = buildRunCardFilename(names, index, filenameSuffix);
+        link.download = buildRunCardFilename(names, index, filenameSuffix, section === "accuracy" ? `accuracy-${accuracyTest}` : section);
         link.href = canvas.toDataURL("image/png");
         link.click();
         if (index < cards.length - 1) await new Promise(resolve => setTimeout(resolve, 300));
@@ -330,7 +330,7 @@ export default function Dashboard() {
     } finally {
       setSavingSpecCard(false);
     }
-  }, [savingSpecCard, filenameSuffix]);
+  }, [savingSpecCard, filenameSuffix, section, accuracyTest]);
 
   const cycleSort = (key: string) => {
     setSortConfig(prev => prev.key === key ? { key, dir: (prev.dir * -1) as 1 | -1 } : { key, dir: 1 });

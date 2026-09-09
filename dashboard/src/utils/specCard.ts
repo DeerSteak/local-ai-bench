@@ -13,11 +13,11 @@ export interface TierSummary {
   lowestTtft: Winner;
 }
 
-export function buildRunCardFilename(names: string[], index: number, suffix: string): string {
+export function buildRunCardFilename(names: string[], index: number, suffix: string, tab: string): string {
   const name = sanitizeForFilename(names[index] || `run-${index + 1}`);
   const occurrence = names.slice(0, index + 1)
     .filter(candidate => sanitizeForFilename(candidate) === name).length;
-  const parts = [name, occurrence > 1 ? String(occurrence) : "", sanitizeForFilename(suffix), "run-card"];
+  const parts = [name, occurrence > 1 ? String(occurrence) : "", sanitizeForFilename(suffix), sanitizeForFilename(tab), "run-card"];
   return `${parts.filter(Boolean).join("_")}.png`;
 }
 
