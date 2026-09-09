@@ -114,7 +114,7 @@ Each loaded file's header row carries a `v<version>` badge showing the suite ver
 
 The backend badge identifies the inference backend actually exposed by the selected engine build. This can differ from the machine's physical GPU family—for example, the standard Windows llama.cpp package reports Vulkan on AMD hardware and on NVIDIA hardware without a driver new enough for any prebuilt CUDA build, while Intel Arc uses its SYCL package and reports XPU. The raw results retain the physical classification separately as `profile.hardware_backend`.
 
-**llama-bench → Decode Throughput.** `llama-bench`'s generation `avg_ts` after prefilling the KV cache to each configured pp depth, with one series per tg length. Higher is better. This isolates generation speed from prompt processing and shows how decode throughput changes as context grows.
+**llama-bench → Decode Throughput.** `llama-bench`'s generation `avg_ts` after prefilling the KV cache to each configured pp depth, with one series per tg length. Higher is better. This isolates generation speed from prompt processing and shows how decode throughput changes as context grows. When grouped by model, each comparison legend places the tg length on its own line beneath the host details.
 
 **llama-bench → Prompt Processing Throughput.** `llama-bench`'s standalone prompt-processing `avg_ts` at each configured pp size. Higher is better. This measures how quickly the model ingests a prompt, independently of subsequent generation.
 

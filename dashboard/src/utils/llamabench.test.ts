@@ -100,11 +100,20 @@ describe("by-model line data", () => {
     const data = buildLlamaBenchDecodeLineData([fileA, fileB], "m1");
     const configs = buildLlamaBenchDecodeLineConfigs([fileA, fileB], "m1", data);
     expect(configs.map(config => config.name)).toEqual([
-      "alpha — tg128", "alpha — tg512", "beta — tg128",
+      "alpha\ntg128", "alpha\ntg512", "beta\ntg128",
     ]);
     expect(configs[0].stroke).toBe(configs[1].stroke);
     expect(configs[0].strokeDasharray).not.toBe(configs[1].strokeDasharray);
     expect(configs[0].stroke).not.toBe(configs[2].stroke);
+  });
+
+  it("puts tg below multiline host labels and keeps single-system labels compact", () => {
+    const files = [{ ...fileA, hostname: "MacBook Pro\nM5 Pro / 48 GB" }, fileB];
+    const data = buildLlamaBenchDecodeLineData(files, "m1");
+    expect(buildLlamaBenchDecodeLineConfigs(files, "m1", data)[0].name)
+      .toBe("MacBook Pro\nM5 Pro / 48 GB\ntg128");
+    expect(buildLlamaBenchDecodeLineConfigs([fileA], "m1", data).map(config => config.name))
+      .toEqual(["tg128", "tg512"]);
   });
 
   it("filters prefill file configs that have no values", () => {
