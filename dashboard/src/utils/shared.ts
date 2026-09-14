@@ -180,6 +180,26 @@ export function engineFamily(engine: string | null | undefined): string {
   return key === "llamacpp-vulkan" ? "llamacpp" : key;
 }
 
+export function dashboardEngineVersion(data: JsonRecord): string | null {
+  const version = typeof data.engine_version === "string" && data.engine_version.trim()
+    ? data.engine_version.trim() : null;
+  if (engineFamily(data.engine) !== "llamacpp" || (version && /^\d+$/.test(version))) return version;
+  const builds = new Set<string>();
+  for (const [, model] of entriesOf(data.llamabench)) {
+    for (const field of ["prefill_entries", "decode_entries", "entries"]) {
+      if (!Array.isArray(model?.[field])) continue;
+      for (const entry of model[field]) {
+        const build = entry?.build_number;
+        if ((typeof build === "number" && Number.isSafeInteger(build) && build > 1)
+            || (typeof build === "string" && /^\d+$/.test(build) && Number.isSafeInteger(Number(build)) && Number(build) > 1)) {
+          builds.add(String(Number(build)));
+        }
+      }
+    }
+  }
+  return builds.size === 1 ? [...builds][0] : version;
+}
+
 export function engineRunLabel(file: ResultsFile, section?: string): string {
   const displayEngine = engineLabel(file.engine);
   const labels = [displayEngine];
@@ -251,6 +271,8 @@ export function fmt(v: number | null | undefined, unit: string): string {
       return `${v.toFixed(1)}%`;
     case "count":
       return `${Math.round(v)}`;
+    case "efficiency":
+      return v !== 0 && Math.abs(v) < 1 ? Number(v.toPrecision(3)).toString() : v.toFixed(2);
     default:
       return v.toFixed(2);
   }
@@ -412,4 +434,11 @@ export function sortRows<T extends ChartRow>(
     const bv = valueFn(b, sortConfig.key);
     return (av < bv ? -1 : av > bv ? 1 : 0) * sortConfig.dir;
   });
+}
+
+export function formatAxisTick(v: number | null | undefined, unit: string): string {
+  if (unit === "energy" && v != null && Number.isFinite(v) && Math.abs(v) >= 1000) {
+    return `${Number((v / 1000).toFixed(1))}k`;
+  }
+  return fmt(v, unit);
 }

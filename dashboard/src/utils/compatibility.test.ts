@@ -8,7 +8,7 @@ import {
 } from "./llamabench";
 import { getRunReliabilityWarning, parseResultsJSON } from "./shared";
 import { getMemoryRecordingState, runHeadroomSummary } from "./memory";
-import { buildPowerEfficiencyDataForModel, runPowerSummary } from "./power";
+import { buildPowerEnergyCostDataForModel, runPowerSummary } from "./power";
 
 
 function loadGolden(name: string) {
@@ -42,8 +42,8 @@ describe("4.1 golden result compatibility", () => {
     expect(runHeadroomSummary(files[0])).toEqual({
       state: "comfortable", absoluteGb: 12, casePath: "llm/golden/2K",
     });
-    expect(buildPowerEfficiencyDataForModel(files, "golden"))
-      .toEqual([{ ctxLabel: "2K", f0: 10 }]);
+    expect(buildPowerEnergyCostDataForModel(files, "golden"))
+      .toEqual([{ ctxLabel: "2K", f0: 100 }]);
     expect(runPowerSummary(files[0])).toEqual({
       status: "recorded", energyJoules: 12, idleWatts: 4,
       scope: "accelerator", reason: null,

@@ -1,6 +1,6 @@
 import { LineChart, Line, BarChart, Bar, Cell, LabelList, Rectangle, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { useContext, useEffect, useState } from "react";
-import { measuredCategoryAxisWidth, prepareOrderedBarGroupData, fmt } from "../../utils/shared";
+import { measuredCategoryAxisWidth, prepareOrderedBarGroupData, fmt, formatAxisTick } from "../../utils/shared";
 import type { JsonRecord } from "../../utils/shared";
 import { CATEGORY_COLORS } from "../../constants";
 import type { ChartRow } from "../../types";
@@ -31,15 +31,15 @@ function DirectionHint({ direction }: { direction?: string }) {
   );
 }
 
-export function ChartCard({ title, modelName = null, data, lineConfigs, xKey, xLabel, yLabel, unit, isMultiFile, chartName, chartModel = null, logoSrc, direction }: {
+export function ChartCard({ title, modelName = null, data, lineConfigs, xKey, xLabel, yLabel, unit, isMultiFile, chartName, chartModel = null, logoSrc, direction, connectNulls = true, caption }: {
   title: string, modelName?: string | null, data: ChartRow[], lineConfigs: LineConfig[], xKey: string,
   xLabel: string, yLabel: string, unit: string, isMultiFile: boolean, chartName: string,
-  chartModel?: string | null, logoSrc?: string | null, direction?: string,
+  chartModel?: string | null, logoSrc?: string | null, direction?: string, connectNulls?: boolean, caption?: string,
 }) {
   const deltaMode = useContext(DeltaModeContext);
   const effectiveUnit = deltaMode ? "pct" : unit;
   const effectiveYLabel = deltaMode ? "Baseline-relative performance (%)" : yLabel;
-  const yTickFormatter = (v: number) => fmt(v, effectiveUnit);
+  const yTickFormatter = (v: number) => formatAxisTick(v, effectiveUnit);
   return (
     <div className="card chart-card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
       <div className={styles.chartHeader}>
@@ -49,6 +49,7 @@ export function ChartCard({ title, modelName = null, data, lineConfigs, xKey, xL
           <DirectionHint direction={direction} />
         </div>
       </div>
+      {caption && <p style={{ margin: "0 16px 12px", color: "#57606a", fontSize: 13 }}>{caption}</p>}
       <ResponsiveContainer width="100%" height={320}>
         <LineChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
           <CartesianGrid stroke="#e0e4e8" strokeDasharray="3 3" />
@@ -78,7 +79,7 @@ export function ChartCard({ title, modelName = null, data, lineConfigs, xKey, xL
               strokeWidth={2}
               dot={{ r: 4, fill: lc.stroke }}
               strokeDasharray={lc.strokeDasharray}
-              connectNulls
+              connectNulls={connectNulls}
               activeDot={{ r: 6 }}
               isAnimationActive={false}
             />
@@ -182,10 +183,10 @@ function computeRightMargin(rows: ChartRow[], barConfigs: BarConfig[]): number {
   return Math.min(220, Math.max(60, maxChars * 7 + 20));
 }
 
-export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey, yLabel, unit, chartName, chartModel = null, logoSrc, direction, orderedSeries = false }: {
+export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey, yLabel, unit, chartName, chartModel = null, logoSrc, direction, orderedSeries = false, colorSingleSeriesByCategory = true, caption }: {
   title: string, modelName?: string | null, data: ChartRow[], barConfigs: BarConfig[], xKey: string,
   yLabel: string, unit: string, chartName: string, chartModel?: string | null, logoSrc?: string | null,
-  direction?: string, orderedSeries?: boolean,
+  direction?: string, orderedSeries?: boolean, colorSingleSeriesByCategory?: boolean, caption?: string,
 }) {
   const yAxisWidth = useCategoryAxisWidth(data, xKey);
   const deltaMode = useContext(DeltaModeContext);
@@ -221,6 +222,7 @@ export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey
           <DirectionHint direction={direction} />
         </div>
       </div>
+      {caption && <p style={{ margin: "0 16px 12px", color: "#57606a", fontSize: 13 }}>{caption}</p>}
       <ResponsiveContainer width="100%" height={chartHeight}>
         {/* Fixed pixel gap, not recharts' default 10%-of-band — with many bars per category
             (e.g. llama-bench's up to 20 checkpoints) the per-category band is tall enough that
@@ -230,7 +232,7 @@ export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey
           <XAxis
             type="number"
             tick={{ fill: "#57606a", fontSize: 15 }}
-            tickFormatter={valFormatter}
+            tickFormatter={(v: number) => formatAxisTick(v, effectiveUnit)}
             label={{ value: effectiveYLabel, position: "insideBottom", offset: -6, fill: "#8c959f", fontSize: 15 }}
             height={56}
           />
@@ -243,7 +245,7 @@ export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey
             width={yAxisWidth}
           />
           <Tooltip content={<CustomTooltip unit={effectiveUnit} xPrefix="System" orderedBarConfigs={orderedSeries ? barConfigs : undefined} />} />
-          {barConfigs.length > 1 && (
+          {(barConfigs.length > 1 || !colorSingleSeriesByCategory) && (
             <Legend content={(props) => <CustomLegend {...props} payload={orderedSeries ? legendPayload : props.payload} isMultiFile={false} sortOrder={barConfigs.map(bc => bc.name)} />} />
           )}
           {orderedSeries ? (
@@ -254,7 +256,7 @@ export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey
             />
           ) : barConfigs.map(bc => (
             <Bar key={bc.dataKey} dataKey={bc.dataKey} name={bc.name} fill={bc.fill} maxBarSize={32} minPointSize={1} radius={[0, 3, 3, 0]} isAnimationActive={false}>
-              {barConfigs.length === 1 && processedData.map((_, i) => (
+              {colorSingleSeriesByCategory && barConfigs.length === 1 && processedData.map((_, i) => (
                 <Cell key={i} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} />
               ))}
               <LabelList dataKey={bc.dataKey} content={(props: BarRenderProps) => (

@@ -10,12 +10,18 @@ PYTHON_LICENSE_RECORDS: dict[tuple[str, str], tuple[str, str, str | None]] = {
     ("huggingface_hub", "1.24.0"): (
         "Apache-2.0", "https://pypi.org/project/huggingface-hub/1.24.0/", None,
     ),
+    ("huggingface_hub", "1.30.0"): (
+        "Apache-2.0", "https://pypi.org/project/huggingface-hub/1.30.0/", None,
+    ),
     ("numpy", "2.4.6"): (
         "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
         "https://pypi.org/project/numpy/2.4.6/", None,
     ),
     ("packaging", "26.2"): (
         "Apache-2.0 OR BSD-2-Clause", "https://pypi.org/project/packaging/26.2/", None,
+    ),
+    ("packaging", "26.3"): (
+        "Apache-2.0 OR BSD-2-Clause", "https://pypi.org/project/packaging/26.3/", None,
     ),
     ("psutil", "7.2.2"): (
         "BSD-3-Clause", "https://pypi.org/project/psutil/7.2.2/", None,
@@ -33,6 +39,10 @@ PYTHON_LICENSE_RECORDS: dict[tuple[str, str], tuple[str, str, str | None]] = {
     ),
     ("tqdm", "4.69.0"): (
         "MPL-2.0 AND MIT", "https://pypi.org/project/tqdm/4.69.0/",
+        "Preserve notices; distributed modifications to MPL-covered files remain under MPL-2.0.",
+    ),
+    ("tqdm", "4.70.0"): (
+        "MPL-2.0 AND MIT", "https://pypi.org/project/tqdm/4.70.0/",
         "Preserve notices; distributed modifications to MPL-covered files remain under MPL-2.0.",
     ),
 }

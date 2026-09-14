@@ -32,6 +32,7 @@ from scripts.setup.setup_config import (
     load_setup_config,
 )
 from scripts.setup.custom_models import custom_model, load_custom_models
+from scripts.setup.model_inventory import find_non_catalog_vllm_repos
 from scripts.setup.vllm_install import (
     find_vllm_binary, find_vllm_launcher, hf_cache_model_complete, hf_cache_model_dir,
     hf_cache_snapshot_dir, vllm_cache_home,
@@ -292,12 +293,19 @@ class VllmEngine(InferenceEngine):
         per-model, so a tag with none configured cannot be measured."""
         return self._tool_parser(tag) is not None
 
-    @classmethod
-    def _repo(cls, tag: str) -> str | None:
-        """The HF repo id vLLM serves for `tag`, or None when the catalog has none."""
-        entry = cls._catalog_entry(tag)
-        imported = custom_model(cls.name, tag)
-        return entry.get("vllm_repo") if entry else imported.get("repo") if imported else None
+    def _repo(self, tag: str) -> str | None:
+        """Resolve catalog/import aliases or a complete cached repository ID."""
+        entry = self._catalog_entry(tag)
+        imported = custom_model(self.name, tag)
+        if entry:
+            return entry.get("vllm_repo")
+        if imported:
+            return imported.get("repo")
+        if (re.fullmatch(r"[\w.-]+/[\w.-]+", tag)
+                and all(part not in {".", ".."} for part in tag.split("/"))
+                and hf_cache_model_complete(self._cache_home, tag)):
+            return tag
+        return None
 
     def _snapshot_dir(self, tag: str) -> Path | None:
         repo = self._repo(tag)
@@ -626,7 +634,7 @@ class VllmEngine(InferenceEngine):
         }, None
 
     def list_installed_models(self) -> list[dict]:
-        """Catalog and registered custom tags available from the server or cache."""
+        """Catalog, imported, and discovered cache models available to this runtime."""
         served = self._served_model_ids() if self._server_url else None
         if self._server_url and served is None:
             return []
@@ -645,14 +653,25 @@ class VllmEngine(InferenceEngine):
             blobs = hf_cache_model_dir(self._cache_home, repo) / "blobs"
             size = sum(path.stat().st_size for path in blobs.glob("*")) if blobs.is_dir() else None
             installed.append({"tag": model["tag"], "size": size})
-        if not self._server_url:
-            for model in load_custom_models():
-                if model.get("engine") != self.name or not self.model_pulled(str(model.get("tag", ""))):
-                    continue
-                repo = str(model["repo"])
-                blobs = hf_cache_model_dir(self._cache_home, repo) / "blobs"
-                size = sum(path.stat().st_size for path in blobs.glob("*")) if blobs.is_dir() else None
-                installed.append({"tag": model["tag"], "label": model.get("label"), "size": size})
+        custom = [model for model in load_custom_models() if model.get("engine") == self.name]
+        registered_repos = {model.get("repo") for model in custom}
+        custom.extend(
+            {"tag": model["repo"], "repo": model["repo"]}
+            for model in find_non_catalog_vllm_repos(self._cache_home)
+            if model["repo"] not in registered_repos
+        )
+        listed_tags = {model["tag"] for model in installed}
+        for model in custom:
+            tag = str(model.get("tag", ""))
+            available = (self._external_server_has_tag(tag, served) if self._server_url
+                         else self.model_pulled(tag))
+            if tag in listed_tags or not available:
+                continue
+            blobs = hf_cache_model_dir(self._cache_home, str(model["repo"])) / "blobs"
+            size = (sum(path.stat().st_size for path in blobs.glob("*"))
+                    if not self._server_url and blobs.is_dir() else None)
+            installed.append({"tag": tag, "label": model.get("label"), "size": size})
+            listed_tags.add(tag)
         return installed
 
     def max_context_length(self, tag: str, default: int = 131072) -> int:

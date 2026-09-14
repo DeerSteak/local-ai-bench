@@ -33,6 +33,8 @@ Desktop users can instead double-click **Launch Local AI Bench Dashboard** with 
 
 Requires Node.js/npm and the project `bench-env`. On first run, installs npm dependencies. Every run rebuilds the app, then starts the authenticated loopback-only workspace server on port 3000 and opens the browser automatically.
 
+If a healthy dashboard is already running, the launcher reuses it and opens the requested results. The server continues answering requests if its original terminal disconnects. If the port is occupied by an unresponsive dashboard or another service, launch stops with a port-conflict message; stop the old dashboard process and relaunch, or select another port with `--port`. A server started before this terminal-disconnection fix needs to be restarted once to pick it up.
+
 ## Loading results
 
 Drag one or more `results_*.json` files onto the drop zone in the top-right corner, click to open a file picker, or pass one or more repeatable `--result` arguments to the launcher. The drop zone, workspace imports, logo picker, filters, and export actions participate in normal keyboard traversal, use native keyboard activation, and show a high-contrast focus ring. The benchmark GUI's **Result History** tab uses the same launcher when **Open in Dashboard** is selected. Up to six files can be loaded at once. Launcher-selected files are copied temporarily into the local dashboard build; a normal server stop removes them and the next build clears anything left by a forcibly closed terminal. The browser is never given general filesystem access. Dropping a single file when fewer than six are loaded adds it to the current set; dropping multiple at once replaces all. Sample files for testing are in `samples/`. Files must contain strict JSON; an invalid file displays an import error below the drop zone rather than failing silently.
@@ -56,7 +58,7 @@ A recommendation artifact produced by `python -m scripts.results.recommendation_
 | Concurrency (Chat) | The same three charts at 1 / 2 / 4 / 8 / 16 / 24 / 32 simultaneous long-context requests. See [Concurrency](workloads.md#concurrency) for how the two workloads differ |
 | Accuracy | A **Test** sub-picker for MCQ / Math / Reasoning / Code / Tool Use (mirrors `ACCURACY_TESTS` in `dashboard/src/constants.ts`). Per test: one Overall accuracy-per-model chart, one Accuracy-by-Category breakdown chart per model, and — when provided by the bank — an Accuracy-by-Difficulty chart. An Accuracy Incidents chart appears for timeouts, likely loops, or exhausted token budgets. See [Accuracy](workloads.md#accuracy) |
 | Embeddings | Chunks per second embedding one real document in a single call |
-| Images | One grouped bar chart per resolution — all image models side by side per host |
+| Images | One grouped bar chart per resolution — only applicable image models side by side per host |
 | llama-bench | Opt-in — two line charts per model: Decode Throughput across prefilled prompt depths, with one line per tg size and system; and Prompt Processing Throughput across pp sizes, with one line per system. See [Workloads](workloads.md#llama-bench) |
 | llama-bench Concurrency | Opt-in — aggregate decode throughput from `llama-batched-bench`, charted across parallel sequence counts with one chart per model or system and tg size. See [Workloads](workloads.md#llama-bench-concurrency) |
 
@@ -112,7 +114,7 @@ Each loaded file's header row carries a `v<version>` badge showing the suite ver
 
 The backend badge identifies the inference backend actually exposed by the selected engine build. This can differ from the machine's physical GPU family—for example, the standard Windows llama.cpp package reports Vulkan on AMD hardware and on NVIDIA hardware without a driver new enough for any prebuilt CUDA build, while Intel Arc uses its SYCL package and reports XPU. The raw results retain the physical classification separately as `profile.hardware_backend`.
 
-**llama-bench → Decode Throughput.** `llama-bench`'s generation `avg_ts` after prefilling the KV cache to each configured pp depth, with one series per tg length. Higher is better. This isolates generation speed from prompt processing and shows how decode throughput changes as context grows.
+**llama-bench → Decode Throughput.** `llama-bench`'s generation `avg_ts` after prefilling the KV cache to each configured pp depth, with one series per tg length. Higher is better. This isolates generation speed from prompt processing and shows how decode throughput changes as context grows. When grouped by model, each comparison legend places the tg length on its own line beneath the host details.
 
 **llama-bench → Prompt Processing Throughput.** `llama-bench`'s standalone prompt-processing `avg_ts` at each configured pp size. Higher is better. This measures how quickly the model ingests a prompt, independently of subsequent generation.
 
@@ -122,6 +124,8 @@ The backend badge identifies the inference backend actually exposed by the selec
 
 **Images → Sec/image.** Wall-clock time to generate one image at a given resolution, per model. Lower is better.
 
+Image bar charts include a model at a resolution only when a loaded result records that case or an applicable timeout/skip. SD 1.5 uses 512×512 and 768×768; SDXL, Z-Image Turbo, and Flux use 1024×1024 and 1536×1536. Recorded non-default resolutions in older or custom results remain visible. Timeout-derived skips stay within each known model's resolution range. **Group By → Model** compares systems within each resolution; **Group By → System** gives each system separate resolution cards. In both bar views, colors and legends identify models consistently, including cards with only one model, without empty series for unsupported model/resolution combinations.
+
 ## Stats table
 
 Below the charts, every measurement section also renders a sortable raw-numbers table (one row per model/context-length/category, depending on section) — click a column header to sort by it, click again to reverse direction. Cached vs Uncached is a derived visual comparison of the two underlying sections and therefore has no duplicate raw table; their standalone views retain the exact values.
@@ -130,7 +134,11 @@ Performance sections with sample evidence also render a collapsible **Decision-g
 
 Schema-5 memory results add a tightest-headroom indicator to each run card, host/process/accelerator peak and headroom columns to LLM raw tables, and a per-model peak process-RSS chart. Older files and telemetry-off schema-5 files show **Not recorded** rather than numeric zero. Process RSS and accelerator occupancy remain separate quantities; the dashboard does not merge them into a cross-platform memory score.
 
-Schema-5 power results add measured joules, workload efficiency, and explicit power scope to raw tables; tokens-per-joule charts to LLM views; and same-scope total energy plus idle baseline to each run card. Unavailable sources show their normalized reason, older files show **Not recorded**, and mixed processor-package/accelerator/CPU-package/whole-system scopes are never plotted on one axis or summed into one run total.
+Schema-5 power results add measured joules, workload efficiency, and explicit power scope to raw tables; joules-per-1,000-tokens charts to LLM views; and same-scope total energy plus idle baseline to each run card. Unavailable sources show their normalized reason, older files show **Not recorded**, and mixed processor-package/accelerator/CPU-package/whole-system scopes are never summed into one run total. LLM views retain scope separation; energy-analysis charts can overlay labeled scopes with the combine-systems control.
+
+**Energy analysis** in llama-bench, llama-bench Concurrency, Images, and Embeddings adds energy-per-work and measured-joule charts below the performance charts; **View energy analysis ↓** jumps directly to them. Native energy chart titles lead with **Prefill** or **Decode**. Both show joules per 1,000 tokens across context depths, while concurrency shows joules per 1,000 tokens across parallel-sequence counts. Images show joules per image; embeddings show joules per 1,000 embeddings. All energy charts use lower-is-better ordering. Costs are calculated as 1 or 1,000 divided by the recorded per-joule efficiency; zero, invalid, or unavailable efficiency stays unavailable. Raw result files and efficiency table columns retain their original metrics. Each exported chart carries its power scope and measurement-window description. Model filters apply; the combine-systems control can override Model and System grouping; energy figures retain absolute units when baseline-percent mode is selected.
+
+These charts use recorded measurements, not estimates from throughput. Native subprocess energy includes model loading, including older `measured:native-sweep` records. Prefill, decode, generation sizes, repetition counts and measurement-window types are kept separate. Power scopes stay separate when combining systems is disabled. Image energy is recorded across a model's measured resolution sweep, so its chart describes that combined workload rather than assigning the model total to each resolution. Missing or invalid measurements are not plotted as zero; **Energy availability** lists the recorded reasons, and an entirely unavailable selection explains why no energy chart can be shown.
 
 ## Multi-file comparison
 
@@ -189,7 +197,7 @@ llama3.1-8b-q4_llamabench_prefill.png # llama-bench prefill section
 
 The **Chart Width** field (default 708 px) controls the capture width — increase for wider exports.
 
-Every loaded result also renders a **Shareable Run Card** with its system, runtime, RAM, suite version, and the fastest decode/lowest-TTFT model in each represented tier. Current results use the shared 2K single-shot checkpoint; historical files without 2K use that tier's shallowest recorded canonical checkpoint and label it explicitly. **Spec Card** exports these cards as `<system>[_<suffix>]_run-card.png`, numbering repeated system names so same-host comparisons do not collide; an uploaded logo is included.
+Every loaded result also renders a **Shareable Run Card** with its system, runtime, RAM, suite version, and workload leaders in each represented tier. On **llama-bench**, cards evaluate native prefill and decode throughput; legacy combined cases are labeled Combined. On **llama-bench Concurrency**, cards evaluate aggregate decode throughput. Both native tabs choose matching cases with the most model coverage within each tier, breaking ties by shallowest depth for regular native tests or highest parallelism for concurrency, and show the compared dimensions. Their memory headroom and measured energy come only from that tab; mixed scopes have no combined total and partial energy totals are labeled. Other tabs retain the single-shot decode/TTFT summary. Current results use the shared 2K single-shot checkpoint; historical files without 2K use that tier's shallowest recorded canonical checkpoint and label it explicitly. **Spec Card** exports these cards as `<system>[_<suffix>]_<tab>_run-card.png`, including the accuracy subtest when applicable and numbering repeated system names so tabs and same-host comparisons do not collide; an uploaded logo is included.
 
 A results file is never guaranteed to have every field a newer schema might expect, since people compare files produced by different versions of this suite across different machines — `dashboard/src/utils/*.ts` leans on optional chaining (`f.data[section]?.[model]?.[ctx]`, not `f.data[section][model][ctx]`) throughout for exactly this reason. New dashboard code reading the results JSON should assume any given key might be missing on an older file.
 
@@ -208,3 +216,9 @@ Open the URL Vite prints (typically `http://localhost:5173`).
 ---
 
 [← CLI Reference](cli-reference.md) · [Back to README](../README.md) · [How It Works →](how-it-works.md)
+
+Energy chart axes abbreviate values of 1,000 or more with `k` (for example, `7.5k` joules); tooltips retain the full values. Token energy axes use the compact label `Joules / 1k tok`.
+
+**Combine systems across energy charts** is enabled by default and applies across the energy-analysis sections, independently of the main Group By control. It overlays systems with matching workloads and measurement windows and labels each series with its power scope. Processor-package and accelerator readings cover different hardware and are not equivalent whole-system measurements. Disable it to restore scope separation and the main Group By behavior.
+
+For llama.cpp runtime labels, the dashboard prefers a recorded numeric build such as `10840`. When the top-level version is a generic development version, a consistent build number in native llama-bench entries supplies the label instead. Missing or conflicting build evidence retains the recorded version; other engines keep their own version strings.

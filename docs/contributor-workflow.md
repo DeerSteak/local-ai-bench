@@ -191,3 +191,7 @@ Before declaring a version complete:
 ---
 
 [← Back to README](../README.md) · [Testing](testing.md) · [Release Policy →](release-policy.md)
+
+## Dependency updates
+
+Dependabot targets `develop` with weekly Python and dashboard updates. The dedicated `vitest` group appears before the general dashboard group and updates `vitest` and `@vitest/*` together for major, minor, and patch releases, preserving their matching peer versions. Other dashboard and Python minor/patch updates remain grouped separately. Keep the NumPy compatibility restriction until the supported Python floor changes. Python dependency updates must include reviewed exact-version license records and regenerated root SBOM/notices; retained release payloads stay unchanged.

@@ -388,7 +388,9 @@ def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[Men
         normalize_comfyui_dir(Path(gui_options["comfyui"]))
         if gui_options.get("comfyui") else found_comfyui
     )
-    errors.extend(workload_preflight_errors(tests, detected_tools, custom_comfyui is not None))
+    errors.extend(workload_preflight_errors(
+        tests, detected_tools, custom_comfyui is not None, engines=tuple(selected_engines),
+    ))
     if errors:
         return BenchmarkLaunchError(errors)
     preview = build_plan_preview(

@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import html2canvas from "html2canvas";
-import { readNamedJSONSource, sanitizeForFilename, filesForSection, getRunReliabilityWarning, getLlamaBenchMethodologyWarning, getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning, getNoRepackMethodologyWarning, getCrossEngineWeightsWarning, getMemoryTelemetryMethodologyWarning } from "./utils/shared";
+import { dashboardEngineVersion, readNamedJSONSource, sanitizeForFilename, filesForSection, getRunReliabilityWarning, getLlamaBenchMethodologyWarning, getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning, getNoRepackMethodologyWarning, getCrossEngineWeightsWarning, getMemoryTelemetryMethodologyWarning } from "./utils/shared";
 import { isTrialSetArtifact, trialArtifactLoadMode } from "./utils/trials";
 import { isRecommendationArtifact, recommendationArtifactLoadMode } from "./utils/recommendations";
 import { isVariantComparisonArtifact, variantArtifactLoadMode } from "./utils/variants";
@@ -16,6 +16,8 @@ import type { NamedTextSource, ParsedNamedSource } from "./utils/shared";
 import Header from "./components/Header";
 import Controls from "./components/Controls";
 import ChartPanel from "./components/ChartPanel";
+import EnergyAnalysisPanel from "./components/panels/EnergyAnalysisPanel";
+import { ENERGY_SECTIONS } from "./utils/energyAnalysis";
 import StatsTable from "./components/StatsTable";
 import ValidityInspector from "./components/ValidityInspector";
 import "./dashboard.css";
@@ -41,6 +43,7 @@ export default function Dashboard() {
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "model", dir: 1 });
   const [chartStyle, setChartStyle] = useState("bar");
   const [groupBy, setGroupBy] = useState("model");
+  const [combineEnergySystems, setCombineEnergySystems] = useState(true);
   const [sizeSplit, setSizeSplit] = useState("tiers");
   const [chartWidth, setChartWidth] = useState(708);
   const [hostnameOverrides, setHostnameOverrides] = useState<Record<string, string>>({});
@@ -144,7 +147,7 @@ export default function Dashboard() {
       sourceText: file.sourceText as string,
       hostname: baseHostname,
       engine:   data.engine || null,
-      engineVersion: data.engine_version || null,
+      engineVersion: dashboardEngineVersion(data),
       engineVersionRecorded: Object.prototype.hasOwnProperty.call(data, "engine_version"),
       backend:  p.backend  || "cpu",
       os:       p.os       || "",
@@ -275,7 +278,7 @@ export default function Dashboard() {
           backgroundColor: "#ffffff", scale: 2, useCORS: true, logging: false,
         });
         const link = document.createElement("a");
-        link.download = buildRunCardFilename(runCardNames, index, filenameSuffix);
+        link.download = buildRunCardFilename(runCardNames, index, filenameSuffix, section === "accuracy" ? `accuracy-${accuracyTest}` : section);
         link.href = canvas.toDataURL("image/png");
         link.click();
         exported++;
@@ -301,7 +304,7 @@ export default function Dashboard() {
     } finally {
       setSaving(false);
     }
-  }, [saving, filenameSuffix]);
+  }, [saving, filenameSuffix, section, accuracyTest]);
 
   const saveSpecCards = useCallback(async () => {
     if (!summaryRef.current || savingSpecCard) return;
@@ -317,7 +320,7 @@ export default function Dashboard() {
           backgroundColor: "#ffffff", scale: 2, useCORS: true, logging: false,
         });
         const link = document.createElement("a");
-        link.download = buildRunCardFilename(names, index, filenameSuffix);
+        link.download = buildRunCardFilename(names, index, filenameSuffix, section === "accuracy" ? `accuracy-${accuracyTest}` : section);
         link.href = canvas.toDataURL("image/png");
         link.click();
         if (index < cards.length - 1) await new Promise(resolve => setTimeout(resolve, 300));
@@ -327,7 +330,7 @@ export default function Dashboard() {
     } finally {
       setSavingSpecCard(false);
     }
-  }, [savingSpecCard, filenameSuffix]);
+  }, [savingSpecCard, filenameSuffix, section, accuracyTest]);
 
   const cycleSort = (key: string) => {
     setSortConfig(prev => prev.key === key ? { key, dir: (prev.dir * -1) as 1 | -1 } : { key, dir: 1 });
@@ -553,26 +556,34 @@ export default function Dashboard() {
       />
 
       <RunSummaryCards
-        files={effectiveFiles} containerRef={summaryRef} logoSrc={logoSrc} chartWidth={chartWidth}
+        files={effectiveFiles} section={section} containerRef={summaryRef} logoSrc={logoSrc} chartWidth={chartWidth}
       />
 
-      <DeltaModeContext.Provider value={baselineId != null && section !== "sustained"}>
-        <ChartPanel
-          containerRef={chartRef}
-          files={section === "sustained" ? effectiveFiles : chartFiles}
-          absoluteFiles={effectiveFiles}
-          section={section}
-          accuracyTest={accuracyTest}
-          enabledModels={enabledModels}
-          enabledImageModels={enabledImageModels}
-          enabledEmbedModels={enabledEmbedModels}
-          chartWidth={chartWidth}
-          logoSrc={logoSrc}
-          chartStyle={chartStyle}
-          groupBy={groupBy}
-          sizeSplit={sizeSplit}
-        />
-      </DeltaModeContext.Provider>
+      <div ref={chartRef}>
+        {ENERGY_SECTIONS.includes(section) && effectiveFiles.length > 0 && (
+          <p><a href="#energy-analysis">View energy analysis ↓</a></p>
+        )}
+        <DeltaModeContext.Provider value={baselineId != null && section !== "sustained"}>
+          <ChartPanel
+            files={section === "sustained" ? effectiveFiles : chartFiles}
+            absoluteFiles={effectiveFiles}
+            section={section}
+            accuracyTest={accuracyTest}
+            enabledModels={enabledModels}
+            enabledImageModels={enabledImageModels}
+            enabledEmbedModels={enabledEmbedModels}
+            chartWidth={chartWidth}
+            logoSrc={logoSrc}
+            chartStyle={chartStyle}
+            groupBy={groupBy}
+            sizeSplit={sizeSplit}
+          />
+        </DeltaModeContext.Provider>
+        <EnergyAnalysisPanel files={effectiveFiles} section={section}
+          combineSystems={combineEnergySystems} setCombineSystems={setCombineEnergySystems}
+          enabledModels={section === "images" ? enabledImageModels : section === "embeddings" ? enabledEmbedModels : enabledModels}
+          bySystem={groupBy === "system"} chartWidth={chartWidth} logoSrc={logoSrc} />
+      </div>
 
       <StatsTable
         files={effectiveFiles}

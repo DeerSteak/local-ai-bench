@@ -13,7 +13,7 @@ from scripts.results.acceptance_policy import evaluate_policy, load_policy
 from scripts.results.recovery_inspector import inspect_recovery
 from scripts.results.result_history import (
     delete_multiple_run_artifacts, discover_results, existing_run_artifacts,
-    filter_results, load_result,
+    filter_results, load_result, rename_result_system,
 )
 from scripts.results.vendor_diagnostic import write_vendor_diagnostic
 
@@ -40,6 +40,7 @@ class HistoryActions:
         ).pack(side="right")
         buttons = (
             ("Open in Dashboard", self.open_in_dashboard),
+            ("Rename system", self.rename_system),
             ("Delete", self.delete_selection),
             ("Evaluate Policy", self.evaluate_selection),
             ("Export Diagnostic", self.export_diagnostic),
@@ -82,6 +83,55 @@ class HistoryActions:
             self.screen.message.set(f"Opening {len(paths)} selected result{suffix} in the dashboard.")
         except (OSError, ValueError) as exc:
             self.messagebox.showerror("Dashboard launch failed", str(exc), parent=self.root)
+
+    def rename_system(self) -> None:
+        if self.process_active():
+            self.messagebox.showerror("Benchmark active", "Stop the active process first.", parent=self.root)
+            return
+        try:
+            path = self.selected_path()
+            result = load_result(path)
+            current = result.get("profile", {}).get("hostname", "")
+            name = self.prompt_system_name(str(current or ""))
+            if name is None:
+                return
+            if self.process_active():
+                raise ValueError("Stop the active process before renaming a system.")
+            rename_result_system(path, name)
+            self.refresh()
+            self.screen.message.set(f"Saved system name in {Path(path).name}.")
+        except (OSError, ValueError, AttributeError) as exc:
+            self.messagebox.showerror("Rename system", str(exc), parent=self.root)
+
+    def prompt_system_name(self, current: str) -> str | None:
+        dialog = self.tk.Toplevel(self.root)
+        dialog.title("Rename system")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        shell = self.ttk.Frame(dialog, padding=16)
+        shell.pack(fill="both", expand=True)
+        self.ttk.Label(shell, text="System name (Enter adds a new line):").pack(anchor="w")
+        editor = self.tk.Text(shell, width=52, height=5, wrap="word")
+        editor.pack(fill="both", expand=True, pady=8)
+        editor.insert("1.0", current)
+        editor.focus_set()
+        chosen = []
+
+        def save():
+            name = editor.get("1.0", "end-1c")
+            if not name.strip():
+                self.messagebox.showerror("Rename system", "Enter a system name.", parent=dialog)
+                return
+            chosen.append(name)
+            dialog.destroy()
+
+        buttons = self.ttk.Frame(shell)
+        buttons.pack(anchor="e")
+        self.ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="left", padx=8)
+        self.ttk.Button(buttons, text="Save", command=save).pack(side="left")
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
+        self.root.wait_window(dialog)
+        return chosen[0] if chosen else None
 
     def delete_selection(self) -> None:
         if self.process_active():
@@ -159,7 +209,7 @@ class HistoryActions:
         self.item_paths.clear()
         for index, entry in enumerate(visible):
             item_id = tree.insert("", "end", values=(
-                entry["started_at"], entry["system"], entry["status"], entry["engine"],
+                entry["started_at"], " / ".join(entry["system"].splitlines()), entry["status"], entry["engine"],
                 entry["runtime_backend"], entry["mtp"], entry["methodology_profile"],
                 entry["models_with_results"],
             ), tags=("history_even" if index % 2 == 0 else "history_odd",))

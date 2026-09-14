@@ -1,6 +1,7 @@
 """Loopback-only static workspace server with bounded artifact exports."""
 
 import argparse
+import errno
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -9,6 +10,7 @@ import tempfile
 from urllib.parse import urlparse
 import webbrowser
 
+from scripts.app.dashboard_reuse import reopen_dashboard
 from scripts.results.workspace_export import export_workspace_bundle, write_workspace_reports
 from scripts.results.acceptance_policy import evaluate_policy
 from scripts.results.recommendation import validate_recommendation_artifact
@@ -109,6 +111,13 @@ def workspace_handler(dist_directory: Path, token: str, port: int):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=str(dist_directory), **kwargs)
 
+        def log_message(self, format, *args):
+            # A server can outlive its terminal; logging must not abort HTTP responses.
+            try:
+                super().log_message(format, *args)
+            except OSError:
+                pass
+
         def _same_origin(self) -> bool:
             return workspace_request_authorized(
                 self.headers.get("Host"), self.headers.get("Origin"),
@@ -166,6 +175,23 @@ def workspace_handler(dist_directory: Path, token: str, port: int):
     return WorkspaceHandler
 
 
+def bind_workspace_server(dist: Path, port: int, open_path: str):
+    try:
+        return ThreadingHTTPServer(
+            ("127.0.0.1", port), workspace_handler(dist, secrets.token_urlsafe(32), port),
+        )
+    except OSError as exc:
+        if exc.errno != errno.EADDRINUSE:
+            raise
+        if reopen_dashboard(port, open_path):
+            return None
+        raise SystemExit(
+            f"Dashboard port {port} is already in use, but the listener did not respond "
+            "as a reusable dashboard. Stop the old dashboard process and relaunch, "
+            "or use --port with a different port."
+        ) from None
+
+
 def main(argv=None) -> int:  # pragma: no cover
     parser = argparse.ArgumentParser(description="Local AI Bench decision workspace")
     parser.add_argument("--dist", type=Path, required=True)
@@ -174,10 +200,9 @@ def main(argv=None) -> int:  # pragma: no cover
     args = parser.parse_args(argv)
     if not args.dist.is_dir() or not 1 <= args.port <= 65535:
         parser.error("a built dashboard directory and valid port are required")
-    token = secrets.token_urlsafe(32)
-    server = ThreadingHTTPServer(
-        ("127.0.0.1", args.port), workspace_handler(args.dist, token, args.port),
-    )
+    server = bind_workspace_server(args.dist, args.port, args.open_path)
+    if server is None:
+        return 0
     url = f"http://127.0.0.1:{args.port}{args.open_path}"
     print(f"Dashboard -> {url}")
     webbrowser.open(url)

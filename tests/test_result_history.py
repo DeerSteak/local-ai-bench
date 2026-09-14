@@ -273,3 +273,56 @@ def test_comparison_blocks_unqualified_memory_interval_against_telemetry_off():
     })
     comparison = compare_results(baseline, candidate)
     assert "effective_config" in comparison["incompatible_fields"]
+
+
+def test_rename_system_preserves_measurements_and_multiline_name(tmp_path):
+    from scripts.results.result_history import load_result, rename_result_system
+    path = tmp_path / "results_host.json"
+    original = {"profile": {"hostname": "old", "ram_gb": 48},
+                "run": {"status": "complete", "job_id": "fixed"},
+                "llm": {"model": {"2K": {"tps_mean": 42}}}, "future": [1, None]}
+    path.write_text(json.dumps(original))
+    rename_result_system(path, "  MacBook Pro\r\nM5 Pro / 48 GB  ")
+    original["profile"]["hostname"] = "MacBook Pro\nM5 Pro / 48 GB"
+    assert load_result(path) == original
+    entries, skipped = discover_results(tmp_path)
+    assert not skipped
+    assert entries[0]["system"] == original["profile"]["hostname"]
+    assert filter_results(entries, query="m5 pro") == entries
+
+
+@pytest.mark.parametrize("name", ["", " \n ", None, "bad\x00name", "bad\tname"])
+def test_rename_system_rejects_invalid_names_without_writing(tmp_path, name):
+    from scripts.results.result_history import rename_result_system
+    path = tmp_path / "result.json"
+    original = '{"profile":{"hostname":"old"}}'
+    path.write_text(original)
+    with pytest.raises(ValueError):
+        rename_result_system(path, name)
+    assert path.read_text() == original
+
+
+@pytest.mark.parametrize("content", ['[]', '{}', '{"profile":null}', 'not json'])
+def test_rename_system_rejects_nonresults_without_writing(tmp_path, content):
+    from scripts.results.result_history import rename_result_system
+    path = tmp_path / "result.json"
+    path.write_text(content)
+    with pytest.raises(ValueError):
+        rename_result_system(path, "new")
+    assert path.read_text() == content
+
+
+def test_rename_system_failed_atomic_replace_preserves_original(tmp_path, monkeypatch):
+    from scripts.results.result_history import rename_result_system
+    path = tmp_path / "result.json"
+    original = '{"profile":{"hostname":"old"}}'
+    path.write_text(original)
+
+    def fail(*_args):
+        raise OSError("disk unavailable")
+
+    monkeypatch.setattr("scripts.results.result_store.os.replace", fail)
+    with pytest.raises(OSError, match="disk unavailable"):
+        rename_result_system(path, "new\nsecond line")
+    assert path.read_text() == original
+    assert list(tmp_path.iterdir()) == [path]

@@ -76,7 +76,7 @@ export function buildLlamaBenchDecodeLineConfigs(files: ResultsFile[], model: st
         dataKey,
         stroke: FILE_COLORS[fi % FILE_COLORS.length],
         strokeDasharray: MODEL_DASH_PATTERNS[ti % MODEL_DASH_PATTERNS.length],
-        name: files.length > 1 ? `${file.hostname} — tg${tg}` : `tg${tg}`,
+        name: files.length > 1 ? `${file.hostname}\ntg${tg}` : `tg${tg}`,
       });
     });
   });

@@ -400,6 +400,16 @@ export const SPEC_CARD_PREFERRED_CTX = "2K";
 // Image resolution order
 export const RES_ORDER = ["512x512", "768x768", "1024x1024", "1536x1536"];
 
+// Default workload ranges; recorded results take precedence for older or custom runs.
+export const IMAGE_MODEL_RESOLUTIONS: Record<string, string[]> = {
+  sd15: ["512x512", "768x768"],
+  sdxl: ["1024x1024", "1536x1536"],
+  "z-image-turbo": ["1024x1024", "1536x1536"],
+  "flux-dev": ["1024x1024", "1536x1536"],
+  "flux2-dev": ["1024x1024", "1536x1536"],
+  "sd35-large": ["1024x1024", "1536x1536"],
+};
+
 // Colors per image resolution (used in "Group by System" bar chart mode)
 export const RES_COLORS = {
   "512x512":   "#0969da",

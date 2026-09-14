@@ -397,8 +397,21 @@ def hf_cache_snapshot_dir(cache_home: Path, repo: str) -> Path | None:
 def hf_cache_model_complete(cache_home: Path, repo: str) -> bool:
     """True once a snapshot of `repo` holds weights and the config beside them."""
     snapshot = hf_cache_snapshot_dir(cache_home, repo)
-    return bool(snapshot and (snapshot / "config.json").is_file()
-                and any(snapshot.glob("*.safetensors")))
+    if snapshot is None or not (snapshot / "config.json").is_file():
+        return False
+    index = snapshot / "model.safetensors.index.json"
+    if index.exists() or index.is_symlink():
+        try:
+            data = json.loads(index.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+        weights = data.get("weight_map") if isinstance(data, dict) else None
+        return bool(isinstance(weights, dict) and weights and all(
+            isinstance(name, str) and name == Path(name).name
+            and name.endswith(".safetensors") and (snapshot / name).is_file()
+            for name in weights.values()
+        ))
+    return any(path.is_file() for path in snapshot.glob("*.safetensors"))
 
 
 def parse_launcher_extra_args(text: str | None) -> list[str]:

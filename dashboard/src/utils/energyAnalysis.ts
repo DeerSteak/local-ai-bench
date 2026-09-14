@@ -1,0 +1,133 @@
+import { FILE_COLORS } from "../constants";
+import { entriesOf, modelLabel, imageModelLabel, embedModelLabel } from "./shared";
+import type { JsonRecord } from "./shared";
+import { powerScopeLabel, powerEnergyCost, ENERGY_COST_UNITS } from "./power";
+import { llamaBenchPrefillEntries, llamaBenchDecodeEntries, llamaBenchPromptLabel } from "./llamabench";
+import type { ChartRow, LineConfig, ResultsFile } from "../types";
+
+export const ENERGY_SECTIONS = ["llamabench", "llamabenchconc", "images", "embeddings"];
+const SCOPES = new Set(["processor_package", "accelerator", "cpu_package", "whole_system"]);
+const positive = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value > 0;
+
+interface EnergyCase {
+  sample: JsonRecord[string]; phase: string; phaseLabel?: string; label: string; order: number;
+}
+export interface EnergyChartGroup {
+  id: string; model: string; description: string; unit: string; phaseLabel?: string;
+  data: ChartRow[]; configs: LineConfig[];
+}
+
+function energyCases(section: string, data: JsonRecord[string]): EnergyCase[] {
+  if (section === "llamabench") {
+    return [
+      ...llamaBenchPrefillEntries(data).filter(sample => sample && typeof sample === "object").map(sample => ({
+        sample, phaseLabel: "Prefill", phase: `Prefill · ${sample.completed_reps ?? "unknown"} repetitions`,
+        label: llamaBenchPromptLabel(sample.n_prompt), order: sample.n_prompt,
+      })),
+      ...llamaBenchDecodeEntries(data).filter(sample => sample && typeof sample === "object").map(sample => ({
+        sample, phaseLabel: "Decode", phase: `Decode · ${sample.n_gen} generated tokens · ${sample.completed_reps ?? "unknown"} repetitions`,
+        label: llamaBenchPromptLabel(sample.n_depth), order: sample.n_depth,
+      })),
+    ];
+  }
+  if (section === "llamabenchconc") {
+    return (Array.isArray(data?.entries) ? data.entries : []).filter((sample: JsonRecord[string]) => sample && typeof sample === "object").map((sample: JsonRecord[string]) => ({
+      sample, phase: `Concurrency · pp ${sample.pp ?? data.pp ?? "unknown"} · tg ${sample.tg ?? "unknown"}`,
+      label: `${sample.pl}-way`, order: sample.pl,
+    }));
+  }
+  const resolutions = Object.keys(data?.resolutions || {}).sort().join(", ");
+  return [{ sample: data, phase: section === "images"
+    ? `All measured resolutions: ${resolutions || "not recorded"} · ${data?.steps ?? "unknown"} steps`
+    : "Measured embedding workload", label: "Measured workload", order: 0 }];
+}
+
+export function buildEnergyAnalysis(
+  files: ResultsFile[], section: string, enabled: Set<string>, bySystem = false, combineSystems = false,
+): { groups: EnergyChartGroup[], notices: string[] } {
+  const groups = new Map<string, EnergyChartGroup>();
+  const notices = new Set<string>();
+  const seenCases = new Set<string>();
+  if (!ENERGY_SECTIONS.includes(section)) return { groups: [], notices: [] };
+  const expectedUnit = section === "images" ? "images_per_joule"
+    : section === "embeddings" ? "embeddings_per_joule" : "tokens_per_joule";
+  files.forEach((file, fi) => {
+    for (const [model, data] of entriesOf(file.data[section])) {
+      if (!enabled.has(model) || !data) continue;
+      const label = section === "images" ? imageModelLabel(model)
+        : section === "embeddings" ? embedModelLabel(model) : modelLabel(model);
+      const identity = `${file.hostname || "Unknown system"} · ${label}`;
+      const cases = energyCases(section, data);
+      if (!cases.length) notices.add(`${identity}: energy not recorded for these cases.`);
+      for (const entry of cases) {
+        if (typeof entry.order !== "number" || !Number.isFinite(entry.order) || entry.order < 0) {
+          notices.add(`${identity}: energy case dimensions are not recorded.`);
+          continue;
+        }
+        const power = entry.sample?.power;
+        if (!SCOPES.has(power?.scope)) {
+          const reason = typeof power?.reason === "string" ? power.reason
+            : !power ? "not recorded; requires power telemetry during the run"
+              : "power scope unavailable";
+          notices.add(`${identity}: ${reason}.`);
+          continue;
+        }
+        const names: string[] = (Array.isArray(power.windows) ? power.windows : [])
+          .map((window: JsonRecord[string]) => window?.name).filter((name: unknown): name is string => typeof name === "string");
+        const basis = names.some(name => name.startsWith("measured:") && (name.includes("includes-load") || name.startsWith("measured:native-sweep")))
+          ? "Full case, including model load"
+          : names.some(name => name.startsWith("measured:")) ? "Measured work, excluding model load" : "Measurement window not recorded";
+        const separateSystem = bySystem && !combineSystems;
+        const id = JSON.stringify([separateSystem ? fi : null, model, entry.phase, combineSystems ? null : power.scope, basis]);
+        let group = groups.get(id);
+        if (!group) {
+          group = { id, model: separateSystem ? identity : label,
+            description: `${entry.phase} · ${combineSystems ? "Power scope shown per series" : powerScopeLabel(power.scope)} · ${basis}`,
+            unit: ENERGY_COST_UNITS[expectedUnit].label, phaseLabel: entry.phaseLabel, data: [], configs: [] };
+          groups.set(id, group);
+        }
+        let row = group.data.find(row => row.caseLabel === entry.label);
+        if (!row) {
+          row = { caseLabel: entry.label, order: entry.order };
+          group.data.push(row);
+        }
+        const key = combineSystems ? `f${fi}_${power.scope}` : `f${fi}`;
+        const caseId = JSON.stringify([id, key, entry.label]);
+        if (seenCases.has(caseId)) {
+          notices.add(`${identity}: duplicate energy case ${entry.label}; ambiguous case omitted.`);
+          row[`${key}_energy`] = null;
+          row[key] = null;
+          continue;
+        }
+        seenCases.add(caseId);
+        if (power.status !== "recorded" || !positive(power.energy_joules)) {
+          notices.add(`${identity}: ${typeof power.reason === "string" ? power.reason : "valid measured energy unavailable"}.`);
+          row[key] = null;
+          row[`${key}_energy`] = null;
+          continue;
+        }
+        row[`${key}_energy`] = power.energy_joules;
+        const efficiency = power.efficiency;
+        const cost = powerEnergyCost(entry.sample, expectedUnit);
+        if (cost != null && positive(efficiency?.work_count)) {
+          row[key] = cost;
+        } else {
+          notices.add(`${identity}: valid ${ENERGY_COST_UNITS[expectedUnit].label} not recorded.`);
+        }
+        if (!group.configs.some(config => config.dataKey === key)) group.configs.push({
+          dataKey: key, name: combineSystems ? `${file.hostname || "Unknown system"}\n${powerScopeLabel(power.scope)}` : file.hostname || "Unknown system", stroke: FILE_COLORS[fi % FILE_COLORS.length],
+        });
+      }
+    }
+  });
+  return { groups: [...groups.values()].map(group => ({
+    ...group, data: group.data.sort((a, b) => a.order - b.order),
+  })).filter(group => energyChartSeries(group, true).length > 0), notices: [...notices] };
+}
+
+export function energyChartSeries(group: EnergyChartGroup, energy = false): LineConfig[] {
+  return group.configs.map(config => ({
+    ...config, dataKey: energy ? `${config.dataKey}_energy` : config.dataKey,
+  })).filter(config => group.data.some(row => positive(row[config.dataKey])));
+}

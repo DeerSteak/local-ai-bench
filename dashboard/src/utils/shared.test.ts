@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
-  parseJSON, parseResultsJSON, readNamedJSONSource, getRunReliabilityWarning,
+  dashboardEngineVersion, parseJSON, parseResultsJSON, readNamedJSONSource, getRunReliabilityWarning,
   getLlamaBenchMethodologyWarning,
   getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning,
   getNoRepackMethodologyWarning,
   getMemoryTelemetryMethodologyWarning,
-  sanitizeForFilename, applyEngineLabels, backendLabel, engineFamily, engineLabel, filesForSection, fmt, getCrossEngineWeightsWarning,
+  sanitizeForFilename, applyEngineLabels, backendLabel, engineFamily, engineLabel, filesForSection, fmt, formatAxisTick, getCrossEngineWeightsWarning,
   getModelColor, modelLabel, imageModelLabel, embedModelLabel,
   getModelSizeTier, getSkipInfo, prepareOrderedBarGroupData,
   sortBarData, sortRows, deriveTtftUnit, hasValueOrStatus, configsWithValues,
@@ -701,5 +701,54 @@ describe("getCrossEngineWeightsWarning", () => {
 
   it("ignores files with no engine while still comparing the rest", () => {
     expect(getCrossEngineWeightsWarning([file("vllm"), { id: "old", data: {} }])).toBe("");
+  });
+});
+
+it("keeps small efficiency values visible instead of rounding them to zero", () => {
+  expect(fmt(0.006223757, "efficiency")).toBe("0.00622");
+  expect(fmt(0.000012345, "efficiency")).toBe("0.0000123");
+  expect(fmt(25.188, "efficiency")).toBe("25.19");
+  expect(fmt(0, "efficiency")).toBe("0.00");
+});
+
+describe("formatAxisTick", () => {
+  it.each([[1000, "1k"], [7500, "7.5k"], [12500, "12.5k"], [100000, "100k"], [-7500, "-7.5k"]])(
+    "abbreviates energy tick %s as %s", (value, expected) => {
+      expect(formatAxisTick(value as number, "energy")).toBe(expected);
+    },
+  );
+  it("preserves small ticks, missing values, other units, and tooltip precision", () => {
+    expect(formatAxisTick(999, "energy")).toBe("999.00");
+    expect(formatAxisTick(0, "energy")).toBe("0.00");
+    expect(formatAxisTick(null, "energy")).toBe("—");
+    expect(formatAxisTick(7500, "pct")).toBe("7500.0%");
+    expect(fmt(7500, "energy")).toBe("7500.00");
+  });
+});
+
+describe("dashboardEngineVersion", () => {
+  const result = (builds: unknown[], engine = "llamacpp") => ({ engine, engine_version: "0.4.0-dev",
+    llamabench: { m: { prefill_entries: builds.map(build_number => ({ build_number })) } } });
+  it.each(["llamacpp", "llamacpp-vulkan"])("prefers consistent recorded builds for %s", engine => {
+    expect(dashboardEngineVersion(result([10840, "10840"], engine))).toBe("10840");
+  });
+  it("supports legacy combined entries and decode-only results", () => {
+    for (const field of ["entries", "decode_entries"]) {
+      expect(dashboardEngineVersion({ engine: "llamacpp", llamabench: {
+        m: { [field]: [{ build_number: 10840 }] },
+      } })).toBe("10840");
+    }
+  });
+  it("preserves numeric runtime versions and other engines", () => {
+    expect(dashboardEngineVersion({ ...result([10840]), engine_version: "10841" })).toBe("10841");
+    expect(dashboardEngineVersion(result([10840], "vllm"))).toBe("0.4.0-dev");
+  });
+  it("falls back for conflicting, invalid, and missing build evidence", () => {
+    expect(dashboardEngineVersion(result([10840, 10841]))).toBe("0.4.0-dev");
+    expect(dashboardEngineVersion(result([null, 0, 1, -1, 2.5, "dev", NaN, Infinity]))).toBe("0.4.0-dev");
+    expect(dashboardEngineVersion({ engine: "llamacpp", engine_version: "0.4.0-dev", llamabench: {
+      m: null, n: { entries: "bad", prefill_entries: [null] },
+    } })).toBe("0.4.0-dev");
+    expect(dashboardEngineVersion({})).toBeNull();
   });
 });

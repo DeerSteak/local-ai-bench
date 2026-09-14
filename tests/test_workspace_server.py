@@ -74,3 +74,98 @@ def test_workspace_evaluation_applies_embedded_policy_to_recorded_baseline(tmp_p
 def test_workspace_http_boundary_enforces_host_origin_and_token(
         host, origin, authorization, allowed):
     assert workspace_request_authorized(host, origin, authorization, "secret", 3000) is allowed
+
+
+@pytest.mark.parametrize("terminal_error", [OSError(5, "terminal revoked"), BrokenPipeError()])
+@pytest.mark.parametrize("request_path", ["/__workspace_config__.json", "/index.html", "/missing"])
+def test_http_responses_survive_disconnected_terminal(
+        tmp_path, monkeypatch, terminal_error, request_path):
+    import io
+    from scripts.app.workspace_server import workspace_handler
+
+    class BrokenTerminal:
+        def write(self, _message):
+            raise terminal_error
+
+    class Connection:
+        def __init__(self):
+            self.output = bytearray()
+
+        def makefile(self, *_args):
+            return io.BytesIO(
+                f"GET {request_path} HTTP/1.1\r\nHost: 127.0.0.1:3000\r\n\r\n".encode(),
+            )
+
+        def sendall(self, data):
+            self.output.extend(data)
+
+    (tmp_path / "index.html").write_text("dashboard content")
+    connection = Connection()
+    monkeypatch.setattr("sys.stderr", BrokenTerminal())
+    workspace_handler(tmp_path, "test-token", 3000)(
+        connection, ("127.0.0.1", 1234), object(),
+    )
+    headers, body = bytes(connection.output).split(b"\r\n\r\n", 1)
+    if request_path == "/missing":
+        assert headers.startswith(b"HTTP/1.0 404")
+    else:
+        assert headers.startswith(b"HTTP/1.0 200")
+        if request_path == "/__workspace_config__.json":
+            assert json.loads(body) == {"token": "test-token"}
+        else:
+            assert body == b"dashboard content"
+
+
+def test_bind_workspace_server_returns_bound_server(tmp_path, monkeypatch):
+    from scripts.app import workspace_server
+
+    server = object()
+    addresses = []
+
+    def bind(address, handler):
+        addresses.append(address)
+        return server
+
+    monkeypatch.setattr(workspace_server, "ThreadingHTTPServer", bind)
+    assert workspace_server.bind_workspace_server(tmp_path, 4321, "/") is server
+    assert addresses == [("127.0.0.1", 4321)]
+
+
+@pytest.mark.parametrize("reusable", [True, False])
+def test_bind_workspace_server_handles_port_taken_after_launcher_probe(
+        tmp_path, monkeypatch, reusable):
+    import errno
+    from scripts.app import workspace_server
+
+    def occupied(*_args):
+        raise OSError(errno.EADDRINUSE, "Address already in use")
+
+    reopened = []
+
+    def reopen(port, path):
+        reopened.append((port, path))
+        return reusable
+
+    monkeypatch.setattr(workspace_server, "ThreadingHTTPServer", occupied)
+    monkeypatch.setattr(workspace_server, "reopen_dashboard", reopen)
+    if reusable:
+        assert workspace_server.bind_workspace_server(tmp_path, 4321, "/?autoload=1") is None
+    else:
+        with pytest.raises(SystemExit, match="port 4321 is already in use.*--port"):
+            workspace_server.bind_workspace_server(tmp_path, 4321, "/?autoload=1")
+    assert reopened == [(4321, "/?autoload=1")]
+
+
+def test_bind_workspace_server_preserves_other_os_errors(tmp_path, monkeypatch):
+    import errno
+    from scripts.app import workspace_server
+
+    error = OSError(errno.EACCES, "Permission denied")
+
+    def denied(*_args):
+        raise error
+
+    monkeypatch.setattr(workspace_server, "ThreadingHTTPServer", denied)
+    with pytest.raises(OSError) as caught:
+        workspace_server.bind_workspace_server(tmp_path, 4321, "/")
+    assert caught.value is error

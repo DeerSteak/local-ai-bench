@@ -2,6 +2,8 @@
 
 # Project Structure
 
+The dashboard's `src/utils/energyAnalysis.ts` prepares recorded efficiency and joule series for native benchmarks, images, and embeddings. `src/components/panels/EnergyAnalysisPanel.tsx` renders scope-separated energy figures and availability messages alongside those workloads; `src/utils/energyAnalysis.test.ts` covers its data contract.
+
 **Contents**
 - [`scripts/` in detail](#scripts-in-detail)
 - [`results/` in detail](#results-in-detail)
@@ -274,3 +276,5 @@ Performance workloads retain means, standard deviations, run counts, and—where
 [← Engines](engines.md) · [Back to README](../README.md) · [Testing →](testing.md)
 
 `results/model_verification.py` compares resumed model artifacts with the saved journal immediately before their first pending load in a workload stage.
+
+`dashboard/src/utils/nativeRunCard.ts` builds llama-bench and llama-bench concurrency run-card rankings and telemetry summaries from the selected native workload.

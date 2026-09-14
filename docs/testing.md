@@ -4,6 +4,8 @@
 
 The repository has two independent automated suites: pytest for the Python benchmark and Vitest for the React dashboard. Neither suite starts a real inference server, downloads models, or runs the benchmark.
 
+Image chart tests cover per-resolution model selection for both grouping modes, model filters, mixed-system and legacy results, missing/null entries, and timeout-only cases without unsupported-resolution skips. Registry tests cover the known image workload ranges; browser checks verify per-system resolution cards and stable model colors, including single-model charts.
+
 **Contents**
 - [Python tests](#python-tests)
 - [Coverage and safety boundaries](#coverage-and-safety-boundaries)
@@ -38,6 +40,8 @@ The scripts tree is a package rather than a flat import directory. A structural 
 
 Tk controller tests use fake widgets and variables on every platform. Screen-construction and full-application smoke tests use real Tk, skip when no display is available locally, and run under Xvfb in the Linux `Python tests (Tk/Xvfb)` CI job.
 
+On macOS, the shared test fixture checks for a WindowServer session before allowing Tk initialization. Without desktop access (including a restricted sandbox), any test that tries to create a real Tk window skips with an explicit reason; pure logic and fake-widget tests still run. This covers indirect window creation through the setup wizard as well as direct test calls, preventing a native Python abort that `except TclError` cannot catch. Run with desktop access to validate the real GUI tests. `test_tk_display.py` covers allowed and unavailable sessions, native resource release, indirect initialization, and unchanged non-macOS behavior.
+
 llama.cpp discovery tests create isolated runtime directories and verify that PATH, Homebrew, saved external paths, incomplete toolsets, and external symlinks cannot replace the managed tools. Setup launcher tests execute only the extracted prerequisite block with mocked commands, never the real installer. Project modules use package-qualified imports, matching the `python -m scripts.<package>.<module>` entry points.
 
 `conftest.py` also provides the `symlink_or_skip` fixture. Tests covering symlink-escape defenses need a real symlink, which Windows refuses without Developer Mode or administrator rights, so the fixture creates one and skips the test when the platform will not. Use it instead of calling `Path.symlink_to` directly. The skip is limited to platforms that cannot create the link: on Linux and macOS these tests always run, and a Windows skip is not a silent hole because the behavior under test is POSIX symlink semantics, which Windows junctions do not reproduce faithfully.
@@ -56,6 +60,8 @@ On Windows, use `bench-env\Scripts\pip.exe` and `tests.bat`.
 Live orchestration functions are marked `# pragma: no cover`. The excluded functions start real subprocesses, poll llama.cpp or ComfyUI, or drive an entire benchmark run. Pure decisions and calculations are extracted and tested instead. Treat the missing-line report as the useful signal; a fixed percentage is not a project target.
 
 HTTP and process boundaries are mocked where there is a clean seam. Tests may run generated Python in an isolated subprocess for the code grader, but they do not contact a live inference server or ComfyUI instance.
+
+`test_workspace_server.py` exercises HTTP responses with an in-memory connection and a failed terminal stream, covering ownership discovery, static files, and error responses after terminal disconnection. Mocked bind failures cover reuse after a launch race, an unresponsive or unrelated listener, and preservation of other operating-system errors.
 
 The immutable complete and interrupted 4.1 result fixtures are shared by pytest and Vitest. They enforce the [4.1 result compatibility contract](result-compatibility-v4.1.md) across producer state/count semantics and dashboard chart/reliability behavior before the commercial execution-kernel migration. A later producer adds a new fixture for a schema or methodology boundary rather than editing the 4.1 files in place.
 
@@ -113,7 +119,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 
 | Area | Test modules |
 |---|---|
-| Engine registry and families, shared llama.cpp tool discovery, Vulkan runtime isolation, sampler parity, OpenAI-compatible HTTP/SSE parsing, and adapters | [test_engines_registry.py](../tests/test_engines_registry.py), [test_llamacpp_tools.py](../tests/test_llamacpp_tools.py), [test_llamacpp_vulkan_engine.py](../tests/test_llamacpp_vulkan_engine.py), [test_sampling.py](../tests/test_sampling.py), [test_openai_api.py](../tests/test_openai_api.py), [test_llamacpp_engine.py](../tests/test_llamacpp_engine.py), [test_vllm_engine.py](../tests/test_vllm_engine.py) |
+| Engine registry and families, shared llama.cpp tool discovery, Vulkan runtime isolation, sampler parity, OpenAI-compatible HTTP/SSE parsing, adapters, and cached custom vLLM discovery through GUI/CLI selection | [test_engines_registry.py](../tests/test_engines_registry.py), [test_llamacpp_tools.py](../tests/test_llamacpp_tools.py), [test_llamacpp_vulkan_engine.py](../tests/test_llamacpp_vulkan_engine.py), [test_sampling.py](../tests/test_sampling.py), [test_openai_api.py](../tests/test_openai_api.py), [test_llamacpp_engine.py](../tests/test_llamacpp_engine.py), [test_vllm_engine.py](../tests/test_vllm_engine.py) |
 | Measurement contracts and validation | [test_engine_measurements.py](../tests/test_engine_measurements.py) |
 | Measured-call and accuracy orchestration | [test_shared_run_measured_calls.py](../tests/test_shared_run_measured_calls.py), [test_run_accuracy_benchmark.py](../tests/test_run_accuracy_benchmark.py) |
 | Crash caches and bank versions | [test_shared_crash_cache.py](../tests/test_shared_crash_cache.py), [test_shared_bank_versioning.py](../tests/test_shared_bank_versioning.py) |
@@ -127,7 +133,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Setup wizard defaults and plan validation | [test_setup_gui.py](../tests/test_setup_gui.py) |
 | Setup console, discovery, coordinator safety, credentials, and llama.cpp installation | [test_setup_console.py](../tests/test_setup_console.py), [test_setup_discovery.py](../tests/test_setup_discovery.py), [test_setup_coordinator_structure.py](../tests/test_setup_coordinator_structure.py), [test_hf_credentials.py](../tests/test_hf_credentials.py), [test_llamacpp_install.py](../tests/test_llamacpp_install.py) |
 | CUDA toolkit plan gating and install execution | [test_cuda_install.py](../tests/test_cuda_install.py) |
-| vLLM platform support, interpreter resolution, install commands | [test_vllm_install.py](../tests/test_vllm_install.py) |
+| vLLM platform support, interpreter resolution, install commands, and cached shard completeness | [test_vllm_install.py](../tests/test_vllm_install.py) |
 | Managed runtime update validation, replacement, rollback, and cancellation | [test_runtime_update.py](../tests/test_runtime_update.py) |
 | Engine picker defaults, disabled engines, install fan-out | [test_engine_selection.py](../tests/test_engine_selection.py) |
 | Atomic results, run/recovery state, terminal-history retention, and 4.1 compatibility | [test_result_store.py](../tests/test_result_store.py), [test_result_compatibility.py](../tests/test_result_compatibility.py) with immutable fixtures in `tests/fixtures/` |
@@ -176,6 +182,8 @@ Telemetry tests cover empty and failed channels, retained lifecycle sub-windows,
 
 ## Dashboard tests
 
+`energyAnalysis.test.ts` covers native prefill/decode and concurrency efficiency, image/embedding aggregates, scope and measurement-window separation, System grouping, model filters, invalid or missing measurements, sparse gaps, malformed dimensions, and duplicate-case rejection. Power chart tests verify reciprocal conversion and scaling for all three work units, preserve raw efficiency fields, and reject zero, negative, unavailable, wrong-unit, and overflowing conversions. Formatting tests ensure small efficiency values remain visible. Rendered checks use recorded GB10 and Mac results to verify scope captions and unavailable reasons.
+
 The dashboard is TypeScript (see [Dashboard](dashboard.md)) and uses Vitest, ESLint, and `tsc` from its own `node_modules`:
 
 ```bash
@@ -212,6 +220,10 @@ Setup preference tests in [test_setup_preferences.py](../tests/test_setup_prefer
 
 The llama-bench sparse-depth tests cover exact 128K selection, non-power-of-two endpoints, unchanged small/uncapped sweeps, native/Vulkan versus vLLM plan and ETA shaping, resolved previews, and replay of both sparse and older dense depth lists from saved runner plans. They run through pure helpers and fake benchmark runners without loading models.
 
-Recovery model verification tests in [test_model_verification.py](../tests/test_model_verification.py) cover deferred weight checks, per-stage reuse, changed/missing/sharded artifacts, image support assets, and replacement of a later model. Resume-policy tests verify byte progress and that lightweight inspection does not read deferred weights; workload recovery tests retain completed cases.
+Recovery model verification tests in [test_model_verification.py](../tests/test_model_verification.py) cover deferred weight checks, per-stage reuse, changed/missing/sharded artifacts, image support assets, and replacement of a later model. Resume-policy tests cover mixed repository-ID and catalog models, collision-free artifact keys, and deferred verification of changed or missing shards. They also verify byte progress and that lightweight inspection does not read deferred weights; workload recovery tests retain completed cases.
 
 Managed llama.cpp installer tests in `test_managed_llamacpp.py` cover the platform/backend/architecture matrix, Ubuntu derivative detection, ROCm version compatibility, same-release source fallback, cancellation, and rollback. Setup and Engine Management tests exercise the shared dispatch and multi-runtime transaction; Windows source builds use mocked compiler commands and executable validation. No installer or compiler is launched by these tests.
+
+Result History rename coverage verifies multiline system names, preservation of measurements, malformed input rejection, atomic-write failures, cancellation, selection requirements, and active-process guards.
+
+`nativeRunCard.test.ts` checks tab-specific native leaders at matching case dimensions, deterministic case selection, legacy combined entries, malformed and duplicate evidence, and scoped memory/energy summaries with partial and mixed-scope telemetry.
