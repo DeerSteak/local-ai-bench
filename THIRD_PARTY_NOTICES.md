@@ -114,11 +114,11 @@ Unresolved license records: **0**
 | npm | ast-v8-to-istanbul/node_modules/js-tokens | 10.0.0 | development | MIT | https://registry.npmjs.org/js-tokens/-/js-tokens-10.0.0.tgz |  |
 | npm | balanced-match | 4.0.4 | development | MIT | https://registry.npmjs.org/balanced-match/-/balanced-match-4.0.4.tgz |  |
 | npm | base64-arraybuffer | 1.0.2 | runtime | MIT | https://registry.npmjs.org/base64-arraybuffer/-/base64-arraybuffer-1.0.2.tgz |  |
-| npm | baseline-browser-mapping | 2.10.40 | development | Apache-2.0 | https://registry.npmjs.org/baseline-browser-mapping/-/baseline-browser-mapping-2.10.40.tgz |  |
+| npm | baseline-browser-mapping | 2.11.23 | development | Apache-2.0 | https://registry.npmjs.org/baseline-browser-mapping/-/baseline-browser-mapping-2.11.23.tgz |  |
 | npm | brace-expansion | 5.0.9 | development | MIT | https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.9.tgz |  |
-| npm | browserslist | 4.28.4 | development | MIT | https://registry.npmjs.org/browserslist/-/browserslist-4.28.4.tgz |  |
+| npm | browserslist | 4.28.9 | development | MIT | https://registry.npmjs.org/browserslist/-/browserslist-4.28.9.tgz |  |
 | npm | cacheable | 2.5.0 | development | MIT | https://registry.npmjs.org/cacheable/-/cacheable-2.5.0.tgz |  |
-| npm | caniuse-lite | 1.0.30001799 | development | CC-BY-4.0 | https://registry.npmjs.org/caniuse-lite/-/caniuse-lite-1.0.30001799.tgz |  |
+| npm | caniuse-lite | 1.0.30001810 | development | CC-BY-4.0 | https://registry.npmjs.org/caniuse-lite/-/caniuse-lite-1.0.30001810.tgz |  |
 | npm | chai | 6.2.2 | development | MIT | https://registry.npmjs.org/chai/-/chai-6.2.2.tgz |  |
 | npm | clsx | 2.1.1 | runtime | MIT | https://registry.npmjs.org/clsx/-/clsx-2.1.1.tgz |  |
 | npm | convert-source-map | 2.0.0 | development | MIT | https://registry.npmjs.org/convert-source-map/-/convert-source-map-2.0.0.tgz |  |
@@ -140,7 +140,7 @@ Unresolved license records: **0**
 | npm | decimal.js-light | 2.5.1 | runtime | MIT | https://registry.npmjs.org/decimal.js-light/-/decimal.js-light-2.5.1.tgz |  |
 | npm | deep-is | 0.1.4 | development | MIT | https://registry.npmjs.org/deep-is/-/deep-is-0.1.4.tgz |  |
 | npm | detect-libc | 2.1.2 | development | Apache-2.0 | https://registry.npmjs.org/detect-libc/-/detect-libc-2.1.2.tgz |  |
-| npm | electron-to-chromium | 1.5.379 | development | ISC | https://registry.npmjs.org/electron-to-chromium/-/electron-to-chromium-1.5.379.tgz |  |
+| npm | electron-to-chromium | 1.5.427 | development | ISC | https://registry.npmjs.org/electron-to-chromium/-/electron-to-chromium-1.5.427.tgz |  |
 | npm | es-module-lexer | 2.3.1 | development | MIT | https://registry.npmjs.org/es-module-lexer/-/es-module-lexer-2.3.1.tgz |  |
 | npm | es-toolkit | 1.49.0 | runtime | MIT | https://registry.npmjs.org/es-toolkit/-/es-toolkit-1.49.0.tgz |  |
 | npm | escalade | 3.2.0 | development | MIT | https://registry.npmjs.org/escalade/-/escalade-3.2.0.tgz |  |
@@ -216,7 +216,7 @@ Unresolved license records: **0**
 | npm | ms | 2.1.3 | development | MIT | https://registry.npmjs.org/ms/-/ms-2.1.3.tgz |  |
 | npm | nanoid | 3.3.18 | development | MIT | https://registry.npmjs.org/nanoid/-/nanoid-3.3.18.tgz |  |
 | npm | natural-compare | 1.4.0 | development | MIT | https://registry.npmjs.org/natural-compare/-/natural-compare-1.4.0.tgz |  |
-| npm | node-releases | 2.0.50 | development | MIT | https://registry.npmjs.org/node-releases/-/node-releases-2.0.50.tgz |  |
+| npm | node-releases | 2.0.55 | development | MIT | https://registry.npmjs.org/node-releases/-/node-releases-2.0.55.tgz |  |
 | npm | obug | 2.1.3 | development | MIT | https://registry.npmjs.org/obug/-/obug-2.1.3.tgz |  |
 | npm | optionator | 0.9.4 | development | MIT | https://registry.npmjs.org/optionator/-/optionator-0.9.4.tgz |  |
 | npm | p-limit | 3.1.0 | development | MIT | https://registry.npmjs.org/p-limit/-/p-limit-3.1.0.tgz |  |
@@ -260,7 +260,7 @@ Unresolved license records: **0**
 | npm | typescript | 6.0.3 | development | Apache-2.0 | https://registry.npmjs.org/typescript/-/typescript-6.0.3.tgz |  |
 | npm | typescript-eslint | 8.69.0 | development | MIT | https://registry.npmjs.org/typescript-eslint/-/typescript-eslint-8.69.0.tgz |  |
 | npm | undici-types | 8.3.0 | development | MIT | https://registry.npmjs.org/undici-types/-/undici-types-8.3.0.tgz |  |
-| npm | update-browserslist-db | 1.2.3 | development | MIT | https://registry.npmjs.org/update-browserslist-db/-/update-browserslist-db-1.2.3.tgz |  |
+| npm | update-browserslist-db | 1.3.3 | development | MIT | https://registry.npmjs.org/update-browserslist-db/-/update-browserslist-db-1.3.3.tgz |  |
 | npm | uri-js | 4.4.1 | development | BSD-2-Clause | https://registry.npmjs.org/uri-js/-/uri-js-4.4.1.tgz |  |
 | npm | use-sync-external-store | 1.6.0 | runtime | MIT | https://registry.npmjs.org/use-sync-external-store/-/use-sync-external-store-1.6.0.tgz |  |
 | npm | utrie | 1.0.2 | runtime | MIT | https://registry.npmjs.org/utrie/-/utrie-1.0.2.tgz |  |
