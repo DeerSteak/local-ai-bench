@@ -1461,7 +1461,8 @@ def test_custom_flash_next_mtp_gui_validation_and_progress(tmp_path):
     from scripts.app.benchmark_gui_screens.progress import progress_entries_for_engine
 
     tag = "RadixArk/Qwen3.8-Flash-Next-NVFP4"
-    entries = [MenuEntry(tag, "Flash Next", "custom", "Custom LLM", True)]
+    entries = [MenuEntry(tag, "Flash Next", "custom", "Custom LLM", True,
+                         native_mtp={"vllm": {"method": "mtp", "num_speculative_tokens": 2}})]
     owners = {tag: {"vllm"}}
     preparation = prepare_benchmark_launch(
         engine="vllm", tests=["llm", "conv"], entries=entries, model_owners=owners,

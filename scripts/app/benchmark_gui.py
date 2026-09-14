@@ -422,7 +422,8 @@ def selected_catalog_models_by_engine(entries: list[MenuEntry], engine_names: Se
                                       model_owners: dict[str, set[str]]) -> dict[str, list[dict]]:
     selected = selected_catalog_models(entries)
     selected.extend(
-        {"tag": entry.value} for entry in entries if entry.checked and entry.kind == "custom"
+        {"tag": entry.value, "native_mtp": entry.native_mtp}
+        for entry in entries if entry.checked and entry.kind == "custom"
     )
     return {
         engine_name: [

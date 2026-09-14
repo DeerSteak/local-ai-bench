@@ -1746,3 +1746,18 @@ def test_every_stage_a_toggle_can_produce_has_a_progress_label():
     produced = expand_selected_tests(name for name, *_ in TEST_DEFINITIONS)
     assert set(produced) <= set(TEST_STAGE_LABELS)
     assert all(TEST_STAGE_LABELS[name] for name in produced)
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_merged_custom_inventory_preserves_engine_mtp_capability(reverse):
+    native = {"vllm": {"method": "mtp", "num_speculative_tokens": 2}}
+    inventories = {
+        "llamacpp": {**_inventory([]), "custom": [{"tag": "alias", "label": "Alias"}]},
+        "vllm": {**_inventory([]), "custom": [{"tag": "alias", "label": "Alias", "native_mtp": native}]},
+    }
+    if reverse:
+        inventories = dict(reversed(list(inventories.items())))
+    merged, owners = merge_model_inventories(inventories)
+    assert len(merged["custom"]) == 1
+    assert owners["alias"] == {"llamacpp", "vllm"}
+    assert build_model_entries(merged, ["llm"])[0].native_mtp == native

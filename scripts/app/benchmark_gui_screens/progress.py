@@ -33,7 +33,7 @@ def progress_entries_for_engine(entries, engine: str,
             or base_engine in model_owners[entry.value]
         )
         and (not mtp_enabled or native_mtp_config(
-            catalog.get(entry.value, {"tag": entry.value}), base_engine,
+            catalog.get(entry.value, {"tag": entry.value, "native_mtp": entry.native_mtp}), base_engine,
         ))
     ]
 

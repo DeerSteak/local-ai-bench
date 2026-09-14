@@ -129,6 +129,7 @@ class MenuEntry:
     base_label: str | None = None
     variant: str | None = None
     default_variant: bool = False
+    native_mtp: dict | None = None
 
 
 def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
@@ -615,6 +616,9 @@ def merge_model_inventories(inventories: dict[str, dict]) -> tuple[dict, dict[st
                 if key not in seen:
                     merged[section].append(model)
                     seen.add(key)
+                elif section == "custom" and model.get("native_mtp"):
+                    existing = next(entry for entry in merged[section] if entry.get("tag") == key)
+                    existing["native_mtp"] = {**existing.get("native_mtp", {}), **model["native_mtp"]}
     for model in merged.get("custom", []):
         key = model.get("tag")
         model["engines"] = sorted(owners.get(key, ())) if isinstance(key, str) else []
@@ -649,7 +653,7 @@ def build_model_entries(inventory: dict[str, list[dict]], tests: list[str]) -> l
             section = f"Custom LLM — {engines}" if engines else "Custom LLM"
             entries.append(MenuEntry(
                 model["tag"], model["label"], "custom", section,
-                checked=False,
+                checked=False, native_mtp=model.get("native_mtp"),
             ))
     if "emb" in tests:
         for model in inventory["embedding"]:

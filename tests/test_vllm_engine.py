@@ -1293,14 +1293,123 @@ def test_cache_repository_resolution_rejects_path_tags(engine, tag):
     assert engine._repo(tag) is None
 
 
-def test_custom_flash_next_mtp_reaches_server_speculative_arguments(engine):
+def test_custom_flash_next_mtp_reaches_server_speculative_arguments(engine, tmp_path, monkeypatch, qwen_mtp_snapshot):
     tag = "RadixArk/Qwen3.8-Flash-Next-NVFP4"
+    qwen_mtp_snapshot(engine._cache_home / "hub" / ("models--" + tag.replace("/", "--")) / "snapshots" / "commit")
+    binary = tmp_path / "bin" / "vllm"
+    binary.parent.mkdir()
+    binary.touch()
+    binary.with_name("python").touch()
+    engine._executable = str(binary)
+    monkeypatch.setattr(vllm_module, "probe_qwen_mtp_runtime", lambda *args: True)
     assert engine._native_mtp_config(tag) is None
     engine.set_mtp_enabled(True)
     settings = engine._native_mtp_config(tag)
-    assert settings == {"method": "qwen4_exp_mtp", "num_speculative_tokens": 2}
+    assert settings == {"method": "mtp", "num_speculative_tokens": 2}
     command = engine.server_command(tag, 4096, mtp_config=settings)
     assert json.loads(command[command.index("--speculative-config") + 1]) == settings
     assert engine._native_mtp_config(tag, embedding=True) is None
     with pytest.raises(RuntimeError, match="does not support"):
         engine._native_mtp_config("someone/unknown")
+
+
+@pytest.mark.parametrize("repo,tag", [
+    ("RadixArk/Qwen3.8-Flash-Next-NVFP4", "RadixArk/Qwen3.8-Flash-Next-NVFP4"),
+    ("Qwen/Qwen3.8-Flash-Next-FP8", "Qwen/Qwen3.8-Flash-Next-FP8"),
+    ("another-owner/quantized-checkpoint", "my-flash-alias"),
+])
+def test_discovered_mtp_flows_through_selection_launch_and_resume(
+        engine, tmp_path, monkeypatch, qwen_mtp_snapshot, repo, tag):
+    from scripts.app.benchmark import resolve_engine_scopes
+    from scripts.app.benchmark_frontend import build_model_entries, merge_model_inventories
+    from scripts.app.benchmark_gui import selected_catalog_models_by_engine
+    from scripts.app.benchmark_gui_screens.progress import progress_entries_for_engine
+    from scripts.runtime.mtp import active_mtp_configurations, expand_mtp_passes, mtp_selection_error
+    from scripts.results.resume_policy import build_engine_resume_identity, assess_resume
+    from scripts.results.run_plan import RunPlan
+    from scripts.setup.model_inventory import build_model_inventory
+
+    root = engine._cache_home / "hub" / ("models--" + repo.replace("/", "--"))
+    snapshot = qwen_mtp_snapshot(root / "snapshots" / "selected", packed="FP8" not in repo)
+    (root / "refs").mkdir()
+    (root / "refs" / "main").write_text("selected")
+    qwen_mtp_snapshot(root / "snapshots" / "other")
+    record = {"engine": "vllm", "tag": tag, "repo": repo}
+    monkeypatch.setattr(vllm_module, "load_custom_models", lambda: [record] if tag != repo else [])
+    monkeypatch.setattr(vllm_module, "custom_model", lambda name, value: record if tag != repo and value == tag else None)
+    executable = tmp_path / "runtime" / "vllm"
+    executable.parent.mkdir()
+    executable.write_text("vllm-runtime")
+    executable.with_name("python").touch()
+    engine._executable = str(executable)
+    probes = []
+    def probe(python, architecture):
+        probes.append((python, architecture))
+        return True
+    monkeypatch.setattr(vllm_module, "probe_qwen_mtp_runtime", probe)
+    metadata = {"vllm": {"method": "mtp", "num_speculative_tokens": 2}}
+    inventory = build_model_inventory(engine, tmp_path / "images")
+    assert inventory["custom"][0]["native_mtp"] == metadata
+    assert len(inventory["custom"]) == 1
+    merged, owners = merge_model_inventories({"vllm": inventory})
+    entries = build_model_entries(merged, ["llm", "conv", "conc_chat"])
+    entries[0].checked = True
+    selected = selected_catalog_models_by_engine(entries, ["vllm"], owners)
+    assert mtp_selection_error(selected, "on", ["llm", "conv", "conc_chat"]) is None
+    assert progress_entries_for_engine(entries, "vllm · MTP on", owners) == entries
+    scopes, errors = resolve_engine_scopes(["vllm"], lambda _: engine, [], "all", [tag], ["llm", "conv", "conc_chat"])
+    assert not errors
+    assert scopes[0]["llm_models"][0]["native_mtp"] == metadata
+    assert scopes[0]["concurrency_models"][0]["native_mtp"] == metadata
+    passes = expand_mtp_passes([{**scopes[0], "tests": ["llm", "conv", "conc_chat"]}], "both")
+    assert [item["mtp_enabled"] for item in passes] == [False, True]
+    configurations = active_mtp_configurations(passes[1]["llm_models"], "vllm", True)
+    assert configurations[tag] == {"method": "mtp", "num_speculative_tokens": 2, "predictor": "embedded"}
+    engine.set_mtp_enabled(True)
+    command = engine.server_command(repo, 4096, mtp_config=engine._native_mtp_config(tag))
+    assert json.loads(command[command.index("--speculative-config") + 1]) == metadata["vllm"]
+    assert len(probes) == 1
+    plan = RunPlan.create(
+        application_version="6.1.1", engine_name="vllm", tests=["llm"], stage_order=["llm"],
+        models={"llm": [{"tag": tag, "short": "flash"}], "concurrency": [], "embeddings": [], "images": []},
+        effective_config={"warmup_runs": 1, "cpu_only": False, "force_all": False,
+                          "mtp_enabled": True, "mtp_configurations": configurations,
+                          "methodology_profile": "neutral-v2", "effective_optimizations": []},
+    )
+    assert plan.execution_identity["methodology"]["native_mtp"] == configurations
+    saved = build_engine_resume_identity(plan, engine, model_families=["llm"])
+    assert saved == build_engine_resume_identity(plan, engine, model_families=["llm"])
+    (snapshot / "config.json").write_text('{"model_type": "qwen4_exp"}')
+    assert engine.model_mtp_config(tag) is None
+    current = build_engine_resume_identity(plan, engine, model_families=["llm"])
+    assert not assess_resume(saved, current, {}, []).can_resume
+    (root / "refs" / "main").write_text("other")
+    assert engine.model_mtp_config(tag) == metadata["vllm"]
+
+
+def test_custom_mtp_requires_current_runtime_support(engine, tmp_path, monkeypatch, qwen_mtp_snapshot):
+    tag = "any/model"
+    qwen_mtp_snapshot(engine._cache_home / "hub" / "models--any--model" / "snapshots" / "commit")
+    assert engine.model_mtp_config(tag) is None
+    executable = tmp_path / "runtime" / "vllm"
+    executable.parent.mkdir()
+    executable.write_text("runtime-one")
+    executable.with_name("python").touch()
+    engine._executable = str(executable)
+    calls = []
+    def probe(*args):
+        calls.append(args)
+        return len(calls) > 1
+    monkeypatch.setattr(vllm_module, "probe_qwen_mtp_runtime", probe)
+    assert engine.model_mtp_config(tag) is None
+    assert engine.model_mtp_config(tag) is None
+    assert len(calls) == 1
+    executable.write_text("runtime-two-updated")
+    assert engine.model_mtp_config(tag) is not None
+    assert len(calls) == 2
+    engine._server_url = "http://external"
+    assert engine.model_mtp_config(tag) is None
+    engine._server_url = None
+    engine._executable = None
+    engine._launcher = "/container-launcher"
+    assert engine.model_mtp_config(tag) is None

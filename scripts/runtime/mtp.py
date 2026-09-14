@@ -10,18 +10,11 @@ MTP_SERVER_TESTS = frozenset({
     "conc_tool", "conc_chat", "sustained",
 })
 MTP_CONCURRENCY_TESTS = frozenset({"conc_tool", "conc_chat"})
-REPOSITORY_MTP = {
-    "RadixArk/Qwen3.8-Flash-Next-NVFP4": {
-        "vllm": {"method": "qwen4_exp_mtp", "num_speculative_tokens": 2},
-    },
-}
 
 
 def native_mtp_config(model: dict, engine_name: str) -> dict | None:
     engine_name = engine_family(engine_name)
-    tag = model.get("tag")
-    fallback = REPOSITORY_MTP.get(tag) if isinstance(tag, str) else None
-    value = model.get("native_mtp", fallback)
+    value = model.get("native_mtp")
     if not isinstance(value, dict):
         return None
     config = value.get(engine_name)

@@ -593,10 +593,13 @@ def resolve_engine_scopes(engine_names: list[str], engine_factory, tier_models: 
     for engine_name in engine_names:
         engine = engine_factory(engine_name)
         engine_tests = engine_pass_tests(tests, engine_name, include_images=True)
-        installed_tags = (
-            [model["tag"] for model in engine.list_installed_models()]
+        installed_models = (
+            engine.list_installed_models()
             if inventory_needed else []
         )
+        installed_tags = [model["tag"] for model in installed_models]
+        installed_mtp = {model["tag"]: model["native_mtp"] for model in installed_models
+                         if model.get("native_mtp")}
         engine_tier_models = (
             downloaded_model_families(tier_models, installed_tags)
             if llm_patterns and normal_llm_enabled else tier_models
@@ -604,6 +607,9 @@ def resolve_engine_scopes(engine_names: list[str], engine_factory, tier_models: 
         llm_models, concurrency_models = resolve_model_scopes(
             engine_tier_models, installed_tags, llm_patterns, concurrency_enabled,
         )
+        for model in llm_models + concurrency_models:
+            if model["tag"] in installed_mtp and "native_mtp" not in model:
+                model["native_mtp"] = installed_mtp[model["tag"]]
         engine_embeddings = (
             downloaded_models(embedding_models, installed_tags)
             if embedding_patterns and embedding_enabled else embedding_models

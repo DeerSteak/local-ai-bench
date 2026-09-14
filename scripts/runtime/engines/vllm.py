@@ -33,6 +33,8 @@ from scripts.setup.setup_config import (
 )
 from scripts.setup.custom_models import custom_model, load_custom_models
 from scripts.setup.model_inventory import find_non_catalog_vllm_repos
+from scripts.setup.runtime_status import runtime_python
+from scripts.setup.vllm_mtp import probe_qwen_mtp_runtime, snapshot_qwen_mtp
 from scripts.setup.vllm_install import (
     find_vllm_binary, find_vllm_launcher, hf_cache_model_complete, hf_cache_model_dir,
     hf_cache_snapshot_dir, vllm_cache_home,
@@ -193,11 +195,34 @@ class VllmEngine(InferenceEngine):
     def _native_mtp_config(self, tag: str, *, embedding: bool = False) -> dict | None:
         if not getattr(self, "_mtp_enabled", False) or embedding:
             return None
-        model = next((model for model in LLM_MODELS if model["tag"] == tag), {"tag": tag})
-        mtp_config = native_mtp_config(model, self.name)
+        mtp_config = self.model_mtp_config(tag)
         if mtp_config is None:
             raise RuntimeError(f"{tag} does not support native MTP with vLLM")
         return {"method": "mtp", **mtp_config}
+
+    def model_mtp_config(self, tag: str) -> dict | None:
+        model = self._catalog_entry(tag)
+        if model is not None:
+            return native_mtp_config(model, self.name)
+        snapshot = self._snapshot_dir(tag)
+        if snapshot is None or self._server_url or self._uses_launcher:
+            return None
+        detected = snapshot_qwen_mtp(snapshot)
+        python = runtime_python(self._executable)
+        if detected is None or python is None:
+            return None
+        try:
+            executable_stat = Path(self._executable or "").stat()
+            python_stat = python.stat()
+            architecture = json.loads((snapshot / "config.json").read_text())["architectures"][0]
+        except (OSError, ValueError, KeyError, IndexError, TypeError):
+            return None
+        identity = (str(python), executable_stat.st_mtime_ns, executable_stat.st_ino,
+                    python_stat.st_mtime_ns, python_stat.st_ino, architecture)
+        if getattr(self, "_mtp_probe_identity", None) != identity:
+            self._mtp_probe_supported = probe_qwen_mtp_runtime(python, architecture)
+            self._mtp_probe_identity = identity
+        return detected if self._mtp_probe_supported else None
 
     @property
     def _local_runtime(self) -> str | None:
@@ -668,7 +693,10 @@ class VllmEngine(InferenceEngine):
             blobs = hf_cache_model_dir(self._cache_home, str(model["repo"])) / "blobs"
             size = (sum(path.stat().st_size for path in blobs.glob("*"))
                     if not self._server_url and blobs.is_dir() else None)
-            installed.append({"tag": tag, "label": model.get("label"), "size": size})
+            entry = {"tag": tag, "label": model.get("label"), "size": size}
+            if mtp := self.model_mtp_config(tag):
+                entry["native_mtp"] = {self.name: mtp}
+            installed.append(entry)
             listed_tags.add(tag)
         return installed
 

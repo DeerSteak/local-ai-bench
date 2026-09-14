@@ -163,6 +163,7 @@ The package boundaries are deliberately broad and practical: `app/` owns user en
 | `setup/model_import.py` / `setup/model_download.py` | Hugging Face repository inspection and engine-specific artifact downloads |
 | `setup/runtime_identity.py` | Read-only engine runtime ownership classification and version inspection |
 | `setup/runtime_status.py` | Combined engine health, backend, dependency-stack, and WSL runtime status records |
+| `setup/vllm_mtp.py` | Read-only custom Qwen4 experimental predictor tensor detection and vLLM runtime capability probe |
 | `setup/model_compatibility.py` | Imported-model architecture metadata and read-only vLLM registry compatibility probes |
 | `setup/engine_selection.py` | Engine-picker rules and terminal interaction, including disabled engines and installation needs |
 | `setup/cuda_install.py` | Native Ubuntu NVIDIA driver bootstrap and WSL2-only CUDA toolkit installation, so qualification cannot silently build llama.cpp CPU-only |

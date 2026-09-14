@@ -175,6 +175,8 @@ def classify_engine_models(installed: list[dict], llm_catalog: list[dict] | None
             "label": installed_by_tag[tag].get("label") or f"{tag} (custom)",
             "short": sanitize_tag_to_short(tag),
             "size": installed_by_tag[tag].get("size"),
+            **({"native_mtp": installed_by_tag[tag]["native_mtp"]}
+               if installed_by_tag[tag].get("native_mtp") else {}),
         })
 
     return {

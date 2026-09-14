@@ -346,7 +346,8 @@ def test_progress_names_include_only_engines_with_an_mtp_pass():
 
 @pytest.mark.parametrize("mode", ["on", "both"])
 def test_custom_flash_next_mtp_passes_and_methodology(mode):
-    model = {"tag": "RadixArk/Qwen3.8-Flash-Next-NVFP4", "short": "flash"}
+    model = {"tag": "another/flash", "short": "flash",
+             "native_mtp": {"vllm": {"method": "mtp", "num_speculative_tokens": 2}}}
     assert mtp_selection_error({"vllm": [model]}, mode, ["llm", "conv"]) is None
     passes = expand_mtp_passes([{
         "name": "vllm", "tests": ["llm", "conv"],
@@ -355,7 +356,7 @@ def test_custom_flash_next_mtp_passes_and_methodology(mode):
     assert [p["mtp_enabled"] for p in passes] == ([True] if mode == "on" else [False, True])
     assert passes[-1]["llm_models"] == [model]
     assert active_mtp_configurations([model], "vllm", True) == {
-        model["tag"]: {"method": "qwen4_exp_mtp", "num_speculative_tokens": 2, "predictor": "embedded"},
+        model["tag"]: {"method": "mtp", "num_speculative_tokens": 2, "predictor": "embedded"},
     }
     assert native_mtp_config(model, "llamacpp") is None
     assert native_mtp_config({"tag": "someone/Qwen3.8-Flash-Next-NVFP4"}, "vllm") is None
