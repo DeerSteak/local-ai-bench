@@ -1213,3 +1213,81 @@ def test_ensure_model_against_a_server_url_rejects_mismatched_model(engine, monk
 
     with pytest.raises(RuntimeError, match=f"serves org/other-model, not {TEST_TAG}"):
         engine._ensure_model(TEST_TAG, 1024)
+
+
+CACHED_CUSTOM_REPO = "RadixArk/Qwen3.8-Flash-Next-NVFP4"
+
+
+def cached_custom_snapshot(engine, repo=CACHED_CUSTOM_REPO):
+    snapshot = (engine._cache_home / "hub" / ("models--" + repo.replace("/", "--"))
+                / "snapshots" / "commit")
+    snapshot.mkdir(parents=True)
+    (snapshot / "config.json").write_text('{}', encoding="utf-8")
+    (snapshot / "model.safetensors").write_bytes(b"weights")
+    return snapshot
+
+
+def test_cached_custom_model_reaches_gui_and_cli_selection(engine, monkeypatch, tmp_path):
+    from scripts.app.benchmark import resolve_custom_models
+    from scripts.app.benchmark_frontend import build_model_entries, merge_model_inventories
+    from scripts.setup.model_inventory import build_model_inventory
+
+    monkeypatch.setattr(vllm_module, "load_custom_models", lambda: [])
+    snapshot = cached_custom_snapshot(engine)
+    inventory = build_model_inventory(engine, tmp_path / "images")
+    merged, owners = merge_model_inventories({"vllm": inventory})
+    entries = build_model_entries(merged, ["llm"])
+    assert len(entries) == 1
+    assert entries[0].value == CACHED_CUSTOM_REPO
+    assert entries[0].checked is False
+    assert owners[CACHED_CUSTOM_REPO] == {"vllm"}
+    selected = resolve_custom_models([entries[0].value], [], [CACHED_CUSTOM_REPO])
+    assert selected[0]["tag"] == CACHED_CUSTOM_REPO
+    assert engine._repo(selected[0]["tag"]) == CACHED_CUSTOM_REPO
+    assert engine._snapshot_dir(CACHED_CUSTOM_REPO) == snapshot
+    assert engine.model_pulled(CACHED_CUSTOM_REPO)
+    assert not engine.supports_tool_calls(CACHED_CUSTOM_REPO)
+
+
+@pytest.mark.parametrize("incomplete", ["config", "weights", "shard", "stale_ref"])
+def test_cached_custom_discovery_rejects_incomplete_models(engine, incomplete):
+    snapshot = cached_custom_snapshot(engine)
+    if incomplete == "config":
+        (snapshot / "config.json").unlink()
+    elif incomplete == "weights":
+        (snapshot / "model.safetensors").unlink()
+        (snapshot / "model.safetensors").symlink_to(snapshot / "missing")
+    elif incomplete == "shard":
+        (snapshot / "model.safetensors.index.json").write_text(json.dumps({
+            "weight_map": {"a": "model.safetensors", "b": "missing.safetensors"},
+        }), encoding="utf-8")
+    else:
+        refs = snapshot.parent.parent / "refs"
+        refs.mkdir()
+        (refs / "main").write_text("missing", encoding="utf-8")
+    assert engine.list_installed_models() == []
+    assert engine._repo(CACHED_CUSTOM_REPO) is None
+
+
+@pytest.mark.parametrize("served", [{CACHED_CUSTOM_REPO}, {"other/model"}, None])
+def test_external_server_only_lists_matching_cached_custom_model(engine, monkeypatch, served):
+    cached_custom_snapshot(engine)
+    engine._server_url = "http://container:8000"
+    monkeypatch.setattr(VllmEngine, "_served_model_ids", lambda self: served)
+    tags = [model["tag"] for model in engine.list_installed_models()]
+    assert tags == ([CACHED_CUSTOM_REPO] if served == {CACHED_CUSTOM_REPO} else [])
+
+
+def test_external_server_lists_registered_custom_without_local_cache(engine, monkeypatch):
+    record = {"engine": "vllm", "tag": "custom", "repo": CACHED_CUSTOM_REPO}
+    monkeypatch.setattr(vllm_module, "load_custom_models", lambda: [record])
+    monkeypatch.setattr(vllm_module, "custom_model", lambda name, tag: record if tag == "custom" else None)
+    engine._server_url = "http://container:8000"
+    monkeypatch.setattr(VllmEngine, "_served_model_ids", lambda self: {CACHED_CUSTOM_REPO})
+    assert engine.list_installed_models() == [{"tag": "custom", "label": None, "size": None}]
+    assert engine._external_model_id("custom") == CACHED_CUSTOM_REPO
+
+
+@pytest.mark.parametrize("tag", ["../escape", "owner/..", "/absolute", "owner/model/extra"])
+def test_cache_repository_resolution_rejects_path_tags(engine, tag):
+    assert engine._repo(tag) is None

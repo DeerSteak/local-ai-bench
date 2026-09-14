@@ -913,3 +913,36 @@ def test_build_tools_are_looked_for_in_the_venv_bin():
     probed = []
     missing_build_tools(Path("/v"), exists_fn=lambda path: probed.append(path) or True)
     assert all(path.parent.name in ("bin", "Scripts") for path in probed)
+
+
+@pytest.mark.parametrize("index", [
+    {}, [], {"weight_map": {}}, {"weight_map": {"a": None}},
+    {"weight_map": {"a": "../outside.safetensors"}},
+    {"weight_map": {"a": "missing.safetensors"}},
+])
+def test_cache_completeness_rejects_invalid_shard_indexes(tmp_path, index):
+    import json
+
+    snapshot = hf_cache_model_dir(tmp_path, "org/model") / "snapshots" / "commit"
+    snapshot.mkdir(parents=True)
+    (snapshot / "config.json").write_text("{}")
+    (snapshot / "model.safetensors").touch()
+    (snapshot / "model.safetensors.index.json").write_text(json.dumps(index))
+    assert not hf_cache_model_complete(tmp_path, "org/model")
+
+
+def test_cache_completeness_requires_all_indexed_shards(tmp_path):
+    import json
+
+    snapshot = hf_cache_model_dir(tmp_path, "org/model") / "snapshots" / "commit"
+    snapshot.mkdir(parents=True)
+    (snapshot / "config.json").write_text("{}")
+    (snapshot / "model.safetensors.index.json").write_text(json.dumps({
+        "weight_map": {"a": "part1.safetensors", "b": "part2.safetensors"},
+    }))
+    (snapshot / "part1.safetensors").touch()
+    assert not hf_cache_model_complete(tmp_path, "org/model")
+    (snapshot / "part2.safetensors").touch()
+    assert hf_cache_model_complete(tmp_path, "org/model")
+    (snapshot / "model.safetensors.index.json").write_text("broken json")
+    assert not hf_cache_model_complete(tmp_path, "org/model")

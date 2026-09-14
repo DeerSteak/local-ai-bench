@@ -119,7 +119,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 
 | Area | Test modules |
 |---|---|
-| Engine registry and families, shared llama.cpp tool discovery, Vulkan runtime isolation, sampler parity, OpenAI-compatible HTTP/SSE parsing, and adapters | [test_engines_registry.py](../tests/test_engines_registry.py), [test_llamacpp_tools.py](../tests/test_llamacpp_tools.py), [test_llamacpp_vulkan_engine.py](../tests/test_llamacpp_vulkan_engine.py), [test_sampling.py](../tests/test_sampling.py), [test_openai_api.py](../tests/test_openai_api.py), [test_llamacpp_engine.py](../tests/test_llamacpp_engine.py), [test_vllm_engine.py](../tests/test_vllm_engine.py) |
+| Engine registry and families, shared llama.cpp tool discovery, Vulkan runtime isolation, sampler parity, OpenAI-compatible HTTP/SSE parsing, adapters, and cached custom vLLM discovery through GUI/CLI selection | [test_engines_registry.py](../tests/test_engines_registry.py), [test_llamacpp_tools.py](../tests/test_llamacpp_tools.py), [test_llamacpp_vulkan_engine.py](../tests/test_llamacpp_vulkan_engine.py), [test_sampling.py](../tests/test_sampling.py), [test_openai_api.py](../tests/test_openai_api.py), [test_llamacpp_engine.py](../tests/test_llamacpp_engine.py), [test_vllm_engine.py](../tests/test_vllm_engine.py) |
 | Measurement contracts and validation | [test_engine_measurements.py](../tests/test_engine_measurements.py) |
 | Measured-call and accuracy orchestration | [test_shared_run_measured_calls.py](../tests/test_shared_run_measured_calls.py), [test_run_accuracy_benchmark.py](../tests/test_run_accuracy_benchmark.py) |
 | Crash caches and bank versions | [test_shared_crash_cache.py](../tests/test_shared_crash_cache.py), [test_shared_bank_versioning.py](../tests/test_shared_bank_versioning.py) |
@@ -133,7 +133,7 @@ The workload tests emphasize the pure behavior behind orchestration: context pla
 | Setup wizard defaults and plan validation | [test_setup_gui.py](../tests/test_setup_gui.py) |
 | Setup console, discovery, coordinator safety, credentials, and llama.cpp installation | [test_setup_console.py](../tests/test_setup_console.py), [test_setup_discovery.py](../tests/test_setup_discovery.py), [test_setup_coordinator_structure.py](../tests/test_setup_coordinator_structure.py), [test_hf_credentials.py](../tests/test_hf_credentials.py), [test_llamacpp_install.py](../tests/test_llamacpp_install.py) |
 | CUDA toolkit plan gating and install execution | [test_cuda_install.py](../tests/test_cuda_install.py) |
-| vLLM platform support, interpreter resolution, install commands | [test_vllm_install.py](../tests/test_vllm_install.py) |
+| vLLM platform support, interpreter resolution, install commands, and cached shard completeness | [test_vllm_install.py](../tests/test_vllm_install.py) |
 | Managed runtime update validation, replacement, rollback, and cancellation | [test_runtime_update.py](../tests/test_runtime_update.py) |
 | Engine picker defaults, disabled engines, install fan-out | [test_engine_selection.py](../tests/test_engine_selection.py) |
 | Atomic results, run/recovery state, terminal-history retention, and 4.1 compatibility | [test_result_store.py](../tests/test_result_store.py), [test_result_compatibility.py](../tests/test_result_compatibility.py) with immutable fixtures in `tests/fixtures/` |
