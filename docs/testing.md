@@ -227,3 +227,5 @@ Managed llama.cpp installer tests in `test_managed_llamacpp.py` cover the platfo
 Result History rename coverage verifies multiline system names, preservation of measurements, malformed input rejection, atomic-write failures, cancellation, selection requirements, and active-process guards.
 
 `nativeRunCard.test.ts` checks tab-specific native leaders at matching case dimensions, deterministic case selection, legacy combined entries, malformed and duplicate evidence, and scoped memory/energy summaries with partial and mixed-scope telemetry.
+
+MTP regressions cover the custom RadixArk Flash Next repository across GUI validation, progress filtering, baseline/MTP pass selection, methodology recording, and vLLM speculative launch arguments. Unknown repositories and unsupported engines remain excluded.

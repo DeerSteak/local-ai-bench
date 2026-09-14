@@ -243,7 +243,7 @@ def test_mtp_on_requires_support_in_the_selected_models():
     assert mtp_selection_error(
         {"llamacpp": [{"tag": "plain"}], "vllm": [{"tag": "plain"}]}, "on", ["llm"],
     ) == (
-        "--mtp on requires a selected model with cataloged native MTP support for every "
+        "--mtp on requires a selected model with known native MTP support for every "
         "selected engine; missing: llamacpp, vllm"
     )
 
@@ -255,7 +255,7 @@ def test_mtp_on_rejects_an_engine_that_would_be_silently_dropped():
     assert mtp_selection_error(
         {"llamacpp": [vllm_only], "vllm": [vllm_only]}, "on", ["llm"],
     ) == (
-        "--mtp on requires a selected model with cataloged native MTP support for every "
+        "--mtp on requires a selected model with known native MTP support for every "
         "selected engine; missing: llamacpp"
     )
 
@@ -268,7 +268,7 @@ def test_mtp_on_requires_the_capable_model_to_be_installed_for_each_engine():
     assert mtp_selection_error(
         {"llamacpp": [shared], "vllm": []}, "on", ["llm"],
     ) == (
-        "--mtp on requires a selected model with cataloged native MTP support for every "
+        "--mtp on requires a selected model with known native MTP support for every "
         "selected engine; missing: vllm"
     )
 
@@ -277,7 +277,7 @@ def test_mtp_both_rejects_a_baseline_only_selection():
     assert mtp_selection_error(
         {"llamacpp": [{"tag": "plain"}]}, "both", ["llm"],
     ) == (
-        "--mtp both requires a selected model with cataloged native MTP support; "
+        "--mtp both requires a selected model with known native MTP support; "
         "use --mtp off for a baseline-only run"
     )
 
@@ -342,3 +342,25 @@ def test_progress_names_include_only_engines_with_an_mtp_pass():
     assert mtp_progress_names({"llamacpp": models, "vllm": models}, "both") == [
         "llamacpp · MTP off", "vllm · MTP off", "vllm · MTP on",
     ]
+
+
+@pytest.mark.parametrize("mode", ["on", "both"])
+def test_custom_flash_next_mtp_passes_and_methodology(mode):
+    model = {"tag": "RadixArk/Qwen3.8-Flash-Next-NVFP4", "short": "flash"}
+    assert mtp_selection_error({"vllm": [model]}, mode, ["llm", "conv"]) is None
+    passes = expand_mtp_passes([{
+        "name": "vllm", "tests": ["llm", "conv"],
+        "llm_models": [model], "concurrency_models": [model],
+    }], mode)
+    assert [p["mtp_enabled"] for p in passes] == ([True] if mode == "on" else [False, True])
+    assert passes[-1]["llm_models"] == [model]
+    assert active_mtp_configurations([model], "vllm", True) == {
+        model["tag"]: {"method": "qwen4_exp_mtp", "num_speculative_tokens": 2, "predictor": "embedded"},
+    }
+    assert native_mtp_config(model, "llamacpp") is None
+    assert native_mtp_config({"tag": "someone/Qwen3.8-Flash-Next-NVFP4"}, "vllm") is None
+
+
+@pytest.mark.parametrize("tag", [None, [], 12])
+def test_repository_mtp_ignores_invalid_tags(tag):
+    assert native_mtp_config({"tag": tag}, "vllm") is None

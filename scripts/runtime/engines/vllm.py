@@ -193,9 +193,7 @@ class VllmEngine(InferenceEngine):
     def _native_mtp_config(self, tag: str, *, embedding: bool = False) -> dict | None:
         if not getattr(self, "_mtp_enabled", False) or embedding:
             return None
-        model = next((model for model in LLM_MODELS if model["tag"] == tag), None)
-        if model is None:
-            raise RuntimeError(f"{tag} has no cataloged native MTP configuration for vLLM")
+        model = next((model for model in LLM_MODELS if model["tag"] == tag), {"tag": tag})
         mtp_config = native_mtp_config(model, self.name)
         if mtp_config is None:
             raise RuntimeError(f"{tag} does not support native MTP with vLLM")

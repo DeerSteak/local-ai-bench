@@ -10,11 +10,18 @@ MTP_SERVER_TESTS = frozenset({
     "conc_tool", "conc_chat", "sustained",
 })
 MTP_CONCURRENCY_TESTS = frozenset({"conc_tool", "conc_chat"})
+REPOSITORY_MTP = {
+    "RadixArk/Qwen3.8-Flash-Next-NVFP4": {
+        "vllm": {"method": "qwen4_exp_mtp", "num_speculative_tokens": 2},
+    },
+}
 
 
 def native_mtp_config(model: dict, engine_name: str) -> dict | None:
     engine_name = engine_family(engine_name)
-    value = model.get("native_mtp")
+    tag = model.get("tag")
+    fallback = REPOSITORY_MTP.get(tag) if isinstance(tag, str) else None
+    value = model.get("native_mtp", fallback)
     if not isinstance(value, dict):
         return None
     config = value.get(engine_name)
@@ -102,13 +109,13 @@ def mtp_selection_error(engine_models: Mapping[str, Sequence[dict]], mode: str,
         ]
         if missing:
             return (
-                "--mtp on requires a selected model with cataloged native MTP support "
+                "--mtp on requires a selected model with known native MTP support "
                 "for every selected engine; missing: " + ", ".join(missing)
             )
     elif mode == "both":
         if not capable_engines:
             return (
-                "--mtp both requires a selected model with cataloged native MTP support; "
+                "--mtp both requires a selected model with known native MTP support; "
                 "use --mtp off for a baseline-only run"
             )
         if not set(tests) & MTP_SERVER_TESTS:

@@ -1291,3 +1291,16 @@ def test_external_server_lists_registered_custom_without_local_cache(engine, mon
 @pytest.mark.parametrize("tag", ["../escape", "owner/..", "/absolute", "owner/model/extra"])
 def test_cache_repository_resolution_rejects_path_tags(engine, tag):
     assert engine._repo(tag) is None
+
+
+def test_custom_flash_next_mtp_reaches_server_speculative_arguments(engine):
+    tag = "RadixArk/Qwen3.8-Flash-Next-NVFP4"
+    assert engine._native_mtp_config(tag) is None
+    engine.set_mtp_enabled(True)
+    settings = engine._native_mtp_config(tag)
+    assert settings == {"method": "qwen4_exp_mtp", "num_speculative_tokens": 2}
+    command = engine.server_command(tag, 4096, mtp_config=settings)
+    assert json.loads(command[command.index("--speculative-config") + 1]) == settings
+    assert engine._native_mtp_config(tag, embedding=True) is None
+    with pytest.raises(RuntimeError, match="does not support"):
+        engine._native_mtp_config("someone/unknown")

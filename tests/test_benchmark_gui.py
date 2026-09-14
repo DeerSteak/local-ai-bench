@@ -1455,3 +1455,21 @@ def test_prepare_vllm_launch_does_not_require_llamacpp_tools(tmp_path):
         found_comfyui=None, detected_comfyui=tmp_path,
     )
     assert isinstance(preparation, BenchmarkLaunchReady)
+
+
+def test_custom_flash_next_mtp_gui_validation_and_progress(tmp_path):
+    from scripts.app.benchmark_gui_screens.progress import progress_entries_for_engine
+
+    tag = "RadixArk/Qwen3.8-Flash-Next-NVFP4"
+    entries = [MenuEntry(tag, "Flash Next", "custom", "Custom LLM", True)]
+    owners = {tag: {"vllm"}}
+    preparation = prepare_benchmark_launch(
+        engine="vllm", tests=["llm", "conv"], entries=entries, model_owners=owners,
+        max_prompt_tokens=8192, tg_tokens=[], gui_options=dict(GUI_OPTION_DEFAULTS, mtp="on"),
+        selected_preset="Custom", detected_tools={}, found_comfyui=None, detected_comfyui=tmp_path,
+    )
+    assert isinstance(preparation, BenchmarkLaunchReady)
+    assert progress_entries_for_engine(entries, "vllm · MTP on", owners) == entries
+    assert progress_entries_for_engine(entries, "llamacpp · MTP on", owners) == []
+    entries[0].checked = False
+    assert progress_entries_for_engine(entries, "vllm · MTP on", owners) == []

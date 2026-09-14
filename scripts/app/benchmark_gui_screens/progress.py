@@ -32,7 +32,9 @@ def progress_entries_for_engine(entries, engine: str,
             entry.kind == "image" or entry.value not in model_owners
             or base_engine in model_owners[entry.value]
         )
-        and (not mtp_enabled or native_mtp_config(catalog.get(entry.value, {}), base_engine))
+        and (not mtp_enabled or native_mtp_config(
+            catalog.get(entry.value, {"tag": entry.value}), base_engine,
+        ))
     ]
 
 
