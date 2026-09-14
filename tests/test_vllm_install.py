@@ -946,3 +946,11 @@ def test_cache_completeness_requires_all_indexed_shards(tmp_path):
     assert hf_cache_model_complete(tmp_path, "org/model")
     (snapshot / "model.safetensors.index.json").write_text("broken json")
     assert not hf_cache_model_complete(tmp_path, "org/model")
+
+
+@pytest.mark.parametrize("uv_available", [True, False])
+def test_dgx_explicit_release_uses_matching_cuda_index(uv_available):
+    command = vllm_install_command("cu130_wheel", "/v/bin/python", uv_available, "0.29.0")
+    assert "vllm[bench]==0.29.0" in command
+    assert command[command.index("--extra-index-url") + 1] == "https://wheels.vllm.ai/0.29.0/cu130"
+    assert DGX_CU130_INDEX not in command

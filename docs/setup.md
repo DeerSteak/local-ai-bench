@@ -313,3 +313,5 @@ An older preinstalled `vllm-launch` remains discoverable as an external platform
 ---
 
 [← Back to README](../README.md) · [Workloads →](workloads.md)
+
+The DGX Spark vLLM **Update** action resolves the latest stable release from PyPI and pins that version for both the staged validation install and final installation. It does not reuse the initial-install fallback version. An explicit version selection uses that release's CUDA 13.0 wheel index; a release lookup failure stops the update and preserves the current runtime. The update log names the chosen version.

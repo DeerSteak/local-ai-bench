@@ -729,3 +729,53 @@ def test_windows_source_fallback_builds_and_validates_executables(tmp_path):
 
 def test_metal_source_build_explicitly_enables_metal():
     assert llamacpp_cmake_flags('metal') == ['-DGGML_METAL=ON']
+
+
+@pytest.mark.parametrize("requested", [None, "0.28.0"])
+def test_dgx_update_pins_selected_release_for_both_installs(tmp_path, monkeypatch, requested):
+    import scripts.setup.runtime_update as module
+
+    target = tmp_path / "vllm-env"
+    target.mkdir()
+    selected = requested or "0.29.0"
+    def versions():
+        assert requested is None
+        return ["0.29.0", "0.28.0"]
+    monkeypatch.setattr(module, "fetch_vllm_versions", versions)
+    calls = []
+    def installer(support, **kwargs):
+        calls.append(kwargs["version"])
+        executable = vllm_executable(kwargs["venv_dir"])
+        executable.parent.mkdir(parents=True)
+        executable.touch()
+        return True
+    result = update_managed_vllm(
+        VllmSupport("experimental", "cu130_wheel", "DGX"), target,
+        version=requested, installer=installer,
+        run=lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=f"vllm {selected}", stderr=""),
+    )
+    assert result.success
+    assert calls == [selected, selected]
+    assert result.version == f"vllm {selected}"
+
+
+@pytest.mark.parametrize("failure", ["empty", "network"])
+def test_dgx_release_lookup_failure_preserves_installation(tmp_path, monkeypatch, failure):
+    import scripts.setup.runtime_update as module
+
+    target = tmp_path / "vllm-env"
+    target.mkdir()
+    marker = target / "existing"
+    marker.write_text("original")
+    def versions():
+        if failure == "network":
+            raise OSError("release lookup unavailable")
+        return []
+    monkeypatch.setattr(module, "fetch_vllm_versions", versions)
+    def installer(*args, **kwargs):
+        pytest.fail("Must not install the old pin after release lookup fails")
+    result = update_managed_vllm(
+        VllmSupport("experimental", "cu130_wheel", "DGX"), target, installer=installer,
+    )
+    assert not result.success
+    assert marker.read_text() == "original"

@@ -274,7 +274,9 @@ def vllm_install_command(method: str, python_exe: str, uv_available: bool,
         "rocm_wheel": [package, "--extra-index-url", ROCM_WHEEL_INDEX, "--upgrade"],
         "cu130_wheel": [
             "-U", f"vllm[bench]=={normalized or DGX_CU130_VERSION}",
-            "--extra-index-url", index_url or DGX_CU130_INDEX,
+            "--extra-index-url", index_url or (
+                f"https://wheels.vllm.ai/{normalized}/cu130" if normalized else DGX_CU130_INDEX
+            ),
         ],
     }[method]
     if uv_available:

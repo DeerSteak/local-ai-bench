@@ -15,7 +15,7 @@ from typing import Callable
 import psutil
 
 from scripts.setup.vllm_install import (
-    VllmSupport, install_vllm, vllm_runtime_expectations, vllm_runtime_import_error,
+    VllmSupport, fetch_vllm_versions, install_vllm, vllm_runtime_expectations, vllm_runtime_import_error,
 )
 from scripts.setup.intel_xpu_install import oneapi_environment
 from scripts.setup.archive_safety import safe_extract_tar, safe_extract_zip
@@ -734,6 +734,13 @@ def update_managed_vllm(support: VllmSupport, target: Path, *, log=print,
     backup = target.with_name(f".{target.name}-backup-{token}")
     active_run = control.run if control is not None else run
     try:
+        if support.method == "cu130_wheel" and version is None:
+            versions = fetch_vllm_versions()
+            if not versions:
+                return RuntimeUpdateResult(False, "No stable vLLM release was found; the current environment was preserved.")
+            version = versions[0]
+        if version:
+            log(f"Updating vLLM to {version} ...")
         install_kwargs = {"version": version} if version else {}
         if not installer(support, log=log, run=active_run, venv_dir=staged, **install_kwargs):
             if cancelled := _cancelled(control):
