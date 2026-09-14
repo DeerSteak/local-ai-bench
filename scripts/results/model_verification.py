@@ -1,6 +1,6 @@
 """Verify resumed model weights at the first pending load in each stage."""
 
-from scripts.results.resume_policy import file_identity
+from scripts.results.resume_policy import file_identity, model_artifact_prefix
 
 
 def verify_resume_model(journal, model: dict, engine=None, *, progress=None) -> None:
@@ -9,7 +9,7 @@ def verify_resume_model(journal, model: dict, engine=None, *, progress=None) -> 
     if not any(event.payload.get("recovery") in {"resume", "retry"}
                for event in journal.store.events(journal.plan.job_id)):
         return
-    prefix = f"model:{model['tag']}:" if engine is not None else f"image:{model['short']}:"
+    prefix = model_artifact_prefix(model["tag"]) if engine is not None else f"image:{model['short']}:"
     verified = getattr(journal, "_verified_model_weights", set())
     if prefix in verified:
         return

@@ -335,3 +335,75 @@ def test_deferred_models_preserve_saved_hashes_without_reading_weights(tmp_path)
                                             deferred_artifacts=saved, use_digest_cache=False)
     assert identity["artifacts"] == saved
     assert identity["runtimes"]["server"] == file_identity(runtime)
+
+
+@pytest.mark.parametrize("tag, encoded", [
+    ("RadixArk/Qwen3.8-Flash-Next-NVFP4", "RadixArk%2FQwen3.8-Flash-Next-NVFP4"),
+    ("owner%2Fmodel", "owner%252Fmodel"),
+    ("owner_model", "owner_model"),
+    ("qwen3.8:27b-ud-q4_K_M", "qwen3.8:27b-ud-q4_K_M"),
+    ("custom ~ model", "custom%20%7E%20model"),
+    ("模型", "%E6%A8%A1%E5%9E%8B"),
+])
+def test_model_artifact_prefix_is_valid_and_preserves_safe_names(tag, encoded):
+    from scripts.results.resume_policy import IDENTITY_NAME, model_artifact_prefix
+
+    prefix = model_artifact_prefix(tag)
+    assert prefix == f"model:{encoded}:"
+    assert IDENTITY_NAME.fullmatch(prefix + "part1")
+
+
+@pytest.mark.parametrize("name", ["raw/name", "raw\\name", "model:%:part1", "model:%GG:part1"])
+def test_resume_identity_still_rejects_paths_and_invalid_escapes(tmp_path, name):
+    with pytest.raises(ValueError, match="logical identifiers"):
+        build_resume_identity(make_plan(), artifacts={name: tmp_path / "unused"},
+                              runtimes={}, methodology={})
+
+
+def test_mixed_vllm_identity_and_deferred_resume_verify_repository_models(tmp_path):
+    from types import SimpleNamespace
+    from scripts.results.model_verification import verify_resume_model
+
+    tags = ["RadixArk/Qwen3.8-Flash-Next-NVFP4", "qwen3.8:27b-ud-q4_K_M"]
+    models = [{"tag": tag, "short": f"model{index}"} for index, tag in enumerate(tags)]
+    paths = {}
+    for index, tag in enumerate(tags):
+        paths[tag] = tuple(tmp_path / f"model{index}-part{part}" for part in (1, 2))
+        for path in paths[tag]:
+            path.write_bytes(path.name.encode())
+    engine = SimpleNamespace(model_pulled=lambda tag: tag in paths,
+                             resume_artifact_paths=lambda tag: paths[tag],
+                             resume_runtime_paths=lambda: {})
+    plan = RunPlan.create(
+        application_version="6.0", engine_name="vllm", tests=["llm"], stage_order=["llm"],
+        models={"llm": models, "concurrency": [], "embeddings": [], "images": []},
+        effective_config={"warmup_runs": 1, "cpu_only": False, "force_all": False},
+    )
+    identity = build_engine_resume_identity(plan, engine, model_families=["llm"])
+    assert set(identity["artifacts"]) == {
+        f"model:{name}:part{part}" for name in (
+            "RadixArk%2FQwen3.8-Flash-Next-NVFP4", "qwen3.8:27b-ud-q4_K_M",
+        ) for part in (1, 2)
+    }
+    assert str(tmp_path) not in json.dumps(identity)
+    assert build_engine_resume_identity(plan, engine, model_families=["llm"]) == identity
+    deferred = build_engine_resume_identity(
+        plan, engine, model_families=["llm"], deferred_artifacts=identity["artifacts"],
+    )
+    assert deferred == identity
+
+    def journal():
+        return SimpleNamespace(plan=plan, store=SimpleNamespace(
+            events=lambda _: [SimpleNamespace(payload={"recovery": "resume"})],
+            resume_identity=lambda _: deferred,
+        ))
+
+    first = journal()
+    for model in models:
+        verify_resume_model(first, model, engine)
+    paths[tags[0]][1].write_bytes(b"changed")
+    with pytest.raises(ValueError, match="Model bytes changed"):
+        verify_resume_model(journal(), models[0], engine)
+    paths[tags[0]] = paths[tags[0]][:1]
+    with pytest.raises(ValueError, match="Model artifacts changed"):
+        verify_resume_model(journal(), models[0], engine)

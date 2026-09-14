@@ -6,14 +6,21 @@ import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import quote
 
 from scripts.results.run_plan import RunPlan
 from scripts.results.canonical_json import sha256_json
 from scripts.results.result_store import atomic_write_json
 
 
-IDENTITY_NAME = re.compile(r"^[A-Za-z0-9_.:@+-]+$")
+IDENTITY_NAME = re.compile(r"^(?:[A-Za-z0-9_.:@+-]|%[0-9A-F]{2})+$")
 VOLATILE_ENVIRONMENT_FIELDS = {"timestamp"}
+
+
+def model_artifact_prefix(tag: str) -> str:
+    """Encode repository separators without colliding with literal escape sequences."""
+    encoded = quote(tag, safe="_.:@+-").replace("~", "%7E")
+    return f"model:{encoded}:"
 
 
 def stable_environment(environment: dict | None) -> dict:
@@ -78,7 +85,7 @@ def build_engine_resume_identity(plan: RunPlan, engine, *, model_families,
             continue
         paths = engine.resume_artifact_paths(tag)
         for number, path in enumerate(paths, 1):
-            artifacts[f"model:{tag}:part{number}"] = path
+            artifacts[f"{model_artifact_prefix(tag)}part{number}"] = path
     if deferred_artifacts is not None:
         artifacts = {name: path for name, path in artifacts.items()
                      if not name.startswith(("model:", "image:"))}
