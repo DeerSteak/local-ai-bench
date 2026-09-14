@@ -1416,3 +1416,42 @@ def test_concurrency_launch_uses_only_the_checked_tg_option(tmp_path):
             break
         values.append(argument)
     assert values == ["128"]
+
+
+@pytest.mark.parametrize("engines", [("vllm",), ("llamacpp",), ("llamacpp-vulkan",), ("vllm", "llamacpp")])
+def test_workload_preflight_uses_selected_engine_and_names_server_tests(engines):
+    from scripts.stage_registry import ACCURACY_TESTS, STAGE_BY_KEY
+
+    tests = ["llm", "llm_cached", "conv", "vllmbench", *ACCURACY_TESTS]
+    errors = workload_preflight_errors(tests, {}, True, engines=engines)
+    if engines == ("vllm",):
+        assert errors == []
+    else:
+        assert len(errors) == 1
+        for test in tests:
+            if test != "vllmbench":
+                assert f"{STAGE_BY_KEY[test].label} ({test})" in errors[0]
+        assert "vllmbench" not in errors[0]
+        assert "Embeddings" not in errors[0]
+
+
+def test_workload_preflight_native_tests_do_not_require_server():
+    errors = workload_preflight_errors(["llamabench", "llamabenchconc", "vllmbench"], {}, True)
+    assert len(errors) == 2
+    assert "llama-bench throughput" in errors[0]
+    assert "llama-bench concurrency" in errors[1]
+    assert all("llama-server" not in error for error in errors)
+
+
+def test_prepare_vllm_launch_does_not_require_llamacpp_tools(tmp_path):
+    from scripts.stage_registry import ACCURACY_TESTS
+
+    preparation = prepare_benchmark_launch(
+        engine="vllm", tests=["llm", "llm_cached", "conv", "vllmbench", *ACCURACY_TESTS],
+        entries=[MenuEntry("custom-model", "Custom model", "custom", "Custom LLM", True)],
+        model_owners={"custom-model": {"vllm"}},
+        max_prompt_tokens=8192, tg_tokens=[], gui_options=dict(GUI_OPTION_DEFAULTS),
+        selected_preset="Custom", detected_tools={},
+        found_comfyui=None, detected_comfyui=tmp_path,
+    )
+    assert isinstance(preparation, BenchmarkLaunchReady)

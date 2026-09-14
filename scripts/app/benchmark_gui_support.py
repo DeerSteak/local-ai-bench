@@ -5,6 +5,8 @@ from pathlib import Path
 
 from scripts.runtime import config
 from scripts.runtime.hardware import classify_gpu
+from scripts.runtime.engine_identity import engine_family
+from scripts.stage_registry import STAGE_SPECS
 from scripts.app.benchmark_frontend import (
     GUI_OPTION_DEFAULTS, LLM_BACKED_TESTS, TEST_DEFINITIONS, MenuEntry,
 )
@@ -184,11 +186,20 @@ def estimate_remaining_seconds(elapsed: float, completed: int, total: int,
 
 
 def workload_preflight_errors(tests: list[str], tools: dict[str, str | None],
-                              comfyui_available: bool) -> list[str]:
+                              comfyui_available: bool, *,
+                              engines: tuple[str, ...] = ("llamacpp",)) -> list[str]:
     errors = []
-    server_tests = set(tests) - {"llamabench", "llamabenchconc", "img"}
-    if server_tests and not tools.get("llama-server"):
-        errors.append("llama-server is required for the selected tests. Run Setup to install the project-managed runtime.")
+    server_tests = [
+        f"{spec.label} ({spec.key})" for spec in STAGE_SPECS
+        if spec.key in tests and spec.native_engine is None and spec.model_family != "images"
+    ]
+    if (server_tests and any(engine_family(name) == "llamacpp" for name in engines)
+            and not tools.get("llama-server")):
+        errors.append(
+            "llama-server is required for the selected llama.cpp engine by: "
+            + ", ".join(server_tests)
+            + ". Run Setup to install the project-managed runtime."
+        )
     if "llamabench" in tests and not tools.get("llama-bench"):
         errors.append("llama-bench is required for llama-bench throughput. Run Setup to install the project-managed runtime.")
     if "llamabenchconc" in tests and not tools.get("llama-batched-bench"):
