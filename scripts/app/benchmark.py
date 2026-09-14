@@ -1284,13 +1284,18 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             [*llm_models, *conc_models], engine_name, mtp_enabled,
         )
         vllm_kv_cache_dtype = "auto"
+        vllm_kv_cache_configurations = {}
         vllm_launcher_args = []
         if isinstance(engine, VllmEngine):
             vllm_kv_cache_dtype = engine.configure_kv_cache(profile["backend"])
+            vllm_kv_cache_configurations = engine.model_kv_cache_configurations(
+                model["tag"] for model in [*llm_models, *conc_models]
+            )
             vllm_launcher_args = engine.launcher_extra_args
         methodology = resolve_methodology_profile(
             engine_name=engine_name, tests=tests, cpu_only=args.cpu_only,
             vllm_kv_cache_dtype=vllm_kv_cache_dtype,
+            vllm_kv_cache_configurations=vllm_kv_cache_configurations,
             vllm_launcher_args=vllm_launcher_args,
             mtp_enabled=mtp_enabled,
             mtp_configurations=mtp_configurations,

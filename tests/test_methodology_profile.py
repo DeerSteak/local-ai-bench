@@ -210,3 +210,17 @@ def test_native_vllmbench_does_not_claim_platform_launcher_overrides():
         vllm_launcher_args=["--gpu-memory-utilization", "0.85"],
     )
     assert all("launcher_args" not in value for value in profile["effective_optimizations"])
+
+
+def test_per_model_vllm_cache_policy_is_stable_and_part_of_methodology():
+    policies = {"publisher/flash": "bfloat16", "catalog-27b": "fp8"}
+    def resolve(values):
+        return resolve_methodology_profile(
+            engine_name="vllm", tests=["llm", "vllmbench"], cpu_only=False,
+            vllm_kv_cache_dtype="fp8", vllm_kv_cache_configurations=values,
+        )
+    profile = resolve(policies)
+    assert profile == resolve(dict(reversed(list(policies.items()))))
+    assert 'vllm:kv_cache_by_model={"catalog-27b":"fp8","publisher/flash":"bfloat16"}' in profile["effective_optimizations"]
+    assert "vllm:kv_cache=fp8" not in profile["effective_optimizations"]
+    assert profile != resolve({**policies, "publisher/flash": "fp8"})

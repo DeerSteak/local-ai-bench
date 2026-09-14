@@ -29,6 +29,7 @@ def engine(monkeypatch, tmp_path):
     instance._loaded_tag = "qwen3.5:9b-q4_K_M"
     instance._loaded_num_ctx = None
     instance._loaded_embedding = False
+    instance._loaded_kv_cache_dtype = "auto"
     instance._loaded_n_parallel = 1
     instance._proc = cast(subprocess.Popen, type("P", (), {"poll": staticmethod(lambda: None)})())
     return instance
@@ -304,10 +305,10 @@ def test_offload_cache_rejects_malformed_values(engine):
 
 
 def test_offload_cache_key_tracks_model_revision_and_visible_devices(engine, monkeypatch):
-    revisions = iter((Path("snapshots/one"), Path("snapshots/two")))
-    monkeypatch.setattr(engine, "_snapshot_dir", lambda _tag: next(revisions))
+    monkeypatch.setattr(engine, "_snapshot_dir", lambda _tag: Path("snapshots/one"))
     first = engine._offload_key(TEST_TAG, TEST_REPO)
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1")
+    monkeypatch.setattr(engine, "_snapshot_dir", lambda _tag: Path("snapshots/two"))
     second = engine._offload_key(TEST_TAG, TEST_REPO)
     assert first != second
 
@@ -1413,3 +1414,65 @@ def test_custom_mtp_requires_current_runtime_support(engine, tmp_path, monkeypat
     engine._executable = None
     engine._launcher = "/container-launcher"
     assert engine.model_mtp_config(tag) is None
+
+
+@pytest.mark.parametrize("model_type", ["qwen4_exp", "qwen4_exp_text"])
+@pytest.mark.parametrize("backend", ["cuda", "rocm"])
+def test_qwen4_cache_precision_follows_snapshot_for_alias_and_repo(
+        engine, monkeypatch, qwen_mtp_snapshot, model_type, backend):
+    repo, tag = "publisher/checkpoint", "flash-alias"
+    root = engine._cache_home / "hub" / "models--publisher--checkpoint"
+    snapshot = qwen_mtp_snapshot(root / "snapshots" / "first")
+    metadata = {"model_type": model_type, "torch_dtype": "bfloat16"}
+    (snapshot / "config.json").write_text(json.dumps(metadata))
+    monkeypatch.setattr(vllm_module, "custom_model", lambda name, value:
+                        {"repo": repo} if value == tag else None)
+    engine.configure_kv_cache(backend)
+    assert engine.model_kv_cache_configurations([tag, TEST_TAG, tag]) == {
+        tag: "bfloat16", TEST_TAG: "fp8",
+    }
+    first_key = engine._offload_key(tag, repo)
+    for mtp in (None, {"method": "mtp", "num_speculative_tokens": 2}):
+        command = engine.server_command(repo, 4096, mtp_config=mtp)
+        assert command[command.index("--kv-cache-dtype") + 1] == "bfloat16"
+    assert "--kv-cache-dtype" not in engine.server_command(repo, None, embedding=True)
+    (snapshot / "config.json").write_text('{"model_type":"qwen3_5","torch_dtype":"bfloat16"}')
+    assert engine.model_kv_cache_dtype(tag) == "fp8"
+    assert first_key != engine._offload_key(tag, repo)
+    (snapshot / "config.json").write_text(json.dumps(metadata))
+    engine._server_url = "http://external"
+    assert engine.model_kv_cache_dtype(tag) == "auto"
+
+
+@pytest.mark.parametrize("payload", ["{", "[]", "null", '{}', '{"model_type":[]}'])
+def test_invalid_cache_metadata_retains_backend_default(engine, tmp_path, monkeypatch, payload):
+    (tmp_path / "config.json").write_text(payload)
+    monkeypatch.setattr(engine, "_snapshot_dir", lambda tag: tmp_path)
+    engine.configure_kv_cache("cuda")
+    assert engine.model_kv_cache_dtype("any/model") == "fp8"
+    (tmp_path / "config.json").unlink()
+    assert engine.model_kv_cache_dtype("any/model") == "fp8"
+
+
+def test_cache_policy_change_respawns_server_and_unchanged_policy_reuses_it(engine, monkeypatch):
+    spawned = []
+    engine._loaded_num_ctx = 1024
+    monkeypatch.setattr(engine, "stop", lambda **kw: None)
+    monkeypatch.setattr(engine, "model_pulled", lambda tag: True)
+    monkeypatch.setattr(engine, "available", lambda: True)
+    def popen(args, **kwargs):
+        spawned.append(args)
+        return type("P", (), {"poll": staticmethod(lambda: None), "returncode": 0})()
+    monkeypatch.setattr(vllm_module.subprocess, "Popen", popen)
+    engine._ensure_model(TEST_TAG, 1024)
+    assert spawned == []
+    engine.configure_kv_cache("cuda")
+    engine._ensure_model(TEST_TAG, 1024)
+    assert len(spawned) == 1
+    assert spawned[0][spawned[0].index("--kv-cache-dtype") + 1] == "fp8"
+    engine._ensure_model(TEST_TAG, 1024)
+    assert len(spawned) == 1
+    engine.configure_kv_cache("cpu")
+    engine._ensure_model(TEST_TAG, 1024)
+    assert len(spawned) == 2
+    assert "--kv-cache-dtype" not in spawned[1]

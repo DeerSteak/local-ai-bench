@@ -1,5 +1,7 @@
 """Resolved neutral methodology profile and effective runtime settings."""
 
+import json
+
 from scripts.runtime import config
 from scripts.runtime.sampling import baseline_sampling_profile
 from scripts.runtime.engine_identity import engine_family
@@ -20,6 +22,7 @@ def effective_gpu_split_mode(cpu_only: bool) -> str:
 
 def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
                                 vllm_kv_cache_dtype: str = "auto",
+                                vllm_kv_cache_configurations: dict[str, str] | None = None,
                                 vllm_launcher_args: list[str] | None = None,
                                 mtp_enabled: bool = False,
                                 mtp_configurations: dict | None = None) -> dict:
@@ -45,7 +48,11 @@ def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
     if "vllmbench" in selected:
         optimizations.append(f"vllm:bench_iters={config.VLLMBENCH_ITERS}")
     if family == "vllm" and selected & (ENGINE_STAGES | {"vllmbench"}):
-        optimizations.append(f"vllm:kv_cache={vllm_kv_cache_dtype}")
+        if vllm_kv_cache_configurations:
+            policies = json.dumps(vllm_kv_cache_configurations, sort_keys=True, separators=(",", ":"))
+            optimizations.append(f"vllm:kv_cache_by_model={policies}")
+        else:
+            optimizations.append(f"vllm:kv_cache={vllm_kv_cache_dtype}")
         if mtp_enabled and selected & TEXT_GENERATION_STAGES:
             optimizations.append("vllm:native_mtp=on")
         if vllm_launcher_args and selected & ENGINE_STAGES:

@@ -290,7 +290,7 @@ class VllmBenchBenchmark:
                             out = Path(workdir) / f"{kind}.json"
                             command = builder(
                                 executable, repo, out, input_len, output_len,
-                                engine.kv_cache_dtype,
+                                engine.model_kv_cache_dtype(model["tag"]),
                                 gpu_memory_utilization=engine.bench_gpu_memory_utilization(),
                             )
                             try:

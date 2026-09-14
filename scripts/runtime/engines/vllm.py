@@ -183,6 +183,7 @@ class VllmEngine(InferenceEngine):
         self._loaded_n_parallel: int = 1
         self._loaded_tool_parser: str | None = None
         self._loaded_mtp_config: dict | None = None
+        self._loaded_kv_cache_dtype: str | None = None
         self._loaded_cpu_offload_gb = 0
         self._gpu_visible = True
         self._kv_cache_dtype = "auto"
@@ -266,7 +267,7 @@ class VllmEngine(InferenceEngine):
         snapshot = self._snapshot_dir(tag)
         revision = snapshot.name if snapshot else "unknown"
         visible = os.environ.get("CUDA_VISIBLE_DEVICES", "all")
-        return "|".join((repo, revision, self._kv_cache_dtype, str(runtime),
+        return "|".join((repo, revision, self.model_kv_cache_dtype(tag), str(runtime),
                          str(runtime_mtime), self._gpu_fingerprint, visible))
 
     def _host_offload_limit_gb(self) -> int:
@@ -282,7 +283,7 @@ class VllmEngine(InferenceEngine):
         return "fp8" if runtime_backend in {"cuda", "rocm"} else "auto"
 
     def configure_kv_cache(self, runtime_backend: str) -> str:
-        """Select one cache policy for every locally managed vLLM workload."""
+        """Select the backend default; model restrictions take precedence."""
         self._kv_cache_dtype = (
             "auto" if self._server_url else self.supported_kv_cache_dtype(runtime_backend)
         )
@@ -291,6 +292,23 @@ class VllmEngine(InferenceEngine):
     @property
     def kv_cache_dtype(self) -> str:
         return self._kv_cache_dtype
+
+    def model_kv_cache_dtype(self, tag: str) -> str:
+        if self._server_url:
+            return "auto"
+        snapshot = self._snapshot_dir(tag)
+        if snapshot is not None:
+            try:
+                metadata = json.loads((snapshot / "config.json").read_text(encoding="utf-8"))
+                if isinstance(metadata, dict) and metadata.get("model_type") in (
+                        "qwen4_exp", "qwen4_exp_text"):
+                    return "bfloat16"
+            except (OSError, ValueError, TypeError):
+                pass
+        return self._kv_cache_dtype
+
+    def model_kv_cache_configurations(self, tags) -> dict[str, str]:
+        return {tag: self.model_kv_cache_dtype(tag) for tag in sorted(set(tags))}
 
     @property
     def launcher_extra_args(self) -> list[str]:
@@ -548,6 +566,7 @@ class VllmEngine(InferenceEngine):
         self._loaded_n_parallel = 1
         self._loaded_tool_parser = None
         self._loaded_mtp_config = None
+        self._loaded_kv_cache_dtype = None
         self._loaded_cpu_offload_gb = 0
 
     def _wait_for_launcher_shutdown(self, timeout: int) -> None:
@@ -784,8 +803,9 @@ class VllmEngine(InferenceEngine):
                     "--gpu-memory-utilization", str(self._gpu_memory_utilization)]
         if not embedding:
             options.append("--enable-prefix-caching")
-        if self._kv_cache_dtype != "auto" and not embedding:
-            options += ["--kv-cache-dtype", self._kv_cache_dtype]
+        cache_dtype = "auto" if embedding else self.model_kv_cache_dtype(repo)
+        if cache_dtype != "auto":
+            options += ["--kv-cache-dtype", cache_dtype]
         if num_ctx is not None:
             options += ["--max-model-len", str(num_ctx)]
         if cpu_offload_gb:
@@ -812,12 +832,13 @@ class VllmEngine(InferenceEngine):
                        tool_parser: str | None = None) -> None:
         """Ensure vLLM is serving `tag`, respawning on any mismatch — one model per process."""
         mtp_config = self._native_mtp_config(tag, embedding=embedding)
-        want = (tag, num_ctx, embedding, n_parallel, tool_parser, mtp_config)
+        cache_dtype = "auto" if embedding else self.model_kv_cache_dtype(tag)
+        want = (tag, num_ctx, embedding, n_parallel, tool_parser, mtp_config, cache_dtype)
 
         def ready():
             have = (self._loaded_tag, self._loaded_num_ctx, self._loaded_embedding,
                     self._loaded_n_parallel, self._loaded_tool_parser,
-                    self._loaded_mtp_config)
+                    self._loaded_mtp_config, self._loaded_kv_cache_dtype)
             return want == have and self._proc is not None and self._proc.poll() is None
 
         if ready():
@@ -852,6 +873,7 @@ class VllmEngine(InferenceEngine):
                 self._loaded_embedding, self._loaded_n_parallel = embedding, n_parallel
                 self._loaded_tool_parser = tool_parser
                 self._loaded_mtp_config = None
+                self._loaded_kv_cache_dtype = cache_dtype
                 self._loaded_cpu_offload_gb = 0
                 return
 
@@ -924,6 +946,7 @@ class VllmEngine(InferenceEngine):
                         self._loaded_n_parallel = n_parallel
                         self._loaded_tool_parser = tool_parser
                         self._loaded_mtp_config = mtp_config
+                        self._loaded_kv_cache_dtype = cache_dtype
                         self._loaded_cpu_offload_gb = cpu_offload_gb
                         if cpu_offload_gb and self._cpu_offload_gb.get(offload_key) != cpu_offload_gb:
                             self._cpu_offload_gb[offload_key] = cpu_offload_gb

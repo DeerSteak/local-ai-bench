@@ -230,7 +230,8 @@ def test_format_entry_labels_each_kind_with_its_own_headline_number():
 def test_run_opens_measured_window_before_each_native_command(monkeypatch):
     class FakeEngine:
         name = "vllm"
-        kv_cache_dtype = "auto"
+        @staticmethod
+        def model_kv_cache_dtype(tag): return "bfloat16"
 
         @staticmethod
         def bench_executable(): return "vllm"
@@ -262,6 +263,7 @@ def test_run_opens_measured_window_before_each_native_command(monkeypatch):
     telemetry = Telemetry()
 
     def fake_run_one(self, command, output_json, timeout, env):
+        assert command[command.index("--kv-cache-dtype") + 1] == "bfloat16"
         assert telemetry.calls[-1].startswith("measured:")
         if "latency" in command:
             return {"avg_latency": 1.0}
@@ -285,7 +287,8 @@ def test_run_opens_measured_window_before_each_native_command(monkeypatch):
 def test_run_discards_timed_out_native_window(monkeypatch):
     class FakeEngine:
         name = "vllm"
-        kv_cache_dtype = "auto"
+        @staticmethod
+        def model_kv_cache_dtype(tag): return "bfloat16"
         bench_executable = staticmethod(lambda: "vllm")
         stop = staticmethod(lambda: None)
         runtime_environment = staticmethod(lambda: {})
@@ -318,7 +321,8 @@ def test_run_discards_timed_out_native_window(monkeypatch):
 def test_run_closes_native_window_when_result_parser_fails(monkeypatch):
     class FakeEngine:
         name = "vllm"
-        kv_cache_dtype = "auto"
+        @staticmethod
+        def model_kv_cache_dtype(tag): return "bfloat16"
         bench_executable = staticmethod(lambda: "vllm")
         stop = staticmethod(lambda: None)
         runtime_environment = staticmethod(lambda: {})
