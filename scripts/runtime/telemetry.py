@@ -1698,6 +1698,7 @@ class TelemetrySampler:
         if interval_sec <= 0:
             raise ValueError("telemetry interval must be positive")
         self.pid = pid
+        self.include_process_memory = True
         self.interval_sec = interval_sec
         self._sample_fn = sample_fn or self._sample
         self.power_source = power_source
@@ -1792,7 +1793,7 @@ class TelemetrySampler:
 
     def _sample(self, timestamp_sec: float, window: str) -> TelemetrySample:
         host_used, _ = system_memory_usage()
-        process = process_resource_usage(self.pid)
+        process = process_resource_usage(self.pid) if self.include_process_memory else None
         power_uses_nvidia = isinstance(self.power_source, PollingPowerSource) and \
             self.power_source.availability.source == "nvidia-smi"
         temperature_uses_nvidia = isinstance(self.temperature_source, PollingTemperatureSource) \
@@ -1873,7 +1874,8 @@ class CaseTelemetry:
     def __init__(self, pid: int | None = None, interval_sec: float = config.TELEMETRY_INTERVAL_SEC,
                  sampler: TelemetrySampler | None = None, sources: Mapping[str, str] | None = None,
                  power_availability: PowerAvailability | None = None,
-                 temperature_availability: TemperatureAvailability | None = None):
+                 temperature_availability: TemperatureAvailability | None = None,
+                 include_process_memory: bool = True):
         self.power_availability = power_availability
         self.temperature_availability = temperature_availability
         self.sources = dict(sources or default_memory_sources())
@@ -1886,6 +1888,9 @@ class CaseTelemetry:
                                 if temperature_availability else None),
             memory_sources=self.sources,
         )
+        self.sampler.include_process_memory = include_process_memory
+        if not include_process_memory:
+            self.sources["process_rss_gb"] = "unavailable"
         self.ceiling_gb = memory_ceiling_gb(self.sources)
         self._reset_cursors()
         self.last_power: dict[str, Any] | None = None

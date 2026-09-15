@@ -326,6 +326,8 @@ class EventStore:
                          selected_case_ids: list[str] | None = None) -> dict[str, int]:
         """Reopen recoverable state and return the next attempt number for selected cases."""
         plan = self.load_plan(job_id)
+        if plan.engine_name == "openai-compatible":
+            raise ValueError("External server identity is unverified; start a new run instead of resuming.")
         if stage not in plan.stage_order:
             raise ValueError(f"stage is absent from run plan: {stage}")
         projection = self.rebuild(job_id)
@@ -402,6 +404,8 @@ class EventStore:
         self.append(job_id, [JournalEvent("job", job_id, state, payload)])
 
     def resume_job(self, job_id: str) -> None:
+        if self.load_plan(job_id).engine_name == "openai-compatible":
+            raise ValueError("External server identity is unverified; start a new run instead of resuming.")
         projection = self.rebuild(job_id)
         current = projection["jobs"].get(job_id, {}).get("state")
         if current == "running":

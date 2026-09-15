@@ -199,6 +199,8 @@ def installed_image_models(models_dir: Path, image_catalog: list[dict] | None = 
 
 def build_model_inventory(engine, image_models_dir: Path) -> dict[str, list[dict]]:
     """Build the complete read-only inventory with benchmark-managed images."""
+    if engine.name == "openai-compatible":
+        return {"llm": [], "embedding": [], "image": [], "custom": engine.list_installed_models()}
     llm_catalog = expanded_variant_catalog(LLM_MODELS) \
         if engine_family(engine.name) == "llamacpp" else LLM_MODELS
     inventory = classify_engine_models(engine.list_installed_models(), llm_catalog=llm_catalog)

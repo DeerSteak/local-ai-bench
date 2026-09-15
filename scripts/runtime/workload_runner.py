@@ -91,6 +91,8 @@ def create_case_telemetry(settings: dict, environ=None) -> CaseTelemetry | None:
     if not settings.get("memory_telemetry"):
         return None
     kwargs = {}
+    if settings.get("external_api"):
+        kwargs["include_process_memory"] = False
     if settings.get("power_telemetry"):
         kwargs["power_availability"] = inherited_power_availability(settings, environ)
     if settings.get("temperature_telemetry"):
@@ -103,6 +105,9 @@ def create_case_telemetry(settings: dict, environ=None) -> CaseTelemetry | None:
 def configure_runner_engine(engine, hardware_backend: str, cpu_only: bool,
                             settings: dict | None = None) -> str:
     """Reapply runtime policy in this child process; parent engine state is not inherited."""
+    if getattr(engine, "name", None) == "openai-compatible" and settings and settings.get("external_api"):
+        from scripts.runtime.engines.openai_compatible import endpoint_config
+        engine.settings = endpoint_config(**settings["external_api"])
     resolve_backend = getattr(engine, "runtime_backend", None)
     runtime_backend = (
         resolve_backend(hardware_backend, cpu_only=cpu_only)

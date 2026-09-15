@@ -194,7 +194,9 @@ def inspect_recovery(result_path, identity_builder=None):
     try:
         store.verify(plan.job_id)
         projection = store.rebuild(plan.job_id)
-        if identity_builder is None:
+        if plan.engine_name == "openai-compatible":
+            current_identity = store.resume_identity(plan.job_id)
+        elif identity_builder is None:
             current_identity = current_resume_identity_for_result(result_path, plan)
         else:
             current_identity = identity_builder(plan)
@@ -214,10 +216,12 @@ def inspect_recovery(result_path, identity_builder=None):
     reasons = list(decision.reasons)
     if result.get("run", {}).get("status") == "complete":
         reasons.append("result is already complete")
+    if plan.engine_name == "openai-compatible":
+        reasons.append("External server weights and runtime settings cannot be verified; start a new run.")
     can_resume = not reasons
     return {
         "schema_version": 1, "action": "resume" if can_resume else "fork",
-        "model_verification": "before_load",
+        "model_verification": "unavailable" if plan.engine_name == "openai-compatible" else "before_load",
         "can_resume": can_resume, "reasons": reasons,
         "job_id": plan.job_id, "plan_id": plan.plan_id,
         "stage_states": stage_states, "case_counts": dict(sorted(case_states.items())),

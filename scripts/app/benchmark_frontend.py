@@ -2,6 +2,7 @@
 """Interactive launcher that translates selections into benchmark CLI flags."""
 
 import json
+import os
 import platform
 import subprocess
 import sys
@@ -171,7 +172,7 @@ def load_frontend_state(path: Path = FRONTEND_STATE_PATH) -> dict | None:
             missing = set(GUI_OPTION_DEFAULTS) - set(options)
             if missing <= {
                 "offline", "memory_telemetry", "power_telemetry", "gpu_split_mode",
-                "mtp",
+                "mtp", "api_base_url", "api_model", "api_label", "api_context",
                 "retry_crashed_models",
                 "llamacpp_no_repack",
                 "llamacpp_no_host",
@@ -268,6 +269,9 @@ def frontend_state_from_run_plan(plan: RunPlan, gui_options: dict | None = None)
     if effective.get("sample_size") is not None:
         raise ValueError("Sampled developer runs cannot be represented in the benchmark GUI.")
     options = dict(GUI_OPTION_DEFAULTS if gui_options is None else gui_options)
+    if endpoint := plan.effective_config.get("external_api"):
+        options.update(api_base_url=endpoint["url"], api_model=endpoint["model"],
+                       api_label=endpoint["label"], api_context=endpoint["context"])
     option_mapping = {
         "runs": "runs", "warmup_runs": "warmup", "run_timeout_seconds": "timeout",
         "accuracy_timeout_seconds": "acc_timeout",
@@ -817,6 +821,12 @@ def build_benchmark_command(engine_name: str, comfyui_dir: Path, tests: list[str
             command.extend(["--out", gui_options["out"]])
         if gui_options["comfyui"] and "--comfyui" in command:
             command[command.index("--comfyui") + 1] = gui_options["comfyui"]
+    if engine_name == "openai-compatible":
+        if gui_options:
+            for key in ("api_base_url", "api_model", "api_label", "api_context"):
+                if gui_options.get(key):
+                    command.extend(["--" + key.replace("_", "-"), str(gui_options[key])])
+        return command
     selected = [entry for entry in entries if entry.checked]
     selected_variant_bases = {
         entry.base_model for entry in selected if entry.base_model and entry.variant
@@ -931,9 +941,28 @@ def run_frontend(input_fn=input, output_fn=Shared.plain_output, process_runner=N
             saved_path=configured_comfyui_dir(setup_config),
             managed_dir=config.COMFYUI_DIR,
         ) or config.COMFYUI_DIR
+        api_options = None
+        if selected_engine == "openai-compatible":
+            from scripts.runtime.engines.openai_compatible import API_ENV, endpoint_config, OpenAICompatibleEngine
+            url = input_fn("Local server base URL [http://127.0.0.1:18300/v1]: ").strip() or "http://127.0.0.1:18300/v1"
+            settings = endpoint_config(url)
+            probe = OpenAICompatibleEngine(settings)
+            models = probe.discover_models()
+            output_fn("Served models: " + ", ".join(models))
+            settings["model"] = models[0] if len(models) == 1 else input_fn("Served model ID: ").strip()
+            settings["label"] = input_fn("Optional display name: ").strip()
+            settings["context"] = int(input_fn("Server context limit [32768]: ").strip() or "32768")
+            os.environ[API_ENV] = json.dumps(endpoint_config(**settings))
+            api_options = {**GUI_OPTION_DEFAULTS, "api_base_url": settings["url"], "api_model": settings["model"],
+                           "api_label": settings["label"], "api_context": settings["context"]}
         selected_engine_instance = engine_factory(selected_engine)
         inventory = inventory_builder(selected_engine_instance, config.COMFYUI_MODELS_DIR)
         test_entries = build_test_entries(inventory)
+        if selected_engine == "openai-compatible":
+            from scripts.runtime.engines.openai_compatible import SUPPORTED_TESTS
+            for entry in test_entries:
+                entry.available = entry.value in SUPPORTED_TESTS
+                entry.checked = entry.checked and entry.available
         apply_saved_test_selection(test_entries, saved_state)
         if not any(entry.available for entry in test_entries):
             output_fn("No installed benchmark models were found. Run setup to add catalog models.")
@@ -949,10 +978,14 @@ def run_frontend(input_fn=input, output_fn=Shared.plain_output, process_runner=N
         apply_saved_model_selection(model_entries, saved_state)
         hint = missing_catalog_hint(inventory, system)
         clear_fn()
-        choose_models(
-            model_entries, tests, hint, input_fn, output_fn, clear_fn,
-            selection_note=selection_note,
-        )
+        if selected_engine == "openai-compatible":
+            for entry in model_entries:
+                entry.checked = True
+        else:
+            choose_models(
+                model_entries, tests, hint, input_fn, output_fn, clear_fn,
+                selection_note=selection_note,
+            )
         max_prompt_tokens = None
         if MAX_PROMPT_TOKEN_TESTS & set(tests):
             clear_fn()
@@ -978,18 +1011,21 @@ def run_frontend(input_fn=input, output_fn=Shared.plain_output, process_runner=N
         state = build_frontend_state(
             selected_engine, tests, model_entries,
             max_prompt_tokens=max_prompt_tokens, tg_tokens=tg_tokens,
-            gui_options=saved_state.get("gui_options") if saved_state else None,
+            gui_options=api_options or (saved_state.get("gui_options") if saved_state else None),
         )
         if not save_frontend_state(state, state_path):
             output_fn("Could not save this launcher selection; continuing without persistence.")
         command = build_benchmark_command(
             selected_engine, comfyui_dir, tests, model_entries,
             python_executable=python_executable, benchmark_path=benchmark_path,
-            max_prompt_tokens=max_prompt_tokens, tg_tokens=tg_tokens,
+            max_prompt_tokens=max_prompt_tokens, tg_tokens=tg_tokens, gui_options=api_options,
         )
         output_fn("Launching benchmark.py with the confirmed selection.")
         result = process_runner(command)
         return result if isinstance(result, int) else result.returncode
+    except (ValueError, RuntimeError, OSError) as exc:
+        output_fn(str(exc))
+        return 1
     except FrontendCancelled:
         output_fn("Benchmark selection cancelled.")
         return 0

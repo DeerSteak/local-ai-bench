@@ -86,6 +86,8 @@ def resume_journal_run(result_path, *, identity_builder=None,
     """Resume a stopped journal-only result after a read-only eligibility decision."""
     result_path = Path(result_path).resolve()
     plan = load_run_plan(result_path)
+    if plan.engine_name == "openai-compatible":
+        raise ValueError("External server identity is unverified; start a new run instead of resuming.")
     unsupported = [stage for stage in plan.stage_order if stage not in JOURNAL_STAGES]
     if unsupported:
         raise ValueError(

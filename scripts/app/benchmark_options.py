@@ -37,6 +37,10 @@ PUBLIC_OPTION_SCHEMA = {
     ),
     "--dry-run": _spec("boolean", "contextual", "equivalent", "Final plan preview", default=False),
     "--tests": _spec("string-list", "guided", "exposed", "Test selection screen", choices=TEST_CHOICES),
+    "--api-base-url": _spec("string", "guided", "exposed", "OpenAI Compatible connection", default=""),
+    "--api-model": _spec("string", "guided", "exposed", "Served model picker", default=""),
+    "--api-label": _spec("string", "guided", "exposed", "Served model display name", default=""),
+    "--api-context": _spec("integer", "guided", "exposed", "Server context limit", default=32768, minimum=1),
     "--engine": _spec("choice", "guided", "exposed", "Engine selection screen"),
     "--llm-models": _spec("string-list", "guided", "exposed", "LLM model selection screen"),
     "--models": _spec("string-list", "guided", "equivalent", "Alias of --llm-models"),
@@ -94,6 +98,8 @@ PUBLIC_OPTION_SCHEMA = {
 
 
 GUI_OPTION_FLAGS = {
+    "api_base_url": "--api-base-url", "api_model": "--api-model",
+    "api_label": "--api-label", "api_context": "--api-context",
     "warmup": "--warmup", "runs": "--runs", "timeout": "--timeout",
     "acc_timeout": "--acc-timeout", "acc_token_budget": "--acc-token-budget",
     "cpu_only": "--cpu-only", "gpu_split_mode": "--gpu-split-mode",

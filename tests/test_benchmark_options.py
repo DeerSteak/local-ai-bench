@@ -8,6 +8,7 @@ from scripts.app.benchmark_options import (
 
 def test_schema_defines_every_gui_default_and_cli_choice_set():
     assert gui_option_defaults() == {
+        "api_base_url": "", "api_model": "", "api_label": "", "api_context": 32768,
         "warmup": config.WARMUP_RUNS, "runs": config.N_RUNS, "timeout": 300,
         "acc_timeout": config.ACC_TIMEOUT, "acc_token_budget": config.ACC_TOKEN_BUDGET,
         "cpu_only": False, "gpu_split_mode": "layer", "mtp": "off", "force_all": False,

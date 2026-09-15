@@ -45,6 +45,9 @@ def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
         ))
         if mtp_enabled and selected & TEXT_GENERATION_STAGES:
             optimizations.append("llamacpp:native_mtp=on")
+    if family == "openai-compatible":
+        optimizations.extend(("openai-compatible:runtime=externally_managed", "openai-compatible:cache_state=unverified",
+                              "openai-compatible:telemetry=local_host", "openai-compatible:artifact_identity=unverified"))
     if "vllmbench" in selected:
         optimizations.append(f"vllm:bench_iters={config.VLLMBENCH_ITERS}")
     if family == "vllm" and selected & (ENGINE_STAGES | {"vllmbench"}):
@@ -85,6 +88,6 @@ def resolve_methodology_profile(*, engine_name: str, tests, cpu_only: bool,
     }
     if mtp_enabled and selected & TEXT_GENERATION_STAGES:
         resolved["mtp_configurations"] = dict(mtp_configurations or {})
-    if family in {"llamacpp", "vllm"} and selected & TEXT_GENERATION_STAGES:
+    if family in {"llamacpp", "vllm", "openai-compatible"} and selected & TEXT_GENERATION_STAGES:
         resolved["sampling_profile"] = baseline_sampling_profile(family)
     return resolved

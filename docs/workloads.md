@@ -447,3 +447,7 @@ Concurrency through vLLM's own tooling (`vllm bench serve`) is not implemented y
 ---
 
 [← Setup](setup.md) · [Back to README](../README.md) · [CLI Reference →](cli-reference.md)
+
+## OpenAI Compatible workload interpretation
+
+The local OpenAI Compatible engine supports generation, repeated-prompt generation, conversation, all five accuracy banks, HTTP chat/tool concurrency, and sustained load against the served chat model. It requires streamed usage counts, records client-observed timing including local HTTP overhead, and does not infer server prompt-evaluation time. Cached/uncached labels describe request patterns only because the benchmark cannot reset or verify server caches. The supplied context limit is a user declaration, not a detected model capability. Tool tests require the server to return structured OpenAI tool calls.

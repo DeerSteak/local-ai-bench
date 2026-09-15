@@ -24,6 +24,7 @@ from scripts.runtime.comfyui_installation import find_comfyui_installation, norm
 from scripts.workloads.conversation_selection import conv_skip_entry
 from scripts.runtime.shared import Shared
 from scripts.runtime.mtp import active_mtp_configurations
+from scripts.runtime.engines.openai_compatible import API_ENV, endpoint_config, selection_errors as api_selection_errors
 from scripts.runtime.engines import get_engine, engine_names as registered_engine_names
 from scripts.runtime.engine_identity import engine_family
 from scripts.runtime.engines.vllm import VllmEngine
@@ -593,10 +594,23 @@ def resolve_engine_scopes(engine_names: list[str], engine_factory, tier_models: 
     for engine_name in engine_names:
         engine = engine_factory(engine_name)
         engine_tests = engine_pass_tests(tests, engine_name, include_images=True)
-        installed_models = (
-            engine.list_installed_models()
-            if inventory_needed else []
-        )
+        try:
+            installed_models = (
+                engine.list_installed_models()
+                if inventory_needed or engine_name == "openai-compatible" else []
+            )
+        except (ValueError, RuntimeError, OSError) as exc:
+            if engine_name != "openai-compatible":
+                raise
+            errors.append(str(exc))
+            continue
+        if engine_name == "openai-compatible":
+            if not installed_models:
+                errors.append("Enter the OpenAI Compatible base URL and connect to a running server.")
+            scopes.append({"name": engine_name, "engine": engine, "installed_tags": frozenset(model["tag"] for model in installed_models),
+                           "inventory_loaded": True, "llm_models": installed_models,
+                           "concurrency_models": installed_models if concurrency_enabled else [], "embedding_models": []})
+            continue
         installed_tags = [model["tag"] for model in installed_models]
         installed_mtp = {model["tag"]: model["native_mtp"] for model in installed_models
                          if model.get("native_mtp")}
@@ -698,7 +712,8 @@ def resolve_engine_names(engine: str, available: list[str], *,
     """Resolve --engine into an ordered engine-name list ("all", or comma-separated),
     always in registry order so a multi-engine run is deterministic."""
     if engine == "all":
-        selected = list(available if installed is None else installed)
+        selected = [name for name in (available if installed is None else installed)
+                    if name != "openai-compatible"]
         if not selected:
             raise ValueError("No installed inference engines were found — run setup first")
         return selected
@@ -979,7 +994,16 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
              "(engine name appended to the filename) so they can be compared "
              "directly. Registered choices are: " + ", ".join(_engines) + ".",
     )
+    parser.add_argument("--api-base-url", default="", help="Local OpenAI-compatible server base URL")
+    parser.add_argument("--api-model", default="", help="Served model ID; automatic for a single-model endpoint")
+    parser.add_argument("--api-label", default="", help="Optional result display name for the served model")
+    parser.add_argument("--api-context", type=int, default=32768, help="Configured server context limit")
     args = parser.parse_args()
+    if args.api_base_url:
+        try:
+            os.environ[API_ENV] = json.dumps(endpoint_config(args.api_base_url, args.api_model, args.api_label, args.api_context))
+        except ValueError as exc:
+            parser.error(str(exc))
     if args.power_telemetry and not args.memory_telemetry:
         parser.error("--power-telemetry requires --memory-telemetry")
     apply_quick_preset(args)
@@ -999,6 +1023,9 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
         parser.error(option_errors[0])
 
     args.tests = expand_tests(args.tests)
+    api_errors = api_selection_errors(args.engine.split(","), args.tests, args.mtp, args.cpu_only)
+    if api_errors:
+        parser.error(" ".join(api_errors))
     if "sustained" in args.tests and not args.memory_telemetry:
         parser.error("the sustained workload requires --memory-telemetry for aligned sampling")
     if args.ambient_temp_c is not None and "sustained" not in args.tests:
@@ -1328,6 +1355,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
                 )
         effective_config = {
             **runtime_shaping_config(args, engine_name=engine_name),
+            **({"external_api": getattr(engine, "settings", {})} if engine_name == "openai-compatible" else {}),
             "retry_crashed_models": args.retry_crashed_models,
             "gpu_split_mode": args.gpu_split_mode,
             "llamacpp_no_repack": args.llamacpp_no_repack,
@@ -1480,6 +1508,10 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             "version":         config.VERSION,
             "engine":          engine_name,
             "engine_version":  runtime_version,
+            **({"external_api": {**getattr(engine, "settings", {}), "models": llm_models,
+                  "cache_state": "unverified", "runtime_settings": "externally_managed",
+                  "telemetry_scope": "local_host", "model_memory": "unavailable",
+                  "artifact_identity": "unverified"}} if engine_name == "openai-compatible" else {}),
             "profile":         profile,
             "accuracy_settings": {
                 "timeout_seconds": config.ACC_TIMEOUT,
@@ -1592,6 +1624,7 @@ def main():  # pragma: no cover — CLI entrypoint; orchestrates real llama.cpp/
             if not args.memory_telemetry:
                 return None
             return CaseTelemetry(
+                include_process_memory=engine_name != "openai-compatible",
                 power_availability=power_availability,
                 temperature_availability=temperature_availability,
             ).start()

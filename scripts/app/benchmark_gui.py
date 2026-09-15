@@ -255,7 +255,7 @@ def gui_option_control_value(key: str, value: Any) -> Any:
 def normalize_gui_option_values(values: dict[str, Any]) -> dict[str, Any]:
     options = dict(GUI_OPTION_DEFAULTS)
     for key in ("warmup", "runs", "timeout", "acc_timeout", "acc_token_budget",
-                "sustained_duration"):
+                "sustained_duration", "api_context"):
         try:
             options[key] = int(values[key])
         except (TypeError, ValueError):
@@ -270,7 +270,7 @@ def normalize_gui_option_values(values: dict[str, Any]) -> dict[str, Any]:
     for key in ("cpu_only", "force_all", "retry_crashed_models", "offline", "memory_telemetry",
                 "power_telemetry", "llamacpp_no_repack", "llamacpp_no_host"):
         options[key] = values[key]
-    for key in ("out", "comfyui"):
+    for key in ("out", "comfyui", "api_base_url", "api_model", "api_label"):
         options[key] = str(values[key]).strip()
     return options
 
@@ -371,9 +371,17 @@ def prepare_benchmark_launch(*, engine: str, tests: list[str], entries: list[Men
     if not tests:
         errors.append("Select at least one benchmark test.")
     selection_error = model_selection_error(entries, tests)
-    if selection_error:
+    if selection_error and engine != "openai-compatible":
         errors.append(selection_error)
     selected_engines = parse_engine_selection(engine)
+    from scripts.runtime.engines.openai_compatible import selection_errors as api_errors, endpoint_config
+    errors.extend(api_errors(selected_engines, tests, launch_options["mtp"], launch_options["cpu_only"]))
+    if engine == "openai-compatible":
+        try:
+            endpoint_config(launch_options["api_base_url"], launch_options["api_model"],
+                            launch_options["api_label"], launch_options["api_context"])
+        except ValueError as exc:
+            errors.append(str(exc))
     selected_by_engine = selected_catalog_models_by_engine(
         entries, selected_engines, model_owners,
     )
@@ -463,7 +471,8 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     # offering models the newly selected engine cannot run.
     engine_instances = {name: get_engine(name) for name in available_engines}
     engine_inventories = {
-        name: build_model_inventory(engine_instances[name], config.COMFYUI_MODELS_DIR)
+        name: (build_model_inventory(engine_instances[name], config.COMFYUI_MODELS_DIR)
+               if name != "openai-compatible" else {"llm": [], "custom": [], "image": [], "embedding": []})
         for name in available_engines
     }
     inventory, model_owners = merge_model_inventories(engine_inventories)
@@ -607,6 +616,7 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
         name: tk.BooleanVar(value=name in parse_engine_selection(selected_engine))
         for name in available_engines
     }
+    test_original_availability = {entry.value: entry.available for entry in custom_tests}
     engine_note = tk.StringVar()
     # Guards apply_engine_availability's per-checkbox trace during a batch update — without
     # it, setting checkboxes one at a time passes through a momentary all-unchecked state
@@ -658,6 +668,18 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
             widget.configure(state="normal" if available else "disabled")
             if not available and model_vars[value].get():
                 model_vars[value].set(False)
+        api_only = selection.engines == ["openai-compatible"]
+        from scripts.runtime.engines.openai_compatible import SUPPORTED_TESTS
+        for entry in custom_tests:
+            original = test_original_availability[entry.value]
+            entry.available = entry.value in SUPPORTED_TESTS if api_only else original
+            test_widgets[entry.value].configure(state="normal" if entry.available else "disabled")
+            if not entry.available:
+                test_vars[entry.value].set(False)
+        if api_only:
+            engine_note.set("Uses the served model below. Server stays running; cache state and runtime settings are unverified.")
+            for widget in model_widgets.values():
+                widget.configure(state="disabled")
         if runtime_profiles_ready[0]:
             refresh_split_modes()
 
@@ -678,6 +700,51 @@ def run_benchmark_gui() -> int:  # pragma: no cover — interactive desktop UI
     engine_box.columnconfigure(len(available_engines) + 1, weight=1)
     ttk.Label(engine_box, textvariable=engine_note).grid(
         row=1, column=0, columnspan=len(available_engines) + 2, sticky="w", pady=(8, 0))
+    api_box = ttk.LabelFrame(engine_box, text="OpenAI Compatible — local server", padding=8)
+    api_box.grid(row=2, column=0, columnspan=len(available_engines) + 2, sticky="ew", pady=(8, 0))
+    for row, (label, key) in enumerate((("Base URL", "api_base_url"), ("Display name (optional)", "api_label"),
+                                      ("Server context limit", "api_context"))):
+        ttk.Label(api_box, text=label).grid(row=row, column=0, sticky="w")
+        ttk.Entry(api_box, textvariable=option_vars[key], width=48).grid(row=row, column=1, sticky="ew")
+    ttk.Label(api_box, text="Served model (automatic if only one)").grid(row=3, column=0, sticky="w")
+    api_picker = ttk.Combobox(api_box, textvariable=option_vars["api_model"], state="readonly", width=45)
+    api_picker.grid(row=3, column=1, sticky="ew")
+    api_key = tk.StringVar(value=os.environ.get("LOCAL_AI_BENCH_API_KEY", ""))
+    ttk.Label(api_box, text="API key (optional, not saved)").grid(row=4, column=0, sticky="w")
+    ttk.Entry(api_box, textvariable=api_key, show="•").grid(row=4, column=1, sticky="ew")
+    api_key.trace_add("write", lambda *_: os.environ.__setitem__("LOCAL_AI_BENCH_API_KEY", api_key.get()))
+    api_status = tk.StringVar(value="Start your container first, then connect. Telemetry measures this machine.")
+    api_queue = queue.Queue()
+    def connect_api():
+        from scripts.runtime.engines.openai_compatible import OpenAICompatibleEngine, endpoint_config
+        try:
+            settings = endpoint_config(option_vars["api_base_url"].get(), context=int(option_vars["api_context"].get()))
+        except ValueError as exc:
+            api_status.set(str(exc))
+            return
+        api_status.set("Discovering served models…")
+        def discover():
+            try:
+                api_queue.put((OpenAICompatibleEngine(settings).discover_models(), None))
+            except Exception as exc:
+                api_queue.put((None, str(exc)))
+        threading.Thread(target=discover, daemon=True).start()
+        def finish():
+            try:
+                models, error = api_queue.get_nowait()
+            except queue.Empty:
+                root.after(100, finish)
+                return
+            if error:
+                api_status.set(error)
+            else:
+                api_picker.configure(values=models)
+                option_vars["api_model"].set(models[0] if len(models) == 1 else "")
+                api_status.set("Connected: " + (models[0] if len(models) == 1 else "select a served model"))
+        root.after(100, finish)
+    ttk.Button(api_box, text="Connect / Refresh models", command=connect_api).grid(row=5, column=0, sticky="w")
+    ttk.Label(api_box, textvariable=api_status, wraplength=680).grid(row=6, column=0, columnspan=2, sticky="w")
+    api_box.columnconfigure(1, weight=1)
     for _engine_var in engine_check_vars.values():
         _engine_var.trace_add("write", apply_engine_availability)
     apply_engine_availability()

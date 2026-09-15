@@ -24,7 +24,7 @@ SAFE_CONFIG_KEYS = {
     "concurrency_tool_context", "concurrency_chat_context",
     "concurrency_chat_soft_exit_floor",
     "methodology_profile", "effective_optimizations", "sampling_profile", "offline",
-    "mtp_enabled", "mtp_configurations", "progress_engine_name",
+    "mtp_enabled", "mtp_configurations", "progress_engine_name", "external_api",
     "gpu_split_mode",
     "llamacpp_no_repack",
     "llamacpp_no_host",
@@ -39,7 +39,7 @@ MODEL_FAMILIES = {"llm", "concurrency", "embeddings", "images"}
 SAFE_MODEL_KEYS = {"tag", "short", "size_gb", "params_b", "base_model", "variant"}
 EXECUTION_CONFIG_KEYS = set(SAFE_CONFIG_KEYS) - {
     "methodology_profile", "effective_optimizations", "sampling_profile", "offline", "gpu_split_mode",
-    "mtp_enabled", "mtp_configurations", "progress_engine_name",
+    "mtp_enabled", "mtp_configurations", "progress_engine_name", "external_api",
     "retry_crashed_models", "llamacpp_no_repack", "llamacpp_no_host",
     "memory_telemetry", "memory_telemetry_interval_sec",
     "power_telemetry", "power_telemetry_interval_sec", "power_source", "power_scope",
@@ -82,6 +82,14 @@ class RunPlan:
             raise ValueError("run plan tests and stage order must not contain duplicates")
         if set(tests) != set(stage_order):
             raise ValueError("run plan tests and stage order must contain the same stages")
+        if "external_api" in effective_config:
+            from scripts.runtime.engines.openai_compatible import endpoint_config
+            try:
+                normalized = endpoint_config(**effective_config["external_api"])
+            except (TypeError, ValueError):
+                raise ValueError("Invalid external API settings; credentials must stay in the environment.") from None
+            if normalized != effective_config["external_api"] or engine_name != "openai-compatible":
+                raise ValueError("External API settings do not match the selected engine or normalized URL.")
         unknown_config = set(effective_config) - SAFE_CONFIG_KEYS
         if unknown_config:
             raise ValueError(f"unsafe or unknown run-plan settings: {sorted(unknown_config)}")
@@ -164,6 +172,8 @@ class RunPlan:
             },
             "output": {"result_schema": 3, "event_schema": 1},
         }
+        if "external_api" in settings:
+            identity["runtime"]["external_api"] = settings["external_api"]
         if "offline" in settings:
             identity["privacy"]["offline"] = settings["offline"]
         has_profile = "methodology_profile" in settings
