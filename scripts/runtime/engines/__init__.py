@@ -1,5 +1,6 @@
 """Pluggable inference-engine registry — see docs/engines.md."""
 
+from scripts.runtime.engines.openai_compatible import OpenAICompatibleEngine
 from scripts.runtime.engines.base import InferenceEngine
 from scripts.runtime.engines.llamacpp import LlamaCppEngine
 from scripts.runtime.engines.llamacpp_vulkan import LlamaCppVulkanEngine
@@ -9,6 +10,7 @@ _REGISTRY: dict[str, type[InferenceEngine]] = {
     "llamacpp": LlamaCppEngine,
     "llamacpp-vulkan": LlamaCppVulkanEngine,
     "vllm": VllmEngine,
+    "openai-compatible": OpenAICompatibleEngine,
 }
 
 
@@ -24,6 +26,7 @@ def get_engine(name: str) -> InferenceEngine:
 
 def engine_display_name(name: str) -> str:
     return {
+        "openai-compatible": "OpenAI Compatible",
         "llamacpp": "llama.cpp",
         "llamacpp-vulkan": "llama.cpp Vulkan",
     }.get(name, name)

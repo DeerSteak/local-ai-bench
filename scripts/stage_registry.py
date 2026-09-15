@@ -68,6 +68,9 @@ def stage_spec(key: str) -> StageSpec:
 
 
 def engine_incompatible_tests(tests: list[str], engine_name: str) -> list[str]:
+    if engine_name == "openai-compatible":
+        from scripts.runtime.engines.openai_compatible import SUPPORTED_TESTS
+        return [key for key in tests if key not in SUPPORTED_TESTS]
     return [
         key for key in tests
         if (spec := STAGE_BY_KEY.get(key)) is not None

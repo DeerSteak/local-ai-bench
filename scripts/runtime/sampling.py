@@ -26,6 +26,9 @@ LLAMACPP_NEUTRAL_CONTROLS = {
 
 
 def sampling_payload(engine_name: str, controls: dict) -> dict:
+    if engine_name == "openai-compatible":
+        return {key: deepcopy(value) for key, value in controls.items()
+                if key in {"temperature", "top_p", "presence_penalty", "frequency_penalty", "seed"}}
     if engine_name == "vllm":
         return {key: deepcopy(value) for key, value in controls.items() if key != "do_sample"}
     if engine_name == "llamacpp":

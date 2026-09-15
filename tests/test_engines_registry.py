@@ -7,7 +7,7 @@ from scripts.runtime.engines.vllm import VllmEngine
 
 
 def test_engine_names_lists_every_registered_engine():
-    assert engine_names() == ["llamacpp", "llamacpp-vulkan", "vllm"]
+    assert engine_names() == ["llamacpp", "llamacpp-vulkan", "openai-compatible", "vllm"]
 
 
 def test_engine_display_name_only_expands_llamacpp_branding():

@@ -126,6 +126,11 @@ def formatting_response_check(response_text: str, finish_reason: str | None) -> 
 
 
 def run_formatting_probe(engine, tag: str, num_ctx: int, timeout: int) -> CompatibilityCheck:
+    if getattr(engine, "name", None) == "openai-compatible":
+        return CompatibilityCheck(
+            "formatting_probe", "externally_managed", "warning",
+            "Server remains loaded; cache reset and cold-state verification are unavailable.",
+        )
     if not getattr(engine, "can_reset_model_state", lambda: True)():
         return CompatibilityCheck(
             "formatting_probe", "clean_state_unavailable", "hard_failure",
