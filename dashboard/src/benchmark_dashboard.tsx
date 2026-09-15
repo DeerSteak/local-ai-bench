@@ -1,3 +1,5 @@
+import { ExternalServerContext } from "./components/ExternalServerContext";
+import { externalServerSummary } from "./utils/shared";
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import html2canvas from "html2canvas";
 import { dashboardEngineVersion, readNamedJSONSource, sanitizeForFilename, filesForSection, getRunReliabilityWarning, getLlamaBenchMethodologyWarning, getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning, getNoRepackMethodologyWarning, getCrossEngineWeightsWarning, getMemoryTelemetryMethodologyWarning } from "./utils/shared";
@@ -560,10 +562,12 @@ export default function Dashboard() {
       />
 
       <div ref={chartRef}>
+        {effectiveFiles.map(file => externalServerSummary(file) && <p key={`external_${file.id}`} role="note">{externalServerSummary(file)}</p>)}
         {ENERGY_SECTIONS.includes(section) && effectiveFiles.length > 0 && (
           <p><a href="#energy-analysis">View energy analysis ↓</a></p>
         )}
         <DeltaModeContext.Provider value={baselineId != null && section !== "sustained"}>
+          <ExternalServerContext.Provider value={effectiveFiles.map(externalServerSummary).filter((note): note is string => note !== null)}>
           <ChartPanel
             files={section === "sustained" ? effectiveFiles : chartFiles}
             absoluteFiles={effectiveFiles}
@@ -578,6 +582,7 @@ export default function Dashboard() {
             groupBy={groupBy}
             sizeSplit={sizeSplit}
           />
+          </ExternalServerContext.Provider>
         </DeltaModeContext.Provider>
         <EnergyAnalysisPanel files={effectiveFiles} section={section}
           combineSystems={combineEnergySystems} setCombineSystems={setCombineEnergySystems}

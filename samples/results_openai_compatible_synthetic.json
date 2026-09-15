@@ -1,0 +1,52 @@
+{
+  "version": "6.1.1",
+  "engine": "openai-compatible",
+  "engine_version": null,
+  "profile": {
+    "hostname": "Synthetic Spark preview",
+    "os": "Linux",
+    "arch": "aarch64",
+    "backend": "cuda",
+    "ram_gb": 121.6
+  },
+  "external_api": {
+    "url": "http://127.0.0.1:18300/v1",
+    "model": "qwen3.8-flash-next",
+    "label": "Qwen 3.8 Flash Next \u2014 NVFP4 Hybrid (synthetic)",
+    "context": 32768,
+    "models": [
+      {
+        "tag": "qwen3.8-flash-next",
+        "label": "Qwen 3.8 Flash Next \u2014 NVFP4 Hybrid (synthetic)",
+        "short": "Qwen 3.8 Flash Next \u2014 NVFP4 Hybrid (synthetic)"
+      }
+    ],
+    "cache_state": "unverified",
+    "telemetry_scope": "local_host",
+    "model_memory": "unavailable",
+    "runtime_settings": "externally_managed",
+    "artifact_identity": "unverified"
+  },
+  "llm": {
+    "Qwen 3.8 Flash Next \u2014 NVFP4 Hybrid (synthetic)": {
+      "8K": {
+        "tps_mean": 30.0,
+        "tps_stdev": 1.0,
+        "client_ttft_mean_sec": 2.5,
+        "client_ttft_stdev_sec": 0.1,
+        "n_runs": 3,
+        "valid_runs": 3,
+        "completed_runs": 3
+      }
+    }
+  },
+  "llm_cached": {},
+  "llm_conversation": {},
+  "mcq": {},
+  "math": {},
+  "reasoning": {},
+  "code": {},
+  "tool": {},
+  "embeddings": {},
+  "images": {}
+}

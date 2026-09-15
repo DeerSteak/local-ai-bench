@@ -7,6 +7,7 @@ import type { ChartRow } from "../../types";
 import CustomLegend from "../CustomLegend";
 import CustomTooltip from "../CustomTooltip";
 import styles from "../ChartPanel.module.css";
+import { ExternalServerNote } from "../ExternalServerNote";
 import { DeltaModeContext } from "../DeltaModeContext";
 
 interface LineConfig {
@@ -42,6 +43,7 @@ export function ChartCard({ title, modelName = null, data, lineConfigs, xKey, xL
   const yTickFormatter = (v: number) => formatAxisTick(v, effectiveUnit);
   return (
     <div className="card chart-card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
+      <ExternalServerNote />
       <div className={styles.chartHeader}>
         {modelName && <div className={styles.chartModelName}>{modelName}</div>}
         <div className={styles.chartTitleRow}>
@@ -215,6 +217,7 @@ export function GroupedBarCard({ title, modelName = null, data, barConfigs, xKey
   }));
   return (
     <div className="card chart-card" style={{ position: "relative" }} data-chart-name={chartName} data-chart-model={chartModel || ""}>
+      <ExternalServerNote />
       <div className={styles.chartHeader}>
         {modelName && <div className={styles.chartModelName}>{modelName}</div>}
         <div className={styles.chartTitleRow}>

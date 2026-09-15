@@ -222,3 +222,7 @@ Energy chart axes abbreviate values of 1,000 or more with `k` (for example, `7.5
 **Combine systems across energy charts** is enabled by default and applies across the energy-analysis sections, independently of the main Group By control. It overlays systems with matching workloads and measurement windows and labels each series with its power scope. Processor-package and accelerator readings cover different hardware and are not equivalent whole-system measurements. Disable it to restore scope separation and the main Group By behavior.
 
 For llama.cpp runtime labels, the dashboard prefers a recorded numeric build such as `10840`. When the top-level version is a generic development version, a consistent build number in native llama-bench entries supplies the label instead. Missing or conflicting build evidence retains the recorded version; other engines keep their own version strings.
+
+## OpenAI Compatible results
+
+OpenAI Compatible runs use the discovered server model ID or optional display name as the chart/model label. Run cards and chart exports show that the server remains loaded, cache behavior and runtime settings are externally managed, and telemetry belongs to the local host. Model-process memory and verified artifact identity are unavailable. These notes also explain why a cached/uncached label does not establish a cold cache. `samples/results_openai_compatible_synthetic.json` is a display fixture, not hardware evidence.

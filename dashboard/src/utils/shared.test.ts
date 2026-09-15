@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  dashboardEngineVersion, parseJSON, parseResultsJSON, readNamedJSONSource, getRunReliabilityWarning,
+  externalServerSummary, dashboardEngineVersion, parseJSON, parseResultsJSON, readNamedJSONSource, getRunReliabilityWarning,
   getLlamaBenchMethodologyWarning,
   getConversationTTFTMethodologyWarning, getGpuSplitMethodologyWarning,
   getNoRepackMethodologyWarning,
@@ -750,5 +750,23 @@ describe("dashboardEngineVersion", () => {
       m: null, n: { entries: "bad", prefill_entries: [null] },
     } })).toBe("0.4.0-dev");
     expect(dashboardEngineVersion({})).toBeNull();
+  });
+});
+
+
+describe("OpenAI Compatible results", () => {
+  it("preserves served labels and identifies externally managed measurements", () => {
+    const file: ResultsFile = { engine: "openai-compatible", data: {
+      external_api: { models: [{ tag: "qwen3.8-flash-next", label: "RadixArk NVFP4 Hybrid" }] },
+    } };
+    expect(engineLabel(file.engine)).toBe("OpenAI Compatible");
+    expect(externalServerSummary(file)).toContain("RadixArk NVFP4 Hybrid");
+    expect(externalServerSummary(file)).toContain("Cache state is unverified");
+    expect(externalServerSummary(file)).toContain("Telemetry covers this host");
+    expect(modelLabel("RadixArk NVFP4 Hybrid")).toBe("RadixArk NVFP4 Hybrid");
+  });
+  it("tolerates missing metadata and leaves older engine results alone", () => {
+    expect(externalServerSummary({engine: "openai-compatible", data: {}})).toContain("Served model");
+    expect(externalServerSummary({engine: "vllm", data: {}})).toBeNull();
   });
 });

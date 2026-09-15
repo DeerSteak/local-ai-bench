@@ -170,6 +170,7 @@ export function backendLabel(backend: string | null | undefined): string {
 export function engineLabel(engine: string | null | undefined): string {
   const labels: Record<string, string> = {
     llamacpp: "llama.cpp", "llamacpp-vulkan": "llama.cpp Vulkan", vllm: "vLLM",
+    "openai-compatible": "OpenAI Compatible",
   };
   const key = String(engine || "").toLowerCase();
   return labels[key] || String(engine || "");
@@ -441,4 +442,14 @@ export function formatAxisTick(v: number | null | undefined, unit: string): stri
     return `${Number((v / 1000).toFixed(1))}k`;
   }
   return fmt(v, unit);
+}
+
+
+export function externalServerSummary(file: ResultsFile): string | null {
+  if (file.engine !== "openai-compatible") return null;
+  const endpoint = file.data.external_api;
+  const models = Array.isArray(endpoint?.models)
+    ? endpoint.models.map((model: JsonRecord) => String(model.label || model.tag || "Unknown model")).join(", ")
+    : "Served model";
+  return `${models} · Server stays loaded; MTP and runtime settings are externally managed. Cache state is unverified: cached/uncached labels describe request patterns, not confirmed cache behavior. Timing includes local HTTP. Telemetry covers this host; model-process memory and artifact identity are unavailable.`;
 }

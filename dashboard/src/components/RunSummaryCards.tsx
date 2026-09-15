@@ -2,7 +2,7 @@ import type { RefObject } from "react";
 
 import { SIZE_TIER_LABELS } from "../constants";
 import type { DisplayFile } from "../types";
-import { backendLabel, engineRunLabel, lookup } from "../utils/shared";
+import { backendLabel, engineRunLabel, externalServerSummary, lookup } from "../utils/shared";
 import { buildSpecCardSummary, runCardGpuLabels, runCardHostname } from "../utils/specCard";
 import { runHeadroomSummary } from "../utils/memory";
 import { powerScopeLabel, runPowerSummary } from "../utils/power";
@@ -38,6 +38,7 @@ export default function RunSummaryCards({ files, containerRef, logoSrc, chartWid
                 {file.engine && <span>{engineRunLabel(file, section)}{file.engineVersion ? ` ${file.engineVersion}` : ""}</span>}
                 {file.version && <span>suite v{file.version}</span>}
               </div>
+              {externalServerSummary(file) && <p className={styles.context}>{externalServerSummary(file)}</p>}
               {gpuLabels.length > 0 && (
                 <div className={`${styles.metadata} ${styles.gpuMetadata}`}>
                   {gpuLabels.map(gpu => <span key={gpu}>{gpu}</span>)}
